@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prompts Keywords — Gestionnaire</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .ph { line-height: 1; display: inline-block; }
+    .animate-spin { animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+    .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased">
+
+  <div id="app" class="min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-slate-900 text-white shadow-lg">
+      <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <svg class="w-7 h-7 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9h8M8 13h5"/></svg>
+          <div>
+            <h1 class="text-lg font-semibold tracking-tight">Prompts Keywords</h1>
+            <p id="stats-text" class="text-xs text-slate-400">Base vide — importez un fichier pour commencer</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="openImport()" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 transition rounded-md">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Importer
+          </button>
+          <button onclick="doExport()" id="btn-export" disabled
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-slate-800 opacity-40 cursor-not-allowed transition rounded-md">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Exporter
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Filtres -->
+    <div id="filters-bar" class="bg-white border-b border-slate-200 shadow-sm hidden">
+      <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+        <div class="relative flex-1 min-w-[16rem]">
+          <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="search-input"
+                 placeholder="Rechercher un mot-clé ou une description..."
+                 class="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+        </div>
+        <select id="section-select" class="px-2 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+          <option value="">Toutes sections</option>
+        </select>
+        <label class="inline-flex items-center gap-2 px-2 py-1 text-sm select-none cursor-pointer">
+          <input type="checkbox" id="nsfw-check" class="rounded border-slate-300 text-rose-600 focus:ring-rose-500">
+          <span class="text-slate-600">Afficher NSFW</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Contenu -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
+
+      <!-- État vide -->
+      <div id="empty-state" class="flex flex-col items-center justify-center py-20 text-center">
+        <div class="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center mb-5">
+          <svg class="w-10 h-10 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        </div>
+        <h2 class="text-xl font-semibold text-slate-800 mb-2">Base de données vide</h2>
+        <p class="text-slate-500 max-w-sm mb-6">
+          Aucun mot-clé n'est encore chargé. Importez le fichier <code class="bg-slate-200 px-1.5 py-0.5 rounded text-sm font-mono">Keywords-Complete.md</code> pour commencer.
+        </p>
+        <button onclick="openImport()" class="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-md transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Importer un fichier
+        </button>
+      </div>
+
+      <!-- Tableau -->
+      <div id="results-area" class="hidden">
+        <div class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+          <div class="border-b border-slate-200 bg-slate-50 px-4 py-2 flex items-center justify-between">
+            <p class="text-sm text-slate-600">
+              <span id="count-display" class="font-semibold text-slate-900">0</span>
+              <span id="count-label">résultats</span>
+            </p>
+          </div>
+          <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-240px)] scrollbar-thin">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 sticky top-0 shadow-sm">
+                <tr>
+                  <th class="text-left px-4 py-2.5 font-semibold text-slate-600 border-b border-slate-200 w-52">Mot-clé</th>
+                  <th class="text-left px-4 py-2.5 font-semibold text-slate-600 border-b border-slate-200">Description</th>
+                  <th class="text-left px-4 py-2.5 font-semibold text-slate-600 border-b border-slate-200 w-56">Section</th>
+                </tr>
+              </thead>
+              <tbody id="table-body" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Modale Import -->
+    <div id="modal-import" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+          <h3 class="font-semibold text-slate-800">Importer un fichier Markdown</h3>
+          <button onclick="closeImport()" class="text-slate-400 hover:text-slate-600">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="px-5 py-5">
+          <div id="drop-zone"
+               onclick="document.getElementById('file-input').click()"
+               ondragover="event.preventDefault(); this.classList.add('border-indigo-400','bg-indigo-50/30');"
+               ondragleave="this.classList.remove('border-indigo-400','bg-indigo-50/30');"
+               ondrop="handleDrop(event)"
+               class="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center transition cursor-pointer">
+            <svg class="w-10 h-10 mx-auto text-slate-400 mb-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <p class="text-sm text-slate-600 font-medium mb-1">Glissez un fichier ici ou cliquez pour parcourir</p>
+            <p class="text-xs text-slate-400">Fichier .md uniquement</p>
+            <input type="file" id="file-input" accept=".md" onchange="handleFile(event)" class="hidden">
+          </div>
+          <div id="import-status" class="hidden mt-4 text-sm rounded-md p-3 border"></div>
+          <div id="import-loading" class="hidden mt-4 flex items-center gap-2 text-sm text-slate-500">
+            <svg class="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            Importation en cours...
+          </div>
+        </div>
+        <div class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+          <button onclick="closeImport()" class="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800">Fermer</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const API = 'http://localhost:5000/api';
+    let allKeywords = [];
+    let sectionsList = [];
+
+    // === DOM refs ===
+    const $ = id => document.getElementById(id);
+    const searchInput = $('search-input');
+    const sectionSelect = $('section-select');
+    const nsfwCheck = $('nsfw-check');
+    const emptyState = $('empty-state');
+    const resultsArea = $('results-area');
+    const filtersBar = $('filters-bar');
+    const tableBody = $('table-body');
+    const btnExport = $('btn-export');
+    const statsText = $('stats-text');
+    const countDisplay = $('count-display');
+    const countLabel = $('count-label');
+
+    // === Init ===
+    document.addEventListener('DOMContentLoaded', initApp);
+
+    async function initApp() {
+      // bind events
+      searchInput?.addEventListener('input', () => applyFilters());
+      sectionSelect?.addEventListener('change', () => applyFilters());
+      nsfwCheck?.addEventListener('change', () => applyFilters());
+
+      await checkData();
+    }
+
+    async function checkData() {
+      try {
+        const res = await fetch(`${API}/stats`);
+        const stats = await res.json();
+        const hasData = (stats.total || 0) > 0;
+        updateUIState(hasData, stats);
+        if (hasData) {
+          await loadSections();
+          await loadKeywords();
+        }
+      } catch {
+        updateUIState(false, {});
+      }
+    }
+
+    function updateUIState(hasData, stats) {
+      if (hasData) {
+        emptyState.classList.add('hidden');
+        resultsArea.classList.remove('hidden');
+        filtersBar.classList.remove('hidden');
+        btnExport.disabled = false;
+        btnExport.classList.remove('bg-slate-800','opacity-40','cursor-not-allowed');
+        btnExport.classList.add('bg-slate-700','hover:bg-slate-600');
+        statsText.textContent = `${stats.total} mots-clés · ${stats.section_count} sections · ${stats.nsfw_total} NSFW`;
+      } else {
+        emptyState.classList.remove('hidden');
+        resultsArea.classList.add('hidden');
+        filtersBar.classList.add('hidden');
+        btnExport.disabled = true;
+        btnExport.classList.add('bg-slate-800','opacity-40','cursor-not-allowed');
+        btnExport.classList.remove('bg-slate-700','hover:bg-slate-600');
+        statsText.textContent = 'Base vide — importez un fichier pour commencer';
+      }
+    }
+
+    async function loadSections() {
+      try {
+        const res = await fetch(`${API}/sections`);
+        sectionsList = await res.json();
+        // rebuild select
+        sectionSelect.innerHTML = '<option value="">Toutes sections</option>';
+        for (const sec of sectionsList) {
+          const opt = document.createElement('option');
+          opt.value = sec.section_id;
+          opt.textContent = `${sec.section_id}. ${sec.section_title} (${sec.total})`;
+          sectionSelect.appendChild(opt);
+        }
+      } catch { sectionsList = []; }
+    }
+
+    async function loadKeywords() {
+      try {
+        const params = new URLSearchParams();
+        if (searchInput.value.trim()) params.append('q', searchInput.value.trim());
+        if (sectionSelect.value) params.append('section', sectionSelect.value);
+        if (!nsfwCheck.checked) params.append('nsfw', '0');
+        const res = await fetch(`${API}/keywords?${params.toString()}`);
+        allKeywords = await res.json();
+        renderTable(allKeywords);
+      } catch {
+        allKeywords = [];
+        renderTable([]);
+      }
+    }
+
+    function applyFilters() {
+      loadKeywords();
+    }
+
+    function renderTable(rows) {
+      tableBody.innerHTML = '';
+      if (rows.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="3" class="px-4 py-10 text-center text-slate-400">Aucun résultat ne correspond aux filtres.</td></tr>';
+        countDisplay.textContent = '0';
+        countLabel.textContent = 'résultat';
+        return;
+      }
+      countDisplay.textContent = rows.length;
+      countLabel.textContent = rows.length > 1 ? 'résultats' : 'résultat';
+      const frag = document.createDocumentFragment();
+      for (const row of rows) {
+        const tr = document.createElement('tr');
+        tr.className = row.nsfw ? 'bg-rose-50/40' : '';
+        const nsfwClass = row.nsfw ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-indigo-600';
+        tr.innerHTML = `
+          <td class="px-4 py-2 align-top"><code class="text-xs font-mono px-1.5 py-0.5 rounded ${nsfwClass}">${escapeHtml(row.keyword)}</code></td>
+          <td class="px-4 py-2 text-slate-700 align-top">${escapeHtml(row.description)}</td>
+          <td class="px-4 py-2 text-xs text-slate-500 align-top">
+            <div class="font-medium text-slate-600">${escapeHtml(row.subsection_title)}</div>
+            <div class="text-slate-400 mt-0.5">${escapeHtml(row.section_id)}. ${escapeHtml(row.section_title)}</div>
+          </td>`;
+        frag.appendChild(tr);
+      }
+      tableBody.appendChild(frag);
+    }
+
+    function escapeHtml(str) {
+      if (typeof str !== 'string') return '';
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    // === Import / Export ===
+    function openImport() {
+      $('modal-import').classList.remove('hidden');
+      $('modal-import').classList.add('flex');
+      $('import-status').classList.add('hidden');
+      $('import-loading').classList.add('hidden');
+    }
+    function closeImport() {
+      $('modal-import').classList.add('hidden');
+      $('modal-import').classList.remove('flex');
+      $('import-status').classList.add('hidden');
+    }
+
+    function handleFile(e) {
+      const file = e.target.files?.[0];
+      if (file) sendImport(file);
+    }
+    function handleDrop(e) {
+      e.preventDefault();
+      $('drop-zone').classList.remove('border-indigo-400','bg-indigo-50/30');
+      const file = e.dataTransfer.files?.[0];
+      if (file && file.name.endsWith('.md')) {
+        sendImport(file);
+      } else {
+        showImportStatus(false, 'Déposez un fichier .md uniquement.');
+      }
+    }
+
+    async function sendImport(file) {
+      $('import-loading').classList.remove('hidden');
+      $('import-status').classList.add('hidden');
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const res = await fetch(`${API}/import`, { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || `Erreur ${res.status}`);
+        showImportStatus(true, `${data.imported} mots-clés importés avec succès.`);
+        await checkData();
+      } catch (err) {
+        showImportStatus(false, err.message || 'Erreur lors de l\'import');
+      } finally {
+        $('import-loading').classList.add('hidden');
+      }
+    }
+
+    function showImportStatus(ok, message) {
+      const el = $('import-status');
+      el.classList.remove('hidden');
+      el.className = 'mt-4 text-sm rounded-md p-3 border ' + (ok ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200');
+      el.textContent = message;
+    }
+
+    async function doExport() {
+      try {
+        const res = await fetch(`${API}/export`);
+        if (!res.ok) throw new Error(await res.text());
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'Keywords-Export.md';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert('Erreur export : ' + err.message);
+      }
+    }
+  </script>
+</body>
+</html>
