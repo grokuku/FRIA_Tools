@@ -61,6 +61,21 @@
                   class="inline-flex items-center justify-center w-9 h-9 text-sm rounded-md bg-slate-800 hover:bg-slate-700 transition">
             <span id="theme-icon" class="text-lg leading-none">🌙</span>
           </button>
+          <!-- Connexion / Utilisateur -->
+          <div id="user-area" class="flex items-center gap-2">
+            <a id="btn-login" href="#" onclick="discordLogin();return false"
+               class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-blurple hover:bg-blurple/80 transition rounded-md"
+               style="background:#5865F2">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
+              Connexion Discord
+            </a>
+            <div id="user-info" class="hidden items-center gap-2">
+              <img id="user-avatar" class="w-8 h-8 rounded-full" src="" alt="Avatar">
+              <span id="user-name" class="text-sm font-medium"></span>
+              <button id="btn-admin" onclick="toggleAdmin()" class="hidden text-xs text-indigo-400 hover:text-indigo-300 transition font-medium">Admin</button>
+              <button onclick="logout()" class="text-xs text-slate-400 hover:text-white transition">Déconnexion</button>
+            </div>
+          </div>
         </div>
       </div>
     </header>
@@ -97,18 +112,25 @@
     </div>
 
     <!-- Contenu -->
-    <main class="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
+    <main class="flex-1">
+      <div id="main-content" class="max-w-7xl w-full mx-auto px-4 py-6">
 
       <!-- État vide -->
       <div id="empty-state" class="flex flex-col items-center justify-center py-20 text-center">
-        <div class="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center mb-5 dark:bg-slate-800">
-          <svg class="w-10 h-10 text-slate-400 dark:text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        <div id="empty-icon" class="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center mb-5 dark:bg-slate-800">
+          <svg id="empty-svg" class="w-10 h-10 text-slate-400 dark:text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
         </div>
-        <h2 class="text-xl font-semibold text-slate-800 mb-2 dark:text-slate-200">Base de données vide</h2>
-        <p class="text-slate-500 max-w-sm mb-6 dark:text-slate-400">
-          Aucun mot-clé n'est encore chargé. Importez le fichier <code class="bg-slate-200 px-1.5 py-0.5 rounded text-sm font-mono">Keywords-Complete.md</code> pour commencer.
+        <h2 id="empty-title" class="text-xl font-semibold text-slate-800 mb-2 dark:text-slate-200">Connexion requise</h2>
+        <p id="empty-desc" class="text-slate-500 max-w-sm mb-6 dark:text-slate-400">
+          Connecte-toi avec Discord pour importer et gérer tes mots-clés.
         </p>
-        <button onclick="openImport()" class="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-md transition">
+        <a id="empty-btn" href="#" onclick="discordLogin();return false"
+           class="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white rounded-lg shadow-md transition"
+           style="background:#5865F2">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
+          Connexion avec Discord
+        </a>
+        <button id="empty-import-btn" onclick="openImport()" class="hidden inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-md transition">
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           Importer un fichier
         </button>
@@ -138,9 +160,73 @@
           </div>
         </div>
       </div>
+      </div>
     </main>
 
-    <!-- Modale Import -->
+
+    <!-- Panneau Admin -->
+    <div id="admin-panel" class="hidden max-w-7xl w-full mx-auto px-4 py-6">
+      <div class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden dark:bg-slate-800 dark:border-slate-700">
+        <div class="border-b border-slate-200 bg-slate-50 px-4 py-3 flex items-center justify-between dark:border-slate-700 dark:bg-slate-800/80">
+          <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Panneau d'administration</h2>
+          <button onclick="toggleAdmin()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition">Fermer</button>
+        </div>
+        <div class="p-5 space-y-6">
+
+          <!-- Import / Export -->
+          <div>
+            <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Import / Export</h3>
+            <div class="flex flex-wrap gap-2">
+              <button onclick="openImport()" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                Importer .md
+              </button>
+              <button onclick="doExport()" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-slate-700 text-white rounded-md hover:bg-slate-600 transition">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Exporter .md
+              </button>
+            </div>
+          </div>
+
+          <hr class="border-slate-200 dark:border-slate-700">
+
+          <!-- Gestion utilisateurs -->
+          <div>
+            <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Utilisateurs</h3>
+            <div class="space-y-2" id="admin-users-list">
+              <p class="text-sm text-slate-400">Chargement...</p>
+            </div>
+          </div>
+
+          <hr class="border-slate-200 dark:border-slate-700">
+
+          <!-- Token HF -->
+          <div>
+            <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Token Hugging Face</h3>
+            <div class="flex items-center gap-2 mb-1">
+              <span id="admin-hf-status" class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400">Verification...</span>
+            </div>
+            <div class="flex gap-2">
+              <input type="password" id="admin-hf-token-input" placeholder="Nouveau token HF..."
+                     class="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+              <button onclick="saveHfToken()" class="px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">Sauvegarder</button>
+            </div>
+          </div>
+
+          <hr class="border-slate-200 dark:border-slate-700">
+
+          <!-- Base de donnees -->
+          <div>
+            <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Base de donnees</h3>
+            <div class="flex flex-wrap gap-2">
+              <button onclick="adminClearDb()" class="px-3 py-1.5 text-sm font-medium bg-rose-600 text-white rounded-md hover:bg-rose-500 transition">Vider la BDD</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+        <!-- Modale Import -->
     <div id="modal-import" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm dark:bg-slate-950/80">
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden dark:bg-slate-800 dark:border dark:border-slate-700">
         <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between dark:border-slate-700">
@@ -180,6 +266,7 @@
     let allKeywords = [];
     let sectionsList = [];
     let searchMode = 'text'; // 'text' | 'semantic'
+    let currentUser = null;
 
     // === DOM refs ===
     const $ = id => document.getElementById(id);
@@ -187,6 +274,11 @@
     const sectionSelect = $('section-select');
     const nsfwCheck = $('nsfw-check');
     const emptyState = $('empty-state');
+    const emptyTitle = $('empty-title');
+    const emptyDesc = $('empty-desc');
+    const emptyBtn = $('empty-btn');
+    const emptyImportBtn = $('empty-import-btn');
+    const emptySvg = $('empty-svg');
     const resultsArea = $('results-area');
     const filtersBar = $('filters-bar');
     const tableBody = $('table-body');
@@ -198,6 +290,12 @@
     const semanticLoading = $('semantic-loading');
     const modeText = $('mode-text');
     const modeSemantic = $('mode-semantic');
+    const userArea = $('user-area');
+    const btnLogin = $('btn-login');
+    const userInfo = $('user-info');
+    const userAvatar = $('user-avatar');
+    const userName = $('user-name');
+    const btnAdmin = $('btn-admin');
 
     // === Init ===
     document.addEventListener('DOMContentLoaded', initApp);
@@ -216,14 +314,204 @@
     });
 
     async function initApp() {
+      // Vérifier l'auth d'abord
+      await checkAuth();
+
       // bind events
       searchInput?.addEventListener('input', () => applyFilters());
       sectionSelect?.addEventListener('change', () => applyFilters());
       nsfwCheck?.addEventListener('change', () => applyFilters());
 
-      await checkData();
+      if (currentUser) {
+        await checkData();
+      }
     }
 
+    async function checkAuth() {
+      try {
+        const res = await fetch(`${API}/auth/me`);
+        if (res.ok) {
+          currentUser = await res.json();
+          btnLogin.classList.add('hidden');
+          userInfo.classList.remove('hidden');
+          userInfo.classList.add('flex');
+          userAvatar.src = currentUser.avatar_url;
+          userName.textContent = currentUser.display_name;
+          // Bouton admin visible selon le role
+          if (currentUser.role === 'admin') {
+            btnAdmin.classList.remove('hidden');
+          } else {
+            btnAdmin.classList.add('hidden');
+          }
+        } else {
+          currentUser = null;
+          btnLogin.classList.remove('hidden');
+          userInfo.classList.add('hidden');
+          userInfo.classList.remove('flex');
+        }
+        showEmptyState(currentUser !== null);
+      } catch {
+        currentUser = null;
+        showEmptyState(false);
+      }
+    }
+
+    function showEmptyState(loggedIn) {
+      emptyState.classList.remove('hidden');
+      resultsArea.classList.add('hidden');
+      filtersBar.classList.add('hidden');
+
+      if (loggedIn) {
+        emptyTitle.textContent = 'Base de données vide';
+        emptyDesc.innerHTML = 'Aucun mot-clé pour le moment. Importe un fichier <code class="bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded text-sm font-mono">.md</code> pour commencer.';
+        emptyBtn.classList.add('hidden');
+        emptyImportBtn.classList.remove('hidden');
+        emptySvg.innerHTML = '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>';
+      } else {
+        emptyTitle.textContent = 'Connexion requise';
+        emptyDesc.textContent = 'Connecte-toi avec Discord pour importer et gérer tes mots-clés.';
+        emptyBtn.classList.remove('hidden');
+        emptyImportBtn.classList.add('hidden');
+        emptySvg.innerHTML = '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>';
+      }
+    }
+
+    async function logout() {
+      document.getElementById('admin-panel').classList.add('hidden');
+      document.getElementById('main-content').classList.remove('hidden');
+      btnAdmin.classList.add('hidden');
+      await fetch(`${API}/auth/logout`);
+      currentUser = null;
+      btnLogin.classList.remove('hidden');
+      userInfo.classList.add('hidden');
+      userInfo.classList.remove('flex');
+      showEmptyState(false);
+      statsText.textContent = 'Déconnecté.';
+    }
+
+    function discordLogin() {
+      const w = 600, h = 700;
+      const left = (screen.width - w) / 2;
+      const top = (screen.height - h) / 2;
+      window.open(
+        `${API}/auth/discord/login`,
+        'Discord Login',
+        `width=${w},height=${h},left=${left},top=${top},popup=1`
+      );
+    }
+
+    // Écouter le retour de la popup Discord
+    window.addEventListener('message', async (event) => {
+      if (event.data && event.data.type === 'auth_success') {
+        await checkAuth();
+        if (currentUser) {
+          await checkData();
+        }
+      }
+    });
+
+
+    // === Panneau Admin ===
+    function toggleAdmin() {
+      var panel = document.getElementById('admin-panel');
+      var mainContent = document.getElementById('main-content');
+      var isOpen = !panel.classList.contains('hidden');
+      panel.classList.toggle('hidden');
+      if (mainContent) mainContent.classList.toggle('hidden');
+      if (!isOpen) {
+        loadAdminUsers();
+        loadHfStatus();
+        setTimeout(function(){ panel.scrollIntoView({behavior:'smooth'}); }, 100);
+      }
+    }
+
+    async function loadAdminUsers() {
+      try {
+        const res = await fetch(API + '/admin/users');
+        if (!res.ok) return;
+        const users = await res.json();
+        const container = document.getElementById('admin-users-list');
+        container.innerHTML = users.map(u => {
+          const isYou = currentUser && u.id === currentUser.id;
+          const roleBadge = u.role === 'admin'
+            ? '<span class="text-indigo-400 font-medium">admin</span>'
+            : '<span class="text-slate-400">user</span>';
+          const avatar = u.avatar
+            ? '<img src="https://cdn.discordapp.com/avatars/' + u.id + '/' + u.avatar + '.png?size=32" class="w-6 h-6 rounded-full">'
+            : '<div class="w-6 h-6 rounded-full bg-slate-600 flex items-center justify-center text-xs">' + (u.username[0] || '?') + '</div>';
+          const promoteBtn = u.role !== 'admin'
+            ? '<button onclick="changeRole(\'' + u.id + '\',\'admin\')" class="text-xs text-indigo-400 hover:text-indigo-300">Promouvoir</button>'
+            : (isYou ? '' : '<button onclick="changeRole(\'' + u.id + '\',\'user\')" class="text-xs text-amber-400 hover:text-amber-300">Rétrograder</button>');
+          const deleteBtn = isYou
+            ? ''
+            : '<button onclick="deleteUser(\'' + u.id + '\',\'' + u.username.replace(/'/g,"\\'") + '\')" class="text-xs text-rose-400 hover:text-rose-300">Supprimer</button>';
+          return '<div class="flex items-center gap-2 p-2 rounded bg-slate-50 dark:bg-slate-700/50">'
+            + avatar
+            + '<span class="flex-1 text-slate-700 dark:text-slate-300 text-sm">' + escapeHtml(u.display_name || u.username) + '</span>'
+            + '<span class="text-xs">' + roleBadge + '</span>'
+            + (isYou ? '<span class="text-xs text-slate-500">(toi)</span>' : '')
+            + ' ' + promoteBtn + ' ' + deleteBtn
+            + '</div>';
+        }).join('');
+      } catch {}
+    }
+
+    async function changeRole(userId, role) {
+      try {
+        const res = await fetch(API + '/admin/users/' + userId + '/role', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({role: role})
+        });
+        if (res.ok) loadAdminUsers();
+      } catch {}
+    }
+
+    async function deleteUser(userId, username) {
+      if (!confirm('Supprimer l\'utilisateur "' + username + '" et tous ses mots-cles ?')) return;
+      try {
+        const res = await fetch(API + '/admin/users/' + userId, {method: 'DELETE'});
+        if (res.ok) loadAdminUsers();
+      } catch {}
+    }
+
+    async function loadHfStatus() {
+      try {
+        const res = await fetch(API + '/admin/settings/hf-token');
+        const data = await res.json();
+        document.getElementById('admin-hf-status').textContent =
+          data.has_token ? 'Token configure (cache)' : 'Aucun token stocke.';
+      } catch {}
+    }
+
+    async function saveHfToken() {
+      const input = document.getElementById('admin-hf-token-input');
+      const token = input.value.trim();
+      if (!token) return;
+      try {
+        const res = await fetch(API + '/admin/settings/hf-token', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({token: token})
+        });
+        if (res.ok) {
+          input.value = '';
+          loadHfStatus();
+        }
+      } catch {}
+    }
+
+    async function adminClearDb() {
+      if (!confirm('Vider la base de donnees ? Cette action est irreversible.')) return;
+      try {
+        const res = await fetch(API + '/admin/db/clear', {method: 'POST'});
+        if (res.ok) {
+          toggleAdmin();
+          await checkAuth();
+          await checkData();
+        }
+      } catch {}
+    }
     function setMode(mode) {
       searchMode = mode;
       // UI toggle
@@ -243,12 +531,15 @@
     async function checkData() {
       try {
         const res = await fetch(`${API}/stats`);
+        if (!res.ok) throw new Error('Not authorized');
         const stats = await res.json();
         const hasData = (stats.total || 0) > 0;
         updateUIState(hasData, stats);
         if (hasData) {
           await loadSections();
           await loadKeywords();
+        } else {
+          showEmptyState(true);
         }
       } catch {
         updateUIState(false, {});
@@ -265,13 +556,15 @@
         btnExport.classList.add('bg-slate-700','hover:bg-slate-600');
         statsText.textContent = `${stats.total} mots-clés · ${stats.section_count} sections · ${stats.nsfw_total} NSFW`;
       } else {
-        emptyState.classList.remove('hidden');
+        emptyState.classList.add('hidden');
         resultsArea.classList.add('hidden');
         filtersBar.classList.add('hidden');
         btnExport.disabled = true;
         btnExport.classList.add('bg-slate-800','opacity-40','cursor-not-allowed');
         btnExport.classList.remove('bg-slate-700','hover:bg-slate-600');
-        statsText.textContent = 'Base vide — importez un fichier pour commencer';
+        if (currentUser) {
+          statsText.textContent = `Connecté : ${currentUser.display_name}`;
+        }
       }
     }
 
