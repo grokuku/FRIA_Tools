@@ -403,6 +403,23 @@ def admin_users():
         return jsonify({'error': f'Erreur serveur: {e}'}), 500
 
 
+@app.route('/api/members', methods=['GET'])
+def list_members():
+    """Liste tous les utilisateurs (accessible à tous les membres connectés)."""
+    try:
+        guard = _login_required()
+        if guard:
+            return guard
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute('SELECT id, username, display_name, avatar, role FROM users ORDER BY role, username')
+        users = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return jsonify(users)
+    except Exception as e:
+        return jsonify({'error': f'Erreur serveur: {e}'}), 500
+
+
 @app.route('/api/admin/users/<user_id>/role', methods=['POST'])
 def admin_set_role(user_id):
     guard = _admin_required()
@@ -666,31 +683,62 @@ def import_md():
         conn = get_db()
         cur = conn.cursor()
 
-        cur.execute("DELETE FROM keyword_embeddings")
-        cur.execute("DELETE FROM keywords")
+        # Charger les mots-clés existants
+        cur.execute("SELECT LOWER(keyword) FROM keywords")
+        existing = {row[0] for row in cur.fetchall()}
 
-        # Déduplication : la dernière occurrence de chaque mot-clé écrase les précédentes
+        # Déduplication du fichier (dernière occurrence écrase)
         unique_map = {}
         for e in entries:
             key = e['keyword'].lower().strip()
-            unique_map[key] = e  # la dernière écrase
-        unique_entries = list(unique_map.values())
+            unique_map[key] = e
 
-        cur.executemany("""
-            INSERT INTO keywords
-            (keyword, description, section_id, section_title, subsection_id, subsection_title, nsfw, user_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, [
-            (e['keyword'], e['description'], e['section_id'], e['section_title'],
-             e['subsection_id'], e['subsection_title'], int(e['nsfw']), user_id)
-            for e in unique_entries
-        ])
+        imported = 0
+        updated = 0
+        skipped = 0
+        for key, e in unique_map.items():
+            if key in existing:
+                # Déjà présent → mettre à jour
+                cur.execute("""
+                    UPDATE keywords SET
+                        description = ?,
+                        section_id = ?,
+                        section_title = ?,
+                        subsection_id = ?,
+                        subsection_title = ?,
+                        nsfw = ?
+                    WHERE LOWER(keyword) = ?
+                """, (
+                    e['description'], e['section_id'], e['section_title'],
+                    e['subsection_id'], e['subsection_title'], int(e['nsfw']),
+                    key
+                ))
+                updated += 1
+            else:
+                # Nouveau → insérer
+                cur.execute("""
+                    INSERT INTO keywords
+                    (keyword, description, section_id, section_title, subsection_id, subsection_title, nsfw)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    e['keyword'], e['description'], e['section_id'], e['section_title'],
+                    e['subsection_id'], e['subsection_title'], int(e['nsfw'])
+                ))
+                imported += 1
+                existing.add(key)
+
         conn.commit()
 
         _generate_all_embeddings(conn)
         conn.close()
 
-        return jsonify({'imported': len(unique_entries), 'duplicates_skipped': len(entries) - len(unique_entries)})
+        dups_file = len(entries) - len(unique_map)
+        parts = [f"{imported} importes"]
+        if updated:
+            parts.append(f"{updated} mis a jour")
+        if dups_file:
+            parts.append(f"{dups_file} doublons ignores dans le fichier")
+        return jsonify({'imported': imported, 'updated': updated, 'duplicates_skipped': dups_file, 'message': ', '.join(parts)})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:

@@ -104,7 +104,16 @@
 
 
       <div id="main-content" class="w-full flex-1 overflow-hidden" style="display: none;">
-        <div id="panels-container" class="flex flex-1 overflow-hidden">
+      <!-- Empty state : centre sur l'ecran -->
+      <div id="empty-state" class="flex flex-col items-center justify-center text-center" style="position:absolute;inset:0;z-index:20;">
+        <div id="empty-icon" class="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center mb-5 dark:bg-slate-800">
+          <svg id="empty-svg" class="w-10 h-10 text-slate-400 dark:text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        </div>
+        <h2 id="empty-title" class="text-xl font-semibold text-slate-800 mb-2 dark:text-slate-200"></h2>
+        <p id="empty-desc" class="text-slate-500 max-w-sm mb-6 dark:text-slate-400"></p>
+        <a id="empty-btn" href="#" onclick="discordLogin();return false" class="hidden inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white rounded-lg shadow-md transition" style="background:#5865F2">Connexion avec Discord</a>
+        <button id="empty-import-btn" onclick="openImport()" class="hidden inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-md transition">Importer un fichier</button>
+      </div>        <div id="panels-container" class="flex flex-1 overflow-hidden">
 
           <!-- PANEL GAUCHE : Keywords -->
           <div id="panel-left" class="flex flex-col overflow-hidden" style="width: 50%; min-width: 200px;">
@@ -147,16 +156,7 @@
                   </div>
                 </div>
               </div>
-              <!-- Empty state -->
-              <div id="empty-state" class="flex flex-col items-center justify-center py-20 text-center">
-                <div id="empty-icon" class="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mb-4 dark:bg-slate-800">
-                  <svg id="empty-svg" class="w-8 h-8 text-slate-400 dark:text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
-                </div>
-                <h2 id="empty-title" class="text-lg font-semibold text-slate-800 mb-2 dark:text-slate-200"></h2>
-                <p id="empty-desc" class="text-slate-500 max-w-sm mb-4 dark:text-slate-400 text-sm"></p>
-                <a id="empty-btn" href="#" onclick="discordLogin();return false" class="hidden inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-lg shadow-md transition" style="background:#5865F2">Connexion avec Discord</a>
-                <button id="empty-import-btn" onclick="openImport()" class="hidden inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-md transition">Importer un fichier</button>
-              </div>
+
               <!-- Results table -->
               <div id="results-area" class="hidden">
                 <div class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden dark:bg-slate-800 dark:border-slate-700">
@@ -167,7 +167,7 @@
                     </p>
                   </div>
                   <div class="overflow-x-auto overflow-y-auto scrollbar-thin" style="max-height: calc(100vh - 200px);">
-                    <table class="w-full text-sm" style="table-layout:fixed">
+                    <table class="text-sm" style="table-layout:fixed;min-width:100%">
                       <thead class="bg-slate-50 sticky top-0 shadow-sm dark:bg-slate-800 dark:shadow-slate-700/30">
                         <tr id="table-header-row">
                           <th class="text-left px-4 py-2.5 font-semibold text-slate-600 border-b border-slate-200 w-44 dark:text-slate-400 dark:border-slate-700">Mot-cle</th>
@@ -215,7 +215,77 @@
 
           </div>
         </div>
+      <!-- Panneau Admin : modale flottante -->
+    <div id="admin-panel" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+      <div id="admin-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700"
+           style="width: 560px; max-height: 80vh; position: relative;">
+        <div id="admin-modal-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+          <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Panneau d'administration</h2>
+          <button onclick="toggleAdmin()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+        </div>
+        <div class="modal-body space-y-5" style="max-height: calc(80vh - 52px);">
+
+          <!-- Import / Export -->
+          <div>
+            <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Import / Export</h3>
+            <div class="flex flex-wrap gap-2">
+              <button onclick="openImport()" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                Importer .md
+              </button>
+              <button onclick="doExport()" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-slate-700 text-white rounded-md hover:bg-slate-600 transition">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Exporter .md
+              </button>
+            </div>
+          </div>
+
+          <hr class="border-slate-200 dark:border-slate-700">
+
+          <!-- Gestion utilisateurs -->
+          <div>
+            <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Utilisateurs</h3>
+            <div class="space-y-2" id="admin-users-list">
+              <p class="text-sm text-slate-400">Chargement...</p>
+            </div>
+          </div>
+
+          <hr class="border-slate-200 dark:border-slate-700">
+
+          <!-- Configuration Ollama -->
+          <div>
+            <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Ollama</h3>
+            <div class="space-y-2">
+              <div class="flex gap-2 items-center">
+                <label class="text-xs text-slate-500 w-16 shrink-0">URL</label>
+                <input type="text" id="admin-ollama-url" value="http://localhost:11434"
+                       class="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+              </div>
+              <div class="flex gap-2 items-center">
+                <label class="text-xs text-slate-500 w-16 shrink-0">Modèle</label>
+                <input type="text" id="admin-ollama-model" value="nomic-embed-text"
+                       class="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+              </div>
+              <div class="flex gap-2">
+                <button onclick="saveOllamaConfig()" class="px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">Sauvegarder</button>
+                <span id="admin-ollama-status" class="text-xs px-2 py-1 rounded bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400">...</span>
+              </div>
+            </div>
+          </div>
+
+          <hr class="border-slate-200 dark:border-slate-700">
+
+          <!-- Base de donnees -->
+          <div>
+            <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Base de donnees</h3>
+            <div class="flex flex-wrap gap-2">
+              <button onclick="adminClearDb()" class="px-3 py-1.5 text-sm font-medium bg-rose-600 text-white rounded-md hover:bg-rose-500 transition">Vider la BDD</button>
+            </div>
+          </div>
+
+        </div>
       </div>
+    </div>    </div>
 
       
     <!-- Modale Membres -->
@@ -355,11 +425,14 @@
 
     function showEmptyState(loggedIn) {
       emptyState.classList.remove('hidden');
+      emptyState.style.display = 'flex';
       resultsArea.classList.add('hidden');
       var filtersInPanel = document.getElementById('filters-bar');
       if (filtersInPanel) filtersInPanel.classList.add('hidden');
       var mc = document.getElementById('main-content');
-      if (mc) mc.style.display = loggedIn ? '' : 'none';
+      if (mc) mc.style.display = loggedIn ? '' : '';
+      var panels = document.getElementById('panels-container');
+      if (panels) panels.style.display = loggedIn ? 'flex' : 'none';
       if (loggedIn) {
         emptyTitle.textContent = 'Base de donnees vide';
         emptyDesc.innerHTML = 'Aucun mot-cle pour le moment. Importe un fichier .md pour commencer.';
@@ -424,9 +497,12 @@
     function updateUIState(hasData, stats) {
       if (hasData) {
         emptyState.classList.add('hidden');
+        emptyState.style.display = 'none';
         resultsArea.classList.remove('hidden');
         var filtersInPanel = document.getElementById('filters-bar');
         if (filtersInPanel) filtersInPanel.classList.remove('hidden');
+        var panels = document.getElementById('panels-container');
+        if (panels) panels.style.display = 'flex';
         statsText.textContent = stats.total + ' mots-cles · ' + stats.section_count + ' sections · ' + stats.nsfw_total + ' NSFW';
       } else {
         emptyState.classList.add('hidden');
@@ -592,7 +668,7 @@
       var container = document.getElementById('members-list');
       container.innerHTML = '<p class="text-sm text-slate-400">Chargement...</p>';
       try {
-        var res = await fetch(API + '/admin/users');
+        var res = await fetch(API + '/api/members');
         if (!res.ok) {
           container.innerHTML = '<p class="text-sm text-rose-500">Erreur ' + res.status + '</p>';
           return;
@@ -815,24 +891,33 @@
 
     function initColResize() {
       var headers = document.querySelectorAll('#table-header-row th');
+      // Initialiser les largeurs si pas encore fait (en px explicite)
+      if (!headers[0] || headers[0].style.width) return;
+      var widths = [200, 400, 180, 100]; // valeurs par defaut
+      for (var i = 0; i < headers.length; i++) {
+        var w = headers[i].offsetWidth || widths[i] || 150;
+        headers[i].style.width = w + 'px';
+      }
+
       headers.forEach(function(th, idx) {
-        if (idx === headers.length - 1) return; // pas de handle sur la derniere colonne
+        if (idx === headers.length - 1) return;
         if (th.querySelector('.col-resize-handle')) return;
         var handle = document.createElement('div');
         handle.className = 'col-resize-handle';
         handle.addEventListener('mousedown', function(e) {
           e.preventDefault();
           e.stopPropagation();
+          e.stopImmediatePropagation();  // empecher le drag des modales
           var next = headers[idx + 1];
           colResizeActive = {
             th: th, nextTh: next,
             startX: e.clientX,
-            w: th.getBoundingClientRect().width,
-            wNext: next.getBoundingClientRect().width,
+            w: th.offsetWidth,
+            wNext: next.offsetWidth,
             idx: idx
           };
           document.body.classList.add('col-resizing');
-        });
+        }, true);  // capturer en phase de capture
         th.appendChild(handle);
       });
     }
@@ -840,16 +925,18 @@
     document.addEventListener('mousemove', function(e) {
       if (!colResizeActive) return;
       var dx = e.clientX - colResizeActive.startX;
-      var w = Math.max(50, Math.min(800, colResizeActive.w + dx));
-      var wNext = Math.max(50, Math.min(800, colResizeActive.wNext - dx));
+      var w = Math.max(50, colResizeActive.w + dx);
+      var wNext = Math.max(50, colResizeActive.wNext - dx);
       var i = colResizeActive.idx;
       colResizeActive.th.style.width = w + 'px';
       colResizeActive.nextTh.style.width = wNext + 'px';
+      // Appliquer aux cellules
       var rows = document.querySelectorAll('#table-body tr');
-      rows.forEach(function(tr) {
-        var td = tr.children[i]; if (td) td.style.width = w + 'px';
-        var td2 = tr.children[i+1]; if (td2) td2.style.width = wNext + 'px';
-      });
+      for (var r = 0; r < rows.length; r++) {
+        var tds = rows[r].children;
+        if (tds[i]) tds[i].style.width = w + 'px';
+        if (tds[i+1]) tds[i+1].style.width = wNext + 'px';
+      }
     });
 
     document.addEventListener('mouseup', function() {
@@ -884,13 +971,13 @@
       headers.forEach(function(th, idx) {
         var txt = th.textContent.trim().toLowerCase().replace(/[^a-z]/g, '') || 'col' + idx;
         var w = cols[txt];
-        if (w) {
+        if (w && w > 50) {
           th.style.width = w + 'px';
           var rows = document.querySelectorAll('#table-body tr');
-          rows.forEach(function(tr) {
-            var td = tr.children[idx];
+          for (var r = 0; r < rows.length; r++) {
+            var td = rows[r].children[idx];
             if (td) td.style.width = w + 'px';
-          });
+          }
         }
       });
     }
@@ -978,7 +1065,7 @@
         const res = await fetch(`${API}/import`, { method: 'POST', body: fd });
         const data = await res.json();
         if (!res.ok || data.error) throw new Error(data.error || `Erreur ${res.status}`);
-        showImportStatus(true, `${data.imported} mots-cles importes` + (data.duplicates_skipped ? ` (${data.duplicates_skipped} doublons ignores)` : '') + `.`);
+        showImportStatus(true, data.message || `${data.imported} importes` + (data.updated ? `, ${data.updated} mis a jour` : '') + (data.duplicates_skipped ? `, ${data.duplicates_skipped} ignores` : '') + '.');
         await checkData();
       } catch (err) {
         showImportStatus(false, err.message || 'Erreur lors de l\'import');
