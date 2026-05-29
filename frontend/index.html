@@ -154,10 +154,54 @@
                       <span class="text-rose-600 dark:text-rose-400">NSFW</span>
                     </label>
                   </div>
+                  <!-- Ligne 3 : confiance + load/save filter -->
+                  <div class="flex flex-wrap items-center gap-2" id="filter-actions-row">
+                    <label class="inline-flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                      <span>Confiance:</span>
+                      <input type="range" id="filter-confidence" min="0" max="100" value="0"
+                             class="w-20 h-1 accent-indigo-500">
+                      <span id="filter-confidence-val" class="w-6 text-right">0%</span>
+                    </label>
+                    <span class="text-slate-300 dark:text-slate-600">|</span>
+                    <button onclick="openFilterListModal()" class="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium border border-slate-300 text-slate-500 rounded-md hover:bg-slate-100 transition dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700">
+                      <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
+                      Charger
+                    </button>
+                    <span id="filter-loaded-name" class="hidden text-xs text-indigo-600 dark:text-indigo-400 font-medium truncate max-w-[160px]"></span>
+                    <button id="btn-filter-save" onclick="saveCurrentFilter()" class="hidden inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200 transition dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50">
+                      <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                      Save
+                    </button>
+                    <button id="btn-filter-saveas" onclick="openSaveFilter()" class="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium border border-slate-300 text-slate-500 rounded-md hover:bg-slate-100 transition dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700">
+                      <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+                      Save As
+                    </button>
+                    <button id="btn-filter-discard" onclick="discardFilter()" class="hidden text-xs text-slate-400 hover:text-rose-400 transition p-1">&times;</button>
+                  </div>
                 </div>
               </div>
 
-              <!-- Results table -->
+              <!-- Modale Save Filter -->
+              <div id="modal-save-filter" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+                <div class="bg-white border border-slate-200 rounded-xl shadow-2xl p-5 w-80 dark:bg-slate-800 dark:border-slate-700">
+                  <h3 class="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Sauvegarder ce filtre</h3>
+                  <div class="space-y-2">
+                    <input type="text" id="save-filter-name" placeholder="Nom du filtre..." class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                    <input type="text" id="save-filter-cat" placeholder="Categorie (optionnel)..." class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                    <div class="flex gap-2">
+                      <label class="flex items-center gap-1 text-xs"><input type="radio" name="save-filter-nsfw" value="0" checked> SFW</label>
+                      <label class="flex items-center gap-1 text-xs"><input type="radio" name="save-filter-nsfw" value="1"> NSFW</label>
+                    </div>
+                    <label class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                      <input type="checkbox" id="save-filter-public"> Public (visible par tous)
+                    </label>
+                  </div>
+                  <div class="flex justify-end gap-2 mt-3">
+                    <button onclick="closeSaveFilter()" class="px-3 py-1.5 text-sm text-slate-500 hover:text-slate-700">Annuler</button>
+                    <button onclick="saveFilter()" class="px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500">Enregistrer</button>
+                  </div>
+                </div>
+              </div>
               <div id="results-area" class="hidden">
                 <div class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden dark:bg-slate-800 dark:border-slate-700">
                   <div class="border-b border-slate-200 bg-slate-50 px-4 py-2 flex items-center justify-between dark:border-slate-700 dark:bg-slate-800/80">
@@ -194,9 +238,42 @@
             <div id="panel-right-top" class="flex flex-col overflow-hidden" style="height: 50%; min-height: 100px;">
               <div class="flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shrink-0">
                 <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Prompt Generator</span>
+                <span id="gen-count" class="text-xs text-slate-400">0</span>
               </div>
-              <div class="flex-1 flex items-center justify-center bg-slate-50/50 dark:bg-slate-900/30 text-slate-400 dark:text-slate-500 text-sm italic">
-                Prompt Generator — bientot disponible
+              <div class="flex flex-col flex-1 overflow-hidden">
+                <div id="gen-elements" class="flex-1 overflow-y-auto p-2 space-y-1.5"></div>
+                <div class="border-t border-slate-200 dark:border-slate-700 p-2 space-y-2 shrink-0">
+                  <div class="flex gap-2">
+                    <button onclick="genAddElement()" class="flex-1 px-3 py-1.5 text-xs font-medium border border-slate-300 text-slate-500 rounded-md hover:bg-slate-100 transition dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700">+ Element</button>
+                    <button onclick="genGenerate()" class="flex-1 px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">Generer</button>
+                  </div>
+                  <textarea id="gen-output" readonly rows="3" placeholder="Le prompt..." class="w-full px-3 py-2 text-xs border border-slate-300 rounded-md resize-none bg-slate-50 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 dark:placeholder-slate-400 font-mono"></textarea>
+                  <button onclick="genCopy()" class="w-full px-3 py-1 text-xs font-medium bg-slate-100 text-slate-500 rounded-md hover:bg-slate-200 transition dark:bg-slate-700 dark:text-slate-400 dark:hover:bg-slate-600">Copier</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Modale picker filtres -->
+            <div id="modal-filter-pick" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+              <div class="bg-white border border-slate-200 rounded-xl shadow-2xl w-96 max-h-96 flex flex-col dark:bg-slate-800 dark:border-slate-700">
+                <div class="flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-slate-700">
+                  <span class="text-xs font-semibold text-slate-700 dark:text-slate-300">Choisir un filtre</span>
+                  <button onclick="closeFilterPick()" class="text-xs text-slate-400 hover:text-slate-600">&times;</button>
+                </div>
+                <div class="flex gap-2 px-3 py-2 border-b border-slate-100 dark:border-slate-700 text-xs">
+                  <select id="fp-owner" onchange="loadFilterList()" class="flex-1 border border-slate-200 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                    <option value="mine">Mes filtres</option>
+                    <option value="all">Mes filtres + publics</option>
+                  </select>
+                  <select id="fp-nsfw" onchange="loadFilterList()" class="flex-1 border border-slate-200 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                    <option value="">Tout</option>
+                    <option value="0">SFW</option>
+                    <option value="1">NSFW</option>
+                  </select>
+                </div>
+                <div id="fp-list" class="flex-1 overflow-y-auto p-2 space-y-1 text-xs">
+                  <p class="text-slate-400">Chargement...</p>
+                </div>
               </div>
             </div>
 
@@ -301,6 +378,24 @@
           </div>
         </div>
       </div>
+    </div>    <!-- Modale generique -->
+    <div id="modal-generic" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+      <div class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 380px;">
+        <div id="modal-generic-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+          <span id="modal-generic-title" class="text-sm font-semibold text-slate-800 dark:text-slate-200"></span>
+          <button onclick="closeModal()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+        </div>
+        <div class="p-5">
+          <p id="modal-generic-body" class="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap"></p>
+          <div id="modal-generic-input-area" class="hidden mt-2">
+            <input type="text" id="modal-generic-input" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" placeholder="">
+          </div>
+          <div class="flex justify-end gap-2 mt-4">
+            <button id="modal-generic-cancel" onclick="closeModal()" class="hidden px-3 py-1.5 text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">Annuler</button>
+            <button id="modal-generic-ok" onclick="modalOK()" class="px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500">OK</button>
+          </div>
+        </div>
+      </div>
     </div>    <!-- Modale Import -->
     <div id="modal-import" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
       <div id="import-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 520px; position: relative;">
@@ -337,6 +432,7 @@
     let allKeywords = [];
     let sectionsList = [];
     let currentUser = null;
+    let semanticCache = null;  // { text, results: [...], timestamp }
 
     // === DOM refs ===
     const $ = id => document.getElementById(id);
@@ -386,8 +482,22 @@
       await checkAuth();
       searchInput?.addEventListener('input', () => { clearTimeout(textTimer); textTimer = setTimeout(applyFilters, 300); });
       semanticInput?.addEventListener('input', () => { clearTimeout(semanticTimer); semanticTimer = setTimeout(applyFilters, 400); });
-      sectionSelect?.addEventListener('change', () => applyFilters());
-      document.querySelectorAll('input[name="nsfw-filter"]').forEach(el => el.addEventListener('change', () => applyFilters()));
+      sectionSelect?.addEventListener('change', function(){ semanticCache = null; applyFilters(); });
+      document.querySelectorAll('input[name="nsfw-filter"]').forEach(el => el.addEventListener('change', function(){ semanticCache = null; applyFilters(); }));
+      var confSlider = document.getElementById('filter-confidence');
+      if (confSlider) {
+        confSlider.addEventListener('input', function() {
+          document.getElementById('filter-confidence-val').textContent = this.value + '%';
+          var semInput = document.getElementById('search-semantic-input');
+          if (semInput && semInput.value.trim() && semanticCache && semanticCache.text === semInput.value.trim()) {
+            // Filtrer depuis le cache, pas d'appel API
+            var conf = parseInt(this.value) / 100;
+            var filtered = conf > 0 ? semanticCache.results.filter(function(k){ return k.score >= conf; }) : semanticCache.results;
+            allKeywords = filtered;
+            renderTable(allKeywords);
+          }
+        });
+      }
       if (currentUser) await checkData();
     }
 
@@ -532,14 +642,28 @@
       const semQ = semanticInput.value.trim();
       const nsfw = getNsfwFilter();
       const section = sectionSelect.value;
+      const confidence = parseFloat(document.getElementById('filter-confidence').value) / 100 || 0;
 
-      // Lancer les deux requetes en parallele
-      const [textResults, semResults] = await Promise.all([
+      let semResults = null;
+      if (semQ) {
+        // Refaire l'appel seulement si le texte a change
+        if (!semanticCache || semanticCache.text !== semQ) {
+          semResults = await fetchSemanticSearch(semQ, nsfw, section, 0);  // seuil 0 = tout recuperer
+          if (semResults) {
+            semanticCache = { text: semQ, results: semResults };
+          }
+        } else {
+          semResults = semanticCache.results;
+        }
+        // Filtrer par confiance cote client
+        if (confidence > 0 && semResults) {
+          semResults = semResults.filter(function(kw) { return kw.score >= confidence; });
+        }
+      }
+      const [textResults] = await Promise.all([
         textQ ? fetchTextSearch(textQ, nsfw, section) : Promise.resolve(null),
-        semQ ? fetchSemanticSearch(semQ, nsfw, section) : Promise.resolve(null),
       ]);
 
-      // Si les deux sont actives, fusionner : les resultats semantiques remplacent les textuels
       if (semResults !== null) {
         allKeywords = semResults;
       } else if (textResults !== null) {
@@ -568,7 +692,7 @@
       } catch { return []; }
     }
 
-    async function fetchSemanticSearch(q, nsfw, section) {
+    async function fetchSemanticSearch(q, nsfw, section, confidence) {
       semanticLoading.classList.remove('hidden');
       try {
         const params = new URLSearchParams();
@@ -576,6 +700,7 @@
         params.append('limit', '50');
         if (section) params.append('section', section);
         if (nsfw !== '') params.append('nsfw', nsfw);
+        if (confidence > 0) params.append('confidence', confidence);
         const res = await fetch(API + '/search/semantic?' + params.toString());
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
@@ -642,6 +767,405 @@
       return div.innerHTML;
     }
 
+
+
+
+    // === Prompt Generator ===
+    var genElementId = 0;
+    var genElements = [];
+    var genFilters = [];
+
+    function genAddElement(type) {
+      type = type || '';
+      var id = ++genElementId;
+      genElements.push({id: id, type: type, filterId: null, text: '', filterName: ''});
+      genRender();
+    }
+
+    function genRemoveElement(id) {
+      genElements = genElements.filter(function(e){ return e.id !== id; });
+      genRender();
+    }
+
+    function genRender() {
+      var container = document.getElementById('gen-elements');
+      var html = '';
+      for (var i = 0; i < genElements.length; i++) {
+        var el = genElements[i];
+        html += '<div class="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-700/30 rounded p-1.5">';
+        if (el.type === 'filter' && el.filterName) {
+          html += '<span class="flex-1 text-xs text-indigo-600 dark:text-indigo-400 truncate">' + escapeHtml(el.filterName) + '</span>';
+          html += '<button onclick="genChangeType(' + el.id + ')" class="text-xs text-slate-400 hover:text-slate-600 p-0.5" title="Changer">↻</button>';
+        } else if (el.type === 'text' && el.text) {
+          html += '<span class="flex-1 text-xs text-emerald-600 dark:text-emerald-400 truncate">\"' + escapeHtml(el.text) + '\"</span>';
+          html += '<button onclick="genChangeType(' + el.id + ')" class="text-xs text-slate-400 hover:text-slate-600 p-0.5" title="Changer">↻</button>';
+        } else {
+          html += '<select onchange="genOnTypeChange(this,' + el.id + ')" class="flex-1 text-xs border border-slate-300 rounded dark:bg-slate-600 dark:border-slate-500 dark:text-slate-200 py-0.5">';
+          html += '<option value="">-- choisir --</option>';
+          html += '<option value="filter">Filtre enregistre...</option>';
+          html += '<option value="text">Texte libre...</option>';
+          html += '</select>';
+        }
+        html += '<button onclick="genRemoveElement(' + el.id + ')" class="text-xs text-rose-400 hover:text-rose-300 p-1" title="Supprimer">&times;</button>';
+        html += '</div>';
+      }
+      container.innerHTML = html;
+      document.getElementById('gen-count').textContent = genElements.length;
+      if (genElements.length === 0) {
+        container.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">Ajoute un element pour commencer</p>';
+        document.getElementById('gen-count').textContent = '0';
+      }
+    }
+
+    function genChangeType(id) {
+      for (var i = 0; i < genElements.length; i++) {
+        if (genElements[i].id === id) {
+          genElements[i].type = '';
+          genElements[i].filterId = null;
+          genElements[i].text = '';
+          genElements[i].filterName = '';
+          break;
+        }
+      }
+      genRender();
+    }
+
+    function genOnTypeChange(select, id) {
+      var val = select.value;
+      for (var i = 0; i < genElements.length; i++) {
+        if (genElements[i].id === id) {
+          genElements[i].type = val;
+          genElements[i].filterId = null;
+          genElements[i].text = '';
+          genElements[i].filterName = '';
+          break;
+        }
+      }
+      if (val === 'filter') {
+        openFilterPick(id);
+      } else if (val === 'text') {
+        var txt = prompt('Recherche semantique (mot ou phrase) :');
+        if (txt) {
+          for (var i = 0; i < genElements.length; i++) {
+            if (genElements[i].id === id) {
+              genElements[i].text = txt.trim();
+              break;
+            }
+          }
+        } else {
+          for (var i = 0; i < genElements.length; i++) {
+            if (genElements[i].id === id) { genElements[i].type = ''; break; }
+          }
+        }
+      }
+      genRender();
+    }
+
+    // Filter picker modal
+    var fpTargetId = null;
+
+    function openFilterPick(elementId) {
+      fpTargetId = elementId;
+      document.getElementById('modal-filter-pick').classList.remove('hidden');
+      document.getElementById('modal-filter-pick').classList.add('flex');
+      loadFilterList();
+    }
+
+    function closeFilterPick() {
+      document.getElementById('modal-filter-pick').classList.add('hidden');
+      document.getElementById('modal-filter-pick').classList.remove('flex');
+      fpTargetId = null;
+      // Si l'utilisateur ferme sans choisir, enlever l'element
+      if (genElements.some(function(e){ return e.id === fpTargetId && !e.filterId; })) {
+        for (var i = 0; i < genElements.length; i++) {
+          if (genElements[i].id === fpTargetId) { genElements[i].type = ''; break; }
+        }
+        genRender();
+      }
+    }
+
+    async function loadFilterList() {
+      var owner = document.getElementById('fp-owner').value;
+      var nsfw = document.getElementById('fp-nsfw').value;
+      try {
+        var res = await fetch(API + '/filters');
+        if (!res.ok) return;
+        var all = await res.json();
+        var filtered = all.filter(function(f) {
+          if (owner === 'mine' && f.user_id !== (currentUser ? currentUser.id : '')) return false;
+          if (nsfw !== '' && f.nsfw !== parseInt(nsfw)) return false;
+          return true;
+        });
+        var list = document.getElementById('fp-list');
+        list.innerHTML = filtered.map(function(f) {
+          var badge = f.nsfw ? '<span class="text-xs text-rose-400">NSFW</span>' : '<span class="text-xs text-emerald-400">SFW</span>';
+          var pub = f.is_public ? '<span class="text-xs text-slate-400">public</span>' : '';
+          return '<div class="flex items-center gap-2 p-1.5 rounded hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer" onclick="pickFilter(' + f.id + ',\'' + escapeHtml(f.name).replace(/'/g,"\\'") + '\')">'
+            + '<span class="flex-1 text-slate-700 dark:text-slate-300">' + escapeHtml(f.name) + '</span>'
+            + badge + ' ' + pub
+            + '</div>';
+        }).join('');
+        if (filtered.length === 0) {
+          list.innerHTML = '<p class="text-slate-400 text-center">Aucun filtre trouve</p>';
+        }
+      } catch {}
+    }
+
+    function pickFilter(filterId, name) {
+      if (fpTargetId === -1) {
+        // Mode "charger" depuis les filtres
+        loadFilterIntoPanel(filterId);
+      } else {
+        // Mode "choisir" pour le generateur
+        for (var i = 0; i < genElements.length; i++) {
+          if (genElements[i].id === fpTargetId) {
+            genElements[i].filterId = filterId;
+            genElements[i].filterName = name;
+            break;
+          }
+        }
+        closeFilterPick();
+        genRender();
+      }
+    }
+
+    // Generation
+    async function genGenerate() {
+      var items = [];
+      for (var i = 0; i < genElements.length; i++) {
+        var el = genElements[i];
+        if (el.type === 'filter' && el.filterId) items.push({type: 'filter', id: el.filterId});
+        else if (el.type === 'text' && el.text) items.push({type: 'text', text: el.text});
+      }
+      if (items.length === 0) { showModal('Generateur', 'Ajoute au moins un element', 'error'); return; }
+
+      try {
+        var res = await fetch(API + '/generate', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({elements: items})
+        });
+        if (!res.ok) {
+          var err = await res.json().catch(function(){ return {}; });
+          showModal('Erreur', err.error || 'Generation impossible', 'error');
+          return;
+        }
+        var data = await res.json();
+        var output = data.prompt;
+        if (data.count === 0) output = '(aucun mot-cle trouve : verifie les filtres et le cache)';
+        document.getElementById('gen-output').value = output;
+        // Log debug dans la console
+        if (data.elements) {
+          console.log('Generation:', data.elements.map(function(e){ return e.source + ':"' + e.keyword + '" score=' + e.score; }).join(', '));
+        }
+        document.getElementById('gen-count').textContent = data.count;
+      } catch (err) {
+        showModal('Erreur', err.message || 'Une erreur est survenue', 'error');
+      }
+    }
+
+    function genCopy() {
+      var ta = document.getElementById('gen-output');
+      ta.select();
+      document.execCommand('copy');
+    }
+
+    // === Save Filter ===
+    var loadedFilterId = null;
+
+    function openSaveFilter() {
+      document.getElementById('modal-save-filter').classList.remove('hidden');
+      document.getElementById('modal-save-filter').classList.add('flex');
+      document.getElementById('save-filter-name').focus();
+    }
+    function closeSaveFilter() {
+      document.getElementById('modal-save-filter').classList.add('hidden');
+      document.getElementById('modal-save-filter').classList.remove('flex');
+    }
+    function discardFilter() {
+      loadedFilterId = null;
+      document.getElementById('filter-loaded-name').classList.add('hidden');
+      document.getElementById('btn-filter-save').classList.add('hidden');
+      document.getElementById('btn-filter-discard').classList.add('hidden');
+    }
+
+    function getFilterConfig() {
+      return {
+        section: document.getElementById('section-select').value,
+        search_text: document.getElementById('search-input').value,
+        semantic_text: document.getElementById('search-semantic-input').value,
+        nsfw_filter: getNsfwFilter(),
+        min_confidence: parseFloat(document.getElementById('filter-confidence').value) / 100
+      };
+    }
+
+    function applyFilterConfig(config) {
+      var c = config || {};
+      document.getElementById('section-select').value = c.section || '';
+      document.getElementById('search-input').value = c.search_text || '';
+      document.getElementById('search-semantic-input').value = c.semantic_text || '';
+      var nsfw = c.nsfw_filter !== undefined ? c.nsfw_filter : '';
+      document.querySelectorAll('input[name="nsfw-filter"]').forEach(function(r){ r.checked = r.value === nsfw; });
+      document.getElementById('filter-confidence').value = Math.round((c.min_confidence || 0) * 100);
+      document.getElementById('filter-confidence-val').textContent = Math.round((c.min_confidence || 0) * 100) + '%';
+      applyFilters();
+    }
+
+    async function saveCurrentFilter() {
+      if (!loadedFilterId) return;
+      var config = getFilterConfig();
+      try {
+        var res = await fetch(API + '/filters/' + loadedFilterId, {
+          method: 'PUT',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({config: config})
+        });
+        if (res.ok) {
+          showModal('Filtre', 'Filtre mis a jour', 'success');
+        } else {
+          var err = await res.json().catch(function(){ return {}; });
+          showModal('Erreur', err.error || '', 'error');
+        }
+      } catch (err) {
+        showModal('Erreur', err.message || 'Une erreur est survenue', 'error');
+      }
+    }
+
+    async function saveFilter() {
+      var name = document.getElementById('save-filter-name').value.trim();
+      if (!name) { showModal('Filtre', 'Donne un nom au filtre', 'error'); return; }
+      var cat = document.getElementById('save-filter-cat').value.trim();
+      var nsfw = document.querySelector('input[name="save-filter-nsfw"]:checked');
+      var nsfwVal = nsfw ? parseInt(nsfw.value) : 0;
+      var isPublic = document.getElementById('save-filter-public').checked ? 1 : 0;
+      var config = getFilterConfig();
+      try {
+        var res = await fetch(API + '/filters', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({name: name, category: cat, nsfw: nsfwVal, is_public: isPublic, config: config})
+        });
+        if (res.ok) {
+          var data = await res.json();
+          closeSaveFilter();
+          document.getElementById('save-filter-name').value = '';
+          document.getElementById('save-filter-cat').value = '';
+          var pvw = data.preview && data.preview.length > 0 ? '\n\nApercu: ' + data.preview.join(', ') : '';
+          showModal('Filtre', 'Sauvegarde ! ' + data.count + ' mots-cles dans le cache.' + pvw, 'success');
+        } else {
+          var err = await res.json().catch(function(){ return {}; });
+          showModal('Erreur', err.error || 'Impossible de sauvegarder', 'error');
+        }
+      } catch (err) {
+        showModal('Erreur', err.message || 'Une erreur est survenue', 'error');
+      }
+    }
+
+    function openFilterListModal() {
+      document.getElementById('modal-filter-pick').classList.remove('hidden');
+      document.getElementById('modal-filter-pick').classList.add('flex');
+      fpTargetId = -1;
+      document.getElementById('fp-owner').value = 'mine';
+      loadFilterList();
+    }
+
+    function loadFilterIntoPanel(filterId) {
+      fetch(API + '/filters/' + filterId + '/preview').then(function(res){
+        return res.json();
+      }).then(function(data){
+        applyFilterConfig(data.config || {});
+        loadedFilterId = filterId;
+        var nameEl = document.getElementById('filter-loaded-name');
+        nameEl.textContent = data.name || 'Filtre';
+        nameEl.classList.remove('hidden');
+        document.getElementById('btn-filter-save').classList.remove('hidden');
+        document.getElementById('btn-filter-discard').classList.remove('hidden');
+        closeFilterPick();
+        showModal('Filtre', 'Filtre charge : ' + data.name + ' (' + data.total + ' mots-cles en cache)', 'success');
+      }).catch(function(){});
+    }
+
+
+    // === Modale generique ===
+    var modalCallback = null;
+    var modalType = '';
+
+    function showModal(title, msg, type) {
+      document.getElementById('modal-generic-title').textContent = title;
+      document.getElementById('modal-generic-body').textContent = msg;
+      document.getElementById('modal-generic-input-area').classList.add('hidden');
+      document.getElementById('modal-generic-cancel').classList.add('hidden');
+      document.getElementById('modal-generic-ok').textContent = 'OK';
+      var header = document.getElementById('modal-generic-header');
+      if (type === 'error') {
+        var okBtn = document.getElementById('modal-generic-ok');
+        okBtn.className = 'px-3 py-1.5 text-sm font-medium bg-rose-600 text-white rounded-md hover:bg-rose-500';
+        header.className = header.className.replace('bg-slate-50','bg-rose-50').replace('dark:bg-slate-800/80','dark:bg-rose-900/20');
+      } else if (type === 'success') {
+        var okBtn = document.getElementById('modal-generic-ok');
+        okBtn.className = 'px-3 py-1.5 text-sm font-medium bg-emerald-600 text-white rounded-md hover:bg-emerald-500';
+        header.className = header.className.replace('bg-slate-50','bg-emerald-50').replace('dark:bg-slate-800/80','dark:bg-emerald-900/20');
+      } else {
+        var okBtn = document.getElementById('modal-generic-ok');
+        okBtn.className = 'px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500';
+      }
+      modalType = type || '';
+      modalCallback = null;
+      document.getElementById('modal-generic').classList.remove('hidden');
+      document.getElementById('modal-generic').classList.add('flex');
+    }
+
+    function showConfirm(title, msg, cb) {
+      document.getElementById('modal-generic-title').textContent = title;
+      document.getElementById('modal-generic-body').textContent = msg;
+      document.getElementById('modal-generic-input-area').classList.add('hidden');
+      document.getElementById('modal-generic-cancel').classList.remove('hidden');
+      document.getElementById('modal-generic-ok').textContent = 'Oui';
+      document.getElementById('modal-generic-ok').className = 'px-3 py-1.5 text-sm font-medium bg-rose-600 text-white rounded-md hover:bg-rose-500';
+      modalType = 'confirm';
+      modalCallback = cb;
+      document.getElementById('modal-generic').classList.remove('hidden');
+      document.getElementById('modal-generic').classList.add('flex');
+    }
+
+    function showPrompt(title, msg, placeholder, cb) {
+      document.getElementById('modal-generic-title').textContent = title;
+      document.getElementById('modal-generic-body').textContent = msg;
+      document.getElementById('modal-generic-input-area').classList.remove('hidden');
+      document.getElementById('modal-generic-input').value = '';
+      document.getElementById('modal-generic-input').placeholder = placeholder || '';
+      document.getElementById('modal-generic-input').focus();
+      document.getElementById('modal-generic-cancel').classList.remove('hidden');
+      document.getElementById('modal-generic-ok').textContent = 'OK';
+      document.getElementById('modal-generic-ok').className = 'px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500';
+      modalType = 'prompt';
+      modalCallback = cb;
+      document.getElementById('modal-generic').classList.remove('hidden');
+      document.getElementById('modal-generic').classList.add('flex');
+    }
+
+    function closeModal() {
+      document.getElementById('modal-generic').classList.add('hidden');
+      document.getElementById('modal-generic').classList.remove('flex');
+      // Reset header style
+      var header = document.getElementById('modal-generic-header');
+      header.className = 'border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none';
+      if (modalCallback) modalCallback(null);
+      modalCallback = null;
+    }
+
+    function modalOK() {
+      var result = null;
+      if (modalType === 'confirm') result = true;
+      if (modalType === 'prompt') result = document.getElementById('modal-generic-input').value.trim() || null;
+      closeModal();
+      if (modalCallback && result !== null) modalCallback(result);
+    }
+
+    // Drag pour la modale generique
+    document.addEventListener('DOMContentLoaded', function() {
+      makeModalDraggable('modal-generic-header', 'modal-generic');
+    });
 
     // === Panneau Admin ===
     function toggleAdmin() {
@@ -742,17 +1266,17 @@
         });
         if (res.ok) loadAdminUsers();
       } catch (err) {
-        alert('Erreur: ' + (err.message || 'action impossible'));
+        showModal('Erreur', err.message || 'Action impossible', 'error');
       }
     }
 
     async function deleteUser(userId) {
-      if (!confirm('Supprimer cet utilisateur et tous ses mots-cles ?')) return;
+      showConfirm('Suppression', 'Supprimer cet utilisateur et tous ses mots-cles ?', function(ok){ if (ok) deleteUserConfirm(userId); }); return;
       try {
         var res = await fetch(API + '/admin/users/' + encodeURIComponent(userId), {method: 'DELETE'});
         if (res.ok) loadAdminUsers();
       } catch (err) {
-        alert('Erreur: ' + (err.message || ''));
+        showModal('Erreur', err.message || 'Une erreur est survenue', 'error');
       }
     }
 
@@ -776,7 +1300,7 @@
     async function saveOllamaConfig() {
       var url = document.getElementById('admin-ollama-url').value.trim();
       var model = document.getElementById('admin-ollama-model').value.trim();
-      if (!url || !model) { alert('URL et modele requis'); return; }
+      if (!url || !model) { showModal('Config', 'URL et modele requis', 'error'); return; }
       try {
         var res = await fetch(API + '/admin/settings/ollama', {
           method: 'POST',
@@ -797,7 +1321,7 @@
     }
 
     async function adminClearDb() {
-      if (!confirm('Vider la base de donnees ? Cette action est irreversible.')) return;
+      showConfirm('Vider la BDD', 'Vider la base de donnees ? Cette action est irreversible.', function(ok){ if (ok) adminClearDbConfirm(); }); return;
       try {
         var res = await fetch(API + '/admin/db/clear', {method: 'POST'});
         if (res.ok) {
@@ -1095,7 +1619,7 @@
         a.remove();
         URL.revokeObjectURL(url);
       } catch (err) {
-        alert('Erreur export : ' + err.message);
+        showModal('Erreur', 'Export impossible : ' + err.message, 'error');
       }
     }
   </script>

@@ -2,6 +2,7 @@ import os
 import sqlite3
 import io
 import json
+import random
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -94,6 +95,29 @@ def _init_db():
         CREATE TABLE IF NOT EXISTS app_settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS saved_filters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            category TEXT DEFAULT '',
+            nsfw INTEGER DEFAULT 0,
+            is_public INTEGER DEFAULT 0,
+            config TEXT NOT NULL DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS filter_cache (
+            filter_id INTEGER NOT NULL,
+            keyword_id INTEGER NOT NULL,
+            PRIMARY KEY (filter_id, keyword_id),
+            FOREIGN KEY (filter_id) REFERENCES saved_filters(id) ON DELETE CASCADE,
+            FOREIGN KEY (keyword_id) REFERENCES keywords(id) ON DELETE CASCADE
         )
     """)
 
@@ -505,6 +529,7 @@ def semantic_search():
     limit = int(request.args.get('limit', 50))
     nsfw = request.args.get('nsfw', '')
     section = request.args.get('section', '').strip()
+    min_confidence = float(request.args.get('confidence', 0))
 
     if not q:
         return jsonify([])
@@ -549,6 +574,8 @@ def semantic_search():
     for row in rows:
         vec = json.loads(row['embedding'])
         similarity = cosine_similarity(query_vec, vec)
+        if similarity < min_confidence:
+            continue
         results.append({
             'id': row['id'],
             'keyword': row['keyword'],
@@ -764,6 +791,235 @@ def build_embeddings():
         return jsonify({'status': 'ok'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/filters', methods=['GET', 'POST'])
+def filters():
+    guard = _login_required()
+    if guard:
+        return guard
+    user_id = _get_current_user_id()
+
+    if request.method == 'POST':
+        data = request.get_json()
+        if not data or not data.get('name'):
+            return jsonify({'error': 'Nom requis'}), 400
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO saved_filters (user_id, name, category, nsfw, is_public, config) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, data['name'].strip(), data.get('category', '').strip(), int(data.get('nsfw', 0)), int(data.get('is_public', 0)), json.dumps(data.get('config', {})))
+        )
+        filter_id = cur.lastrowid
+        conn.commit()
+        config = data.get('config', {})
+        if isinstance(config, dict):
+            _rebuild_filter_cache(cur, filter_id, config)
+        conn.commit()
+        conn.close()
+        return jsonify({'id': filter_id, 'count': _count_filter_cache(filter_id)}), 201
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, user_id, name, category, nsfw, is_public, config FROM saved_filters WHERE user_id = ? OR is_public = 1 ORDER BY name", (user_id,))
+    rows = cur.fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d['config'] = json.loads(d['config']) if isinstance(d['config'], str) else d['config']
+        result.append(d)
+    return jsonify(result)
+
+
+@app.route('/api/filters/<int:filter_id>', methods=['PUT', 'DELETE'])
+def single_filter(filter_id):
+    guard = _login_required()
+    if guard: return guard
+    user_id = _get_current_user_id()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM saved_filters WHERE id = ?", (filter_id,))
+    row = cur.fetchone()
+    if not row or row['user_id'] != user_id:
+        conn.close()
+        return jsonify({'error': 'Not found'}), 404
+    if request.method == 'DELETE':
+        cur.execute("DELETE FROM saved_filters WHERE id = ?", (filter_id,))
+        conn.commit(); conn.close()
+        return jsonify({'status': 'ok'})
+    data = request.get_json() or {}
+    vals = (
+        data.get('name', row['name']),
+        data.get('category', row['category'] or ''),
+        int(data.get('nsfw', row['nsfw'])),
+        int(data.get('is_public', row['is_public'])),
+        filter_id
+    )
+    cur.execute("UPDATE saved_filters SET name=?, category=?, nsfw=?, is_public=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", vals)
+    conn.commit()
+    config = data.get('config')
+    if config and isinstance(config, dict):
+        cur.execute("DELETE FROM filter_cache WHERE filter_id = ?", (filter_id,))
+        _rebuild_filter_cache(cur, filter_id, config)
+    conn.commit(); conn.close()
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/filters/<int:filter_id>/refresh', methods=['POST'])
+def refresh_filter_cache(filter_id):
+    guard = _login_required()
+    if guard: return guard
+    user_id = _get_current_user_id()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id, config FROM saved_filters WHERE id = ?", (filter_id,))
+    row = cur.fetchone()
+    if not row or row['user_id'] != user_id:
+        conn.close()
+        return jsonify({'error': 'Not found'}), 404
+    config = json.loads(row['config']) if isinstance(row['config'], str) else row['config']
+    cur.execute("DELETE FROM filter_cache WHERE filter_id = ?", (filter_id,))
+    _rebuild_filter_cache(cur, filter_id, config)
+    conn.commit(); conn.close()
+    return jsonify({'status': 'ok', 'count': _count_filter_cache(filter_id)})
+
+
+def _rebuild_filter_cache(cur, filter_id, config):
+    conditions = ["1=1"]
+    params = []
+    section = config.get('section', '').strip()
+    search_text = config.get('search_text', '').strip()
+    semantic_text = config.get('semantic_text', '').strip()
+    min_confidence = float(config.get('min_confidence', 0))
+    nsfw = str(config.get('nsfw_filter', ''))
+
+    if section:
+        conditions.append("k.section_id = ?")
+        params.append(section)
+    if nsfw == '0':
+        conditions.append("k.nsfw = 0")
+    elif nsfw == '1':
+        conditions.append("k.nsfw = 1")
+    if search_text and not semantic_text:
+        like = f"%{search_text.lower()}%"
+        conditions.append("(LOWER(k.keyword) LIKE ? OR LOWER(k.description) LIKE ?)")
+        params.extend([like, like])
+
+    if semantic_text:
+        try:
+            from embeddings import generate_embedding, cosine_similarity
+            qe = generate_embedding(semantic_text)
+            cur.execute("SELECT k.id, ke.embedding FROM keywords k JOIN keyword_embeddings ke ON ke.keyword_id = k.id")
+            for r in cur.fetchall():
+                emb = json.loads(r['embedding'])
+                sim = cosine_similarity(qe, emb)
+                if sim >= min_confidence:
+                    ok = True
+                    if section or nsfw in ('0', '1'):
+                        tmp = cur.execute("SELECT section_id, nsfw FROM keywords WHERE id = ?", (r['id'],)).fetchone()
+                        if tmp:
+                            if section and tmp['section_id'] != section: ok = False
+                            if nsfw == '0' and tmp['nsfw'] != 0: ok = False
+                            if nsfw == '1' and tmp['nsfw'] != 1: ok = False
+                    if ok:
+                        cur.execute("INSERT OR IGNORE INTO filter_cache (filter_id, keyword_id) VALUES (?, ?)", (filter_id, r['id']))
+        except Exception:
+            pass
+        return
+
+    where = " AND ".join(conditions)
+    cur.execute(f"INSERT OR IGNORE INTO filter_cache (filter_id, keyword_id) SELECT ?, k.id FROM keywords k WHERE {where}", [filter_id] + params)
+
+
+def _count_filter_cache(filter_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM filter_cache WHERE filter_id = ?", (filter_id,))
+    c = cur.fetchone()[0]
+    conn.close()
+    return c
+
+
+
+@app.route('/api/filters/<int:filter_id>/preview', methods=['GET'])
+def preview_filter(filter_id):
+    guard = _login_required()
+    if guard: return guard
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT k.keyword FROM filter_cache fc JOIN keywords k ON k.id = fc.keyword_id WHERE fc.filter_id = ? LIMIT 20", (filter_id,))
+    keywords = [r['keyword'] for r in cur.fetchall()]
+    cur.execute("SELECT name, config FROM saved_filters WHERE id = ?", (filter_id,))
+    info = cur.fetchone()
+    conn.close()
+    return jsonify({
+        'name': info['name'] if info else '',
+        'total': len(keywords),
+        'keywords': keywords,
+        'config': json.loads(info['config']) if info and isinstance(info['config'], str) else (info['config'] if info else {})
+    })
+
+
+@app.route('/api/generate', methods=['POST'])
+def generate_prompt():
+    guard = _login_required()
+    if guard:
+        return guard
+    data = request.get_json()
+    if not data or not data.get('elements'):
+        return jsonify({'error': 'elements requis'}), 400
+
+    elements = data['elements']
+    conn = get_db()
+    cur = conn.cursor()
+    keywords = []
+    debug = []
+
+    for elem in elements:
+        kid = None
+        kind = ''
+        score = 0
+
+        if elem.get('type') == 'filter' and elem.get('id'):
+            kind = 'filter'
+            cur.execute("SELECT keyword_id FROM filter_cache WHERE filter_id = ? ORDER BY RANDOM() LIMIT 1", (elem['id'],))
+            row = cur.fetchone()
+            if row:
+                kid = row['keyword_id']
+
+        elif elem.get('type') == 'text' and elem.get('text'):
+            kind = 'semantic'
+            try:
+                from embeddings import generate_embedding, cosine_similarity
+                qe = generate_embedding(elem['text'])
+                cur.execute("SELECT k.id, ke.embedding FROM keywords k JOIN keyword_embeddings ke ON ke.keyword_id = k.id")
+                rows = cur.fetchall()
+                if rows:
+                    scored = []
+                    for r in rows:
+                        emb = json.loads(r['embedding'])
+                        sim = cosine_similarity(qe, emb)
+                        if sim >= 0.45:
+                            scored.append((r['id'], sim))
+                    if scored:
+                        scored.sort(key=lambda x: x[1], reverse=True)
+                        top = scored[:min(5, len(scored))]
+                        kid, score = random.choice(top)
+            except Exception:
+                pass
+
+        if kid:
+            cur.execute("SELECT keyword FROM keywords WHERE id = ?", (kid,))
+            row = cur.fetchone()
+            if row:
+                keywords.append(row['keyword'])
+                debug.append({'keyword': row['keyword'], 'source': kind, 'score': round(score, 3)})
+
+    conn.close()
+    prompt = ", ".join(keywords) if keywords else ""
+    return jsonify({'prompt': prompt, 'count': len(keywords), 'elements': debug})
 
 
 @app.route('/api/export', methods=['GET'])
