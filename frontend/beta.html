@@ -19,6 +19,18 @@
     body { font-family: 'Inter', sans-serif; }
     .ph { line-height: 1; display: inline-block; }
     .animate-spin { animation: spin 1s linear infinite; }
+    /* Panel backgrounds */
+    #panel-left { background: #f8fafc; }                   /* slate-50 */
+    .dark #panel-left { background: #0f172a; }             /* slate-900 */
+    #panel-right-top { background: #eef2ff; }              /* indigo-50 */
+    .dark #panel-right-top { background: #172033; }        /* slate-900 + indigo tint */
+    #panel-right-bottom { background: #f5f3ff; }           /* violet-50 */
+    .dark #panel-right-bottom { background: #1a1830; }     /* slate-900 + violet tint */
+    /* Divider gaps hover */
+    #divider-v:hover { background: #e0e7ff; }               /* indigo-100 */
+    .dark #divider-v:hover { background: #312e81; }         /* indigo-900 */
+    #divider-h:hover { background: #e0e7ff; }
+    .dark #divider-h:hover { background: #312e81; }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
     .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
@@ -73,7 +85,6 @@
           <svg class="w-7 h-7 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 9h8M8 13h5"/></svg>
           <div>
             <h1 class="text-lg font-semibold tracking-tight">Prompts Keywords</h1>
-            <p id="stats-text" class="text-xs text-slate-400">Base vide — importez un fichier pour commencer</p>
           </div>
         </div>
         <div class="flex items-center gap-2">
@@ -103,7 +114,7 @@
     </header>
 
 
-      <div id="main-content" class="w-full flex-1 overflow-hidden" style="display: none;">
+      <div id="main-content" class="w-full flex-1 flex flex-col overflow-hidden relative" style="display: none;">
       <!-- Empty state : centre sur l'ecran -->
       <div id="empty-state" class="flex flex-col items-center justify-center text-center" style="position:absolute;inset:0;z-index:20;">
         <div id="empty-icon" class="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center mb-5 dark:bg-slate-800">
@@ -113,24 +124,32 @@
         <p id="empty-desc" class="text-slate-500 max-w-sm mb-6 dark:text-slate-400"></p>
         <a id="empty-btn" href="#" onclick="discordLogin();return false" class="hidden inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white rounded-lg shadow-md transition" style="background:#5865F2">Connexion avec Discord</a>
         <button id="empty-import-btn" onclick="openImport()" class="hidden inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-md transition">Importer un fichier</button>
-      </div>        <div id="panels-container" class="flex flex-1 overflow-hidden">
+      </div>      <div id="panels-container" class="flex flex-1 overflow-hidden min-h-0">
 
           <!-- PANEL GAUCHE : Keywords -->
-          <div id="panel-left" class="flex flex-col overflow-hidden" style="width: 50%; min-width: 200px;">
-            <div class="flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shrink-0">
+          <div id="panel-left" class="flex flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" style="width: 50%; min-width: 200px;">
+            <div class="flex items-center justify-between px-4 py-2 border-b border-slate-200/60 dark:border-slate-700/60 shrink-0">
               <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Mots-clés</span>
+              <button onclick="resetFilters()" title="Reinitialiser les filtres" class="text-xs text-slate-300 hover:text-slate-500 dark:text-slate-600 dark:hover:text-slate-400 transition p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+              </button>
             </div>
             <div class="flex-1 overflow-y-auto" id="panel-left-content">
               <!-- Filters -->
               <div id="filters-bar" class="hidden mb-4">
                 <div class="flex flex-col gap-2">
                   <div class="flex flex-wrap items-center gap-2">
-                    <div class="relative flex-1 min-w-[10rem]">
-                      <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                      <input type="text" id="search-input" placeholder="Recherche texte..."
+                    <div class="relative flex-[2] min-w-[10rem]">
+                      <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                      <input type="text" id="search-input" placeholder="Recherche (+)"
                              class="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 dark:placeholder-slate-400">
                     </div>
-                    <div class="relative flex-1 min-w-[10rem]">
+                    <div class="relative flex-1 min-w-[6rem]">
+                      <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-rose-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65" transform="rotate(45 18 18)"/></svg>
+                      <input type="text" id="search-neg-input" placeholder="Exclure (-)"
+                             class="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 dark:placeholder-slate-400">
+                    </div>
+                    <div class="relative flex-[2] min-w-[10rem]">
                       <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm">🧠</span>
                       <input type="text" id="search-semantic-input" placeholder="Recherche semantique..."
                              class="w-full pl-9 pr-8 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 dark:placeholder-slate-400">
@@ -158,9 +177,11 @@
                   <div class="flex flex-wrap items-center gap-2" id="filter-actions-row">
                     <label class="inline-flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                       <span>Confiance:</span>
-                      <input type="range" id="filter-confidence" min="0" max="100" value="0"
+                      <input type="range" id="filter-confidence" min="0" max="100" value="0" step="1"
                              class="w-20 h-1 accent-indigo-500">
-                      <span id="filter-confidence-val" class="w-6 text-right">0%</span>
+                      <input type="number" id="filter-confidence-num" min="0" max="100" value="0"
+                             class="w-12 text-xs text-center border border-slate-300 rounded px-1 py-0.5 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                      <span>%</span>
                     </label>
                     <span class="text-slate-300 dark:text-slate-600">|</span>
                     <button onclick="openFilterListModal()" class="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium border border-slate-300 text-slate-500 rounded-md hover:bg-slate-100 transition dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700">
@@ -183,8 +204,12 @@
 
               <!-- Modale Save Filter -->
               <div id="modal-save-filter" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
-                <div class="bg-white border border-slate-200 rounded-xl shadow-2xl p-5 w-80 dark:bg-slate-800 dark:border-slate-700">
-                  <h3 class="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Sauvegarder ce filtre</h3>
+                <div id="save-filter-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 340px;">
+                  <div id="save-modal-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+                    <span class="text-sm font-semibold text-slate-800 dark:text-slate-200">Sauvegarder ce filtre</span>
+                    <button onclick="closeSaveFilter()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+                  </div>
+                  <div class="modal-body">
                   <div class="space-y-2">
                     <input type="text" id="save-filter-name" placeholder="Nom du filtre..." class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
                     <input type="text" id="save-filter-cat" placeholder="Categorie (optionnel)..." class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
@@ -197,8 +222,9 @@
                     </label>
                   </div>
                   <div class="flex justify-end gap-2 mt-3">
-                    <button onclick="closeSaveFilter()" class="px-3 py-1.5 text-sm text-slate-500 hover:text-slate-700">Annuler</button>
+                    <button onclick="closeSaveFilter()" class="px-3 py-1.5 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Annuler</button>
                     <button onclick="saveFilter()" class="px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500">Enregistrer</button>
+                  </div>
                   </div>
                 </div>
               </div>
@@ -229,24 +255,36 @@
           </div>
 
           <!-- SEPARATEUR VERTICAL -->
-          <div id="divider-v" class="shrink-0 cursor-col-resize bg-slate-200 dark:bg-slate-700 hover:bg-indigo-400 dark:hover:bg-indigo-500 transition-colors" style="width: 5px;"></div>
+          <div id="divider-v" class="shrink-0 cursor-col-resize transition-colors" style="width: 6px;"></div>
 
           <!-- PANEL DROIT -->
           <div id="panel-right" class="flex flex-col overflow-hidden" style="flex: 1; min-width: 200px;">
 
-            <!-- Prompt Generator -->
-            <div id="panel-right-top" class="flex flex-col overflow-hidden" style="height: 50%; min-height: 100px;">
-              <div class="flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shrink-0">
-                <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Prompt Generator</span>
-                <span id="gen-count" class="text-xs text-slate-400">0</span>
+            <!-- Elements Picker -->
+            <div id="panel-right-top" class="flex flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" style="height: 50%; min-height: 100px;">
+              <div class="flex items-center justify-between px-4 py-2 border-b border-slate-200/60 dark:border-slate-700/60 shrink-0">
+                <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Elements Picker</span>
+                <div class="flex items-center gap-1">
+                  <button onclick="resetElementsPicker()" title="Vider" class="text-xs text-slate-300 hover:text-slate-500 dark:text-slate-600 dark:hover:text-slate-400 transition p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700">
+                    <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                  </button>
+                  <span id="gen-count" class="text-xs text-slate-400">0</span>
+                </div>
               </div>
               <div class="flex flex-col flex-1 overflow-hidden">
+                <div class="flex gap-1.5 px-2 pt-2 pb-1 shrink-0">
+                  <button onclick="genAddElement('filter')" class="flex-1 text-xs font-medium py-1.5 rounded-md border border-indigo-200 text-indigo-700 hover:bg-indigo-50 transition dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-900/30">
+                    <svg class="w-3 h-3 inline mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                    Add saved filter
+                  </button>
+                  <button onclick="genAddElement('text')" class="flex-1 text-xs font-medium py-1.5 rounded-md border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-900/30">
+                    <svg class="w-3 h-3 inline mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    Add semantic filter
+                  </button>
+                </div>
                 <div id="gen-elements" class="flex-1 overflow-y-auto p-2 space-y-1.5"></div>
                 <div class="border-t border-slate-200 dark:border-slate-700 p-2 space-y-2 shrink-0">
-                  <div class="flex gap-2">
-                    <button onclick="genAddElement()" class="flex-1 px-3 py-1.5 text-xs font-medium border border-slate-300 text-slate-500 rounded-md hover:bg-slate-100 transition dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700">+ Element</button>
-                    <button onclick="genGenerate()" class="flex-1 px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">Generer</button>
-                  </div>
+                  <button onclick="genGenerate()" class="w-full px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">Generer</button>
                   <textarea id="gen-output" readonly rows="3" placeholder="Le prompt..." class="w-full px-3 py-2 text-xs border border-slate-300 rounded-md resize-none bg-slate-50 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 dark:placeholder-slate-400 font-mono"></textarea>
                   <button onclick="genCopy()" class="w-full px-3 py-1 text-xs font-medium bg-slate-100 text-slate-500 rounded-md hover:bg-slate-200 transition dark:bg-slate-700 dark:text-slate-400 dark:hover:bg-slate-600">Copier</button>
                 </div>
@@ -255,8 +293,8 @@
 
             <!-- Modale picker filtres -->
             <div id="modal-filter-pick" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
-              <div class="bg-white border border-slate-200 rounded-xl shadow-2xl w-96 max-h-96 flex flex-col dark:bg-slate-800 dark:border-slate-700">
-                <div class="flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-slate-700">
+              <div id="fp-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl w-96 max-h-96 flex flex-col dark:bg-slate-800 dark:border-slate-700">
+                <div id="fp-modal-header" class="flex items-center justify-between px-4 py-2 border-b border-slate-200 cursor-grab bg-slate-50 dark:border-slate-700 dark:bg-slate-800/80 select-none">
                   <span class="text-xs font-semibold text-slate-700 dark:text-slate-300">Choisir un filtre</span>
                   <button onclick="closeFilterPick()" class="text-xs text-slate-400 hover:text-slate-600">&times;</button>
                 </div>
@@ -278,15 +316,79 @@
             </div>
 
             <!-- SEPARATEUR HORIZONTAL -->
-            <div id="divider-h" class="shrink-0 cursor-row-resize bg-slate-200 dark:bg-slate-700 hover:bg-indigo-400 dark:hover:bg-indigo-500 transition-colors" style="height: 5px;"></div>
+            <div id="divider-h" class="shrink-0 cursor-row-resize transition-colors" style="height: 6px;"></div>
 
-            <!-- Prompt Enhancer -->
-            <div id="panel-right-bottom" class="flex flex-col overflow-hidden" style="flex: 1; min-height: 100px;">
-              <div class="flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shrink-0">
-                <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Prompt Enhancer</span>
+            <!-- Prompt Generator/Enhancer -->
+            <div id="panel-right-bottom" class="flex flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800" style="flex: 1; min-height: 100px;">
+              <div class="flex items-center justify-between px-4 py-2 border-b border-slate-200/60 dark:border-slate-700/60 shrink-0">
+                <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Prompt Generator/Enhancer</span>
+                <div class="flex items-center gap-1">
+                  <button onclick="resetEnhancer()" title="Reinitialiser" class="text-xs text-slate-300 hover:text-slate-500 dark:text-slate-600 dark:hover:text-slate-400 transition p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700">
+                    <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                  </button>
+                  <button onclick="openStylesModal()" title="Gerer les styles" class="text-xs text-slate-400 hover:text-indigo-500 transition p-1 rounded">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l-4 4h8l-4-4z"/><path d="M12 2v20"/></svg>
+                  </button>
+                  <button onclick="toggleUserSettings()" title="Configuration IA" class="text-xs text-slate-400 hover:text-indigo-500 transition p-1 rounded">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                  </button>
+                </div>
               </div>
-              <div class="flex-1 flex items-center justify-center bg-slate-50/50 dark:bg-slate-900/30 text-slate-400 dark:text-slate-500 text-sm italic">
-                Prompt Enhancer — bientot disponible
+              <div class="flex-1 flex flex-col p-3 gap-2 overflow-hidden bg-white dark:bg-slate-800">
+                <!-- Preset + type + style row -->
+                <div class="flex flex-wrap items-center gap-2 shrink-0">
+                  <select id="enhance-preset" class="text-xs border border-slate-300 rounded-md px-2 py-1 bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 min-w-[120px]">
+                    <option value="">-- Preset IA --</option>
+                  </select>
+                  <select id="enhance-type" class="text-xs border border-slate-300 rounded-md px-2 py-1 bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                    <option value="sdxl">SDXL</option>
+                    <option value="sd15">SD1.5</option>
+                    <option value="flux">Flux</option>
+                    <option value="anima">Anima</option>
+                    <option value="qwen">Qwen</option>
+                    <option value="liste">Liste</option>
+                  </select>
+                  <select id="enhance-format" class="text-xs border border-slate-300 rounded-md px-2 py-1 bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                    <option value="text">Texte brut</option>
+                    <option value="markdown">Markdown</option>
+                    <option value="json">JSON</option>
+                  </select>
+                  <select id="enhance-style" class="text-xs border border-slate-300 rounded-md px-2 py-1 bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 min-w-[100px]">
+                    <option value="">-- Style --</option>
+                  </select>
+                </div>
+                <!-- Input textarea -->
+                <textarea id="enhance-input" rows="4" placeholder="Colle ou tape ton prompt ici..."
+                  class="w-full text-sm border border-slate-300 rounded-md px-3 py-2 resize-none bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 placeholder-slate-400 shrink-0 focus:outline-none focus:border-indigo-400"></textarea>
+                <!-- Checkboxes Elements Picker -->
+                <div class="flex flex-wrap items-center gap-3 shrink-0">
+                  <label class="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                    <input type="checkbox" id="enhance-ep" class="rounded accent-indigo-500"> Use Elements Picker
+                  </label>
+                  <label class="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                    <input type="checkbox" id="enhance-random" class="rounded accent-indigo-500"> Add random
+                    <input type="number" id="enhance-random-count" value="3" min="1" max="10"
+                      class="w-10 text-xs text-center border border-slate-300 rounded px-1 py-0.5 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 disabled:opacity-30">
+                  </label>
+                </div>
+                <!-- Actions -->
+                <div class="flex items-center gap-2 shrink-0">
+                  <button onclick="doEnhance()" class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">
+                    <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    Generer
+                  </button>
+                  <span id="enhance-status" class="text-xs text-slate-400 hidden"></span>
+                </div>
+                <!-- Output (redimensionnable) -->
+                  <textarea id="enhance-output" readonly placeholder="Resultat..."
+                    class="w-full text-sm border border-slate-200 rounded-md px-3 py-2 bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-200 text-slate-600 focus:outline-none"
+                    style="resize:vertical; min-height:60px; height:100px; max-height:70vh;"></textarea>
+                  <div id="enhance-output-rendered" class="hidden w-full text-sm border border-slate-200 rounded-md px-3 py-2 bg-slate-50 dark:bg-slate-900 dark:border-slate-700 overflow-auto" style="min-height:60px; height:100px; max-height:70vh;"></div>
+                  <div class="flex items-center gap-2 mt-1">
+                    <button onclick="toggleEnhanceView()" id="btn-toggle-view" class="hidden text-xs text-slate-400 hover:text-indigo-500 transition">Rendu</button>
+                    <div class="flex-1"></div>
+                    <button onclick="copyEnhanceOutput()" id="btn-copy-enhance" class="hidden text-xs text-indigo-500 hover:text-indigo-700 transition">Copier</button>
+                  </div>
               </div>
             </div>
 
@@ -378,6 +480,90 @@
           </div>
         </div>
       </div>
+    </div>    <!-- Modale generique -->
+    <div id="modal-generic" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+      <div class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 380px;">
+        <div id="modal-generic-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+          <span id="modal-generic-title" class="text-sm font-semibold text-slate-800 dark:text-slate-200"></span>
+          <button onclick="closeModal()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+        </div>
+        <div class="p-5">
+          <p id="modal-generic-body" class="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap"></p>
+          <div id="modal-generic-input-area" class="hidden mt-2">
+            <input type="text" id="modal-generic-input" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" placeholder="">
+          </div>
+          <div class="flex justify-end gap-2 mt-4">
+            <button id="modal-generic-cancel" onclick="closeModal()" class="hidden px-3 py-1.5 text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">Annuler</button>
+            <button id="modal-generic-ok" onclick="modalOK()" class="px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500">OK</button>
+          </div>
+        </div>
+      </div>
+    </div>    <!-- Modale User Settings -->
+    <div id="modal-user-settings" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+      <div id="usettings-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 520px; max-height: 80vh; position: relative;">
+        <div id="usettings-modal-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+          <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Configuration IA</h2>
+          <button onclick="closeUserSettings()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+        </div>
+        <div class="modal-body space-y-4" style="max-height: calc(80vh - 52px);">
+          <!-- Liste des presets -->
+          <div>
+            <h3 class="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">PRESETS</h3>
+            <div id="presets-list" class="space-y-1 max-h-40 overflow-y-auto">
+              <p class="text-xs text-slate-400">Chargement...</p>
+            </div>
+          </div>
+          <hr class="border-slate-200 dark:border-slate-700">
+          <!-- Formulaire -->
+          <div class="space-y-2">
+            <input type="text" id="preset-form-name" placeholder="Nom du preset" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+            <input type="url" id="preset-form-url" placeholder="URL du serveur (ex: http://localhost:11434/v1)" oninput="checkPresetUrl()" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+            <p id="preset-url-warning" class="hidden text-xs text-amber-600 dark:text-amber-400">⚠️ URL locale detectee. L'appel est fait par le serveur, pas le navigateur. Cette URL ne fonctionnera que si le LLM est accessible depuis le serveur (meme machine ou reseau interne).</p>
+            <input type="password" id="preset-form-key" placeholder="API Key (optionnel)" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+            <div class="flex items-center gap-2">
+              <input type="text" id="preset-form-model" placeholder="Modele (ex: llama3)" class="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+              <button onclick="fetchModelsForForm()" class="text-xs text-indigo-500 hover:text-indigo-700 px-2 py-1 border border-indigo-200 rounded-md">Lister</button>
+            </div>
+            <select id="preset-models-dropdown" class="hidden w-full text-xs border border-slate-300 rounded-md px-2 py-1 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200"></select>
+            <label class="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400" id="preset-global-label" style="display:none;">
+              <input type="checkbox" id="preset-form-global" class="rounded"> Global (visible par tous)
+            </label>
+            <label class="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+              <input type="checkbox" id="preset-form-client" class="rounded"> Client-side (appel depuis le navigateur — necessite CORS active sur le serveur LLM)
+            </label>
+            <div class="flex gap-2">
+              <button onclick="savePreset()" class="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500">Sauvegarder</button>
+              <button onclick="clearPresetForm()" class="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 border border-slate-300 rounded-md">Nouveau</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>    <!-- Modale Styles -->
+    <div id="modal-styles" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+      <div id="styles-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 520px; max-height: 70vh; position: relative;">
+        <div id="styles-modal-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+          <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Styles</h2>
+          <button onclick="closeStylesModal()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+        </div>
+        <div class="modal-body space-y-4" style="max-height: calc(70vh - 52px);">
+          <div id="styles-list" class="space-y-1 max-h-40 overflow-y-auto">
+            <p class="text-xs text-slate-400">Chargement...</p>
+          </div>
+          <hr class="border-slate-200 dark:border-slate-700">
+          <div class="space-y-2">
+            <input type="text" id="style-form-name" placeholder="Nom du style" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+            <textarea id="style-form-text" rows="2" placeholder="Texte du style (ex: Hyper realistic, 1970 vintage photography)" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md resize-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200"></textarea>
+            <textarea id="style-form-neg" rows="1" placeholder="Prompt negatif (optionnel)" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md resize-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200"></textarea>
+            <label class="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+              <input type="checkbox" id="style-form-public" class="rounded"> Public
+            </label>
+            <div class="flex gap-2">
+              <button onclick="saveStyle()" id="btn-style-save" class="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500">Ajouter</button>
+              <button onclick="clearStyleForm()" id="btn-style-clear" class="hidden px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 border border-slate-300 rounded-md">Annuler edit</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>    <!-- Modale Import -->
     <div id="modal-import" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
       <div id="import-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 520px; position: relative;">
@@ -407,6 +593,12 @@
       </div>
     </div>
 
+  <footer class="shrink-0 bg-slate-900 text-slate-400 text-xs border-t border-slate-800 dark:bg-slate-950 dark:border-slate-800">
+    <div class="w-full mx-auto px-4 py-2 flex items-center justify-center gap-6">
+      <p id="footer-stats">Chargement...</p>
+    </div>
+  </footer>
+
   </div>
 
   <script>
@@ -419,13 +611,14 @@
     // === DOM refs ===
     const $ = id => document.getElementById(id);
     const searchInput = $('search-input');
+    const searchNegInput = $('search-neg-input');
     const semanticInput = $('search-semantic-input');
     const sectionSelect = $('section-select');
     const emptyState = $('empty-state');
     const resultsArea = $('results-area');
     const filtersBar = $('filters-bar');
     const tableBody = $('table-body');
-    const statsText = $('stats-text');
+    const footerStats = $('footer-stats');
     const countDisplay = $('count-display');
     const countLabel = $('count-label');
     const scoreHeader = $('score-header');
@@ -446,6 +639,20 @@
     let semanticTimer = null;
 
     // === Init ===
+
+    const enhOutput = $('enhance-output');
+
+    let hiddenKWs = {};  // { id: true } — mots-cles masques localement
+
+    function updateStats(stats) {
+      var parts = [];
+      if (stats.total > 0) parts.push(stats.total + ' mots-cles');
+      if (stats.section_count > 0) parts.push(stats.section_count + ' sections');
+      if (stats.nsfw_total > 0) parts.push(stats.nsfw_total + ' NSFW');
+      if (stats.generated_total > 0) parts.push(stats.generated_total + ' prompts generes');
+      footerStats.textContent = parts.length > 0 ? parts.join(' · ') : 'Base vide — importez un fichier pour commencer';
+    }
+
     document.addEventListener('DOMContentLoaded', initApp);
 
     function toggleTheme() {
@@ -464,23 +671,72 @@
       await checkAuth();
       searchInput?.addEventListener('input', () => { clearTimeout(textTimer); textTimer = setTimeout(applyFilters, 300); });
       semanticInput?.addEventListener('input', () => { clearTimeout(semanticTimer); semanticTimer = setTimeout(applyFilters, 400); });
+      searchNegInput?.addEventListener('input', () => { clearTimeout(textTimer); textTimer = setTimeout(applyFilters, 300); });
       sectionSelect?.addEventListener('change', function(){ semanticCache = null; applyFilters(); });
       document.querySelectorAll('input[name="nsfw-filter"]').forEach(el => el.addEventListener('change', function(){ semanticCache = null; applyFilters(); }));
+    searchNegInput?.addEventListener('change', function(){ semanticCache = null; });
       var confSlider = document.getElementById('filter-confidence');
+      var confNum = document.getElementById('filter-confidence-num');
+      function applyConfidence(val) {
+        var n = parseInt(val);
+        if (isNaN(n)) n = 0;
+        if (n < 0) n = 0; if (n > 100) n = 100;
+        confSlider.value = n;
+        confNum.value = n;
+        var semInput = document.getElementById('search-semantic-input');
+        if (semInput && semInput.value.trim() && semanticCache && semanticCache.text === semInput.value.trim()) {
+          var conf = n / 100;
+          var filtered = conf > 0 ? semanticCache.results.filter(function(k){ return k.score >= conf; }) : semanticCache.results;
+          allKeywords = filtered;
+          renderTable(allKeywords);
+        }
+      }
       if (confSlider) {
-        confSlider.addEventListener('input', function() {
-          document.getElementById('filter-confidence-val').textContent = this.value + '%';
-          var semInput = document.getElementById('search-semantic-input');
-          if (semInput && semInput.value.trim() && semanticCache && semanticCache.text === semInput.value.trim()) {
-            // Filtrer depuis le cache, pas d'appel API
-            var conf = parseInt(this.value) / 100;
-            var filtered = conf > 0 ? semanticCache.results.filter(function(k){ return k.score >= conf; }) : semanticCache.results;
-            allKeywords = filtered;
-            renderTable(allKeywords);
-          }
-        });
+        confSlider.addEventListener('input', function() { applyConfidence(this.value); });
+      }
+      if (confNum) {
+        confNum.addEventListener('input', function() { applyConfidence(this.value); });
+        confNum.addEventListener('change', function() { applyConfidence(this.value); });
       }
       if (currentUser) await checkData();
+      if (currentUser) { loadEnhancerConfig(); loadEPState(); }
+    }
+
+    // --- Reset functions ---
+    function hideKeyword(id) {
+      hiddenKWs[id] = true;
+      renderTable(allKeywords);
+      updateCountDisplay();
+    }
+
+    function showAllHidden() {
+      hiddenKWs = {};
+      renderTable(allKeywords);
+      updateCountDisplay();
+    }
+
+    function resetFilters() {
+      document.getElementById('search-input').value = '';
+      document.getElementById('search-neg-input').value = '';
+      document.getElementById('search-semantic-input').value = '';
+      document.getElementById('section-select').value = '';
+      document.querySelectorAll('input[name="nsfw-filter"]').forEach(function(r){ r.checked = r.value === ''; });
+      document.getElementById('filter-confidence').value = 0;
+      document.getElementById('filter-confidence-num').value = 0;
+      semanticCache = null;
+      applyFilters();
+    }
+    function resetElementsPicker() {
+      genElements = [];
+      genRender();
+      saveEPState();
+    }
+    function resetEnhancer() {
+      document.getElementById('enhance-input').value = '';
+      document.getElementById('enhance-output').value = '';
+      document.getElementById('btn-copy-enhance').classList.add('hidden');
+      document.getElementById('btn-toggle-view').classList.add('hidden');
+      saveEnhancerSettings();
     }
 
     function getNsfwFilter() {
@@ -550,7 +806,7 @@
       userInfo.classList.add('hidden');
       userInfo.classList.remove('flex');
       showEmptyState(false);
-      statsText.textContent = 'Deconnecte.';
+      footerStats.textContent = 'Deconnecte.';
     }
 
     function discordLogin() {
@@ -595,13 +851,13 @@
         if (filtersInPanel) filtersInPanel.classList.remove('hidden');
         var panels = document.getElementById('panels-container');
         if (panels) panels.style.display = 'flex';
-        statsText.textContent = stats.total + ' mots-cles · ' + stats.section_count + ' sections · ' + stats.nsfw_total + ' NSFW';
+        updateStats(stats);
       } else {
         emptyState.classList.add('hidden');
         resultsArea.classList.add('hidden');
         var filtersInPanel = document.getElementById('filters-bar');
         if (filtersInPanel) filtersInPanel.classList.add('hidden');
-        if (currentUser) statsText.textContent = 'Connecte : ' + currentUser.display_name;
+        if (currentUser) footerStats.textContent = 'Connecte : ' + currentUser.display_name;
       }
     }
 
@@ -621,6 +877,7 @@
 
     async function loadKeywords() {
       const textQ = searchInput.value.trim();
+      const negQ = searchNegInput.value.trim();
       const semQ = semanticInput.value.trim();
       const nsfw = getNsfwFilter();
       const section = sectionSelect.value;
@@ -628,22 +885,18 @@
 
       let semResults = null;
       if (semQ) {
-        // Refaire l'appel seulement si le texte a change
         if (!semanticCache || semanticCache.text !== semQ) {
-          semResults = await fetchSemanticSearch(semQ, nsfw, section, 0);  // seuil 0 = tout recuperer
-          if (semResults) {
-            semanticCache = { text: semQ, results: semResults };
-          }
+          semResults = await fetchSemanticSearch(semQ, nsfw, section, 0);
+          if (semResults) semanticCache = { text: semQ, results: semResults };
         } else {
           semResults = semanticCache.results;
         }
-        // Filtrer par confiance cote client
         if (confidence > 0 && semResults) {
           semResults = semResults.filter(function(kw) { return kw.score >= confidence; });
         }
       }
       const [textResults] = await Promise.all([
-        textQ ? fetchTextSearch(textQ, nsfw, section) : Promise.resolve(null),
+        (textQ || negQ) ? fetchTextSearch(textQ, negQ, nsfw, section) : Promise.resolve(null),
       ]);
 
       if (semResults !== null) {
@@ -663,10 +916,11 @@
       renderTable(allKeywords);
     }
 
-    async function fetchTextSearch(q, nsfw, section) {
+    async function fetchTextSearch(q, q_neg, nsfw, section) {
       try {
         const params = new URLSearchParams();
         params.append('q', q);
+        if (q_neg) params.append('q_neg', q_neg);
         if (section) params.append('section', section);
         if (nsfw !== '') params.append('nsfw', nsfw);
         const res = await fetch(API + '/keywords?' + params.toString());
@@ -698,6 +952,7 @@
     }
 
     function applyFilters() {
+      hiddenKWs = {};
       loadKeywords();
     }
 
@@ -705,18 +960,23 @@
       tableBody.innerHTML = '';
       const isSemantic = semanticInput.value.trim() !== '';
       scoreHeader.classList.toggle('hidden', !isSemantic);
-      if (rows.length === 0) {
+      // Filtrer les mots masques localement
+      var visible = rows.filter(function(r){ return !hiddenKWs[r.id]; });
+      var hiddenCount = rows.length - visible.length;
+      countDisplay.textContent = visible.length;
+      countLabel.textContent = (visible.length > 1 ? 'resultats' : 'resultat') + (hiddenCount > 0 ? ' (' + hiddenCount + ' masques)' : '');
+      if (visible.length === 0) {
         const colspan = isSemantic ? 4 : 3;
-        tableBody.innerHTML = '<tr><td colspan="' + colspan + '" class="px-4 py-10 text-center text-slate-400 dark:text-slate-500">Aucun resultat trouve.</td></tr>';
-        countDisplay.textContent = '0';
-        countLabel.textContent = 'resultat';
+        if (hiddenCount > 0) {
+          tableBody.innerHTML = '<tr><td colspan="' + colspan + '" class="px-4 py-8 text-center text-sm text-slate-400">Tous les mots-cles sont masques. <button onclick="showAllHidden()" class="text-indigo-500 hover:underline">Reafficher</button></td></tr>';
+        } else {
+          tableBody.innerHTML = '<tr><td colspan="' + colspan + '" class="px-4 py-10 text-center text-slate-400 dark:text-slate-500">Aucun resultat trouve.</td></tr>';
+        }
         return;
       }
-      countDisplay.textContent = rows.length;
-      countLabel.textContent = rows.length > 1 ? 'resultats' : 'resultat';
       const frag = document.createDocumentFragment();
       const isDark = document.documentElement.classList.contains('dark');
-      for (const row of rows) {
+      for (const row of visible) {
         const tr = document.createElement('tr');
         tr.className = row.nsfw ? (isDark ? 'bg-rose-950/30' : 'bg-rose-50/40') : '';
         const nsfwClass = row.nsfw
@@ -726,7 +986,7 @@
         const scoreTd = isSemantic
           ? '<td class="px-4 py-2 align-top w-24"><div class="score-bar' + (isDark ? ' bg-slate-700' : '') + '"><div class="score-bar-fill" style="width:' + pct + '%"></div></div><span class="text-xs text-slate-400 dark:text-slate-500">' + pct + '%</span></td>'
           : '';
-        tr.innerHTML = '<td class="px-4 py-2 align-top"><code class="text-xs font-mono px-1.5 py-0.5 rounded ' + nsfwClass + '">' + escapeHtml(row.keyword) + '</code></td>'
+        tr.innerHTML = '<td class="px-4 py-2 align-top"><div class="flex items-center gap-1"><button onclick="hideKeyword(' + row.id + ')" title="Masquer" class="text-xs text-slate-300 hover:text-rose-400 transition p-0.5 leading-none">👁️</button><code class="text-xs font-mono px-1.5 py-0.5 rounded ' + nsfwClass + '">' + escapeHtml(row.keyword) + '</code></div></td>'
           + '<td class="px-4 py-2 text-slate-700 align-top dark:text-slate-300">' + escapeHtml(row.description) + '</td>'
           + '<td class="px-4 py-2 text-xs text-slate-500 align-top dark:text-slate-400 max-w-[160px]"><div class="font-medium text-slate-600 dark:text-slate-300 truncate">' + escapeHtml(row.subsection_title) + '</div><div class="text-slate-400 mt-0.5 dark:text-slate-500 truncate">' + escapeHtml(row.section_id) + '. ' + escapeHtml(row.section_title) + '</div></td>'
           + scoreTd;
@@ -752,7 +1012,7 @@
 
 
 
-    // === Prompt Generator ===
+    // === Elements Picker ===
     var genElementId = 0;
     var genElements = [];
     var genFilters = [];
@@ -762,40 +1022,41 @@
       var id = ++genElementId;
       genElements.push({id: id, type: type, filterId: null, text: '', filterName: ''});
       genRender();
+      if (type === 'filter') openFilterPick(id);
+      if (type === 'text') openSemanticModal(id);
+      saveEPState();
     }
 
     function genRemoveElement(id) {
       genElements = genElements.filter(function(e){ return e.id !== id; });
       genRender();
+      saveEPState();
     }
 
     function genRender() {
       var container = document.getElementById('gen-elements');
       var html = '';
-      for (var i = 0; i < genElements.length; i++) {
-        var el = genElements[i];
-        html += '<div class="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-700/30 rounded p-1.5">';
-        if (el.type === 'filter' && el.filterName) {
-          html += '<span class="flex-1 text-xs text-indigo-600 dark:text-indigo-400 truncate">' + escapeHtml(el.filterName) + '</span>';
-          html += '<button onclick="genChangeType(' + el.id + ')" class="text-xs text-slate-400 hover:text-slate-600 p-0.5" title="Changer">↻</button>';
-        } else if (el.type === 'text' && el.text) {
-          html += '<span class="flex-1 text-xs text-emerald-600 dark:text-emerald-400 truncate">\"' + escapeHtml(el.text) + '\"</span>';
-          html += '<button onclick="genChangeType(' + el.id + ')" class="text-xs text-slate-400 hover:text-slate-600 p-0.5" title="Changer">↻</button>';
-        } else {
-          html += '<select onchange="genOnTypeChange(this,' + el.id + ')" class="flex-1 text-xs border border-slate-300 rounded dark:bg-slate-600 dark:border-slate-500 dark:text-slate-200 py-0.5">';
-          html += '<option value="">-- choisir --</option>';
-          html += '<option value="filter">Filtre enregistre...</option>';
-          html += '<option value="text">Texte libre...</option>';
-          html += '</select>';
-        }
-        html += '<button onclick="genRemoveElement(' + el.id + ')" class="text-xs text-rose-400 hover:text-rose-300 p-1" title="Supprimer">&times;</button>';
-        html += '</div>';
-      }
-      container.innerHTML = html;
-      document.getElementById('gen-count').textContent = genElements.length;
       if (genElements.length === 0) {
-        container.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">Ajoute un element pour commencer</p>';
+        container.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">Ajoute un element via les boutons ci-dessous</p>';
         document.getElementById('gen-count').textContent = '0';
+      } else {
+        for (var i = 0; i < genElements.length; i++) {
+          var el = genElements[i];
+          html += '<div class="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-700/30 rounded p-1.5">';
+          if (el.type === 'filter' && el.filterName) {
+            html += '<span class="flex-1 text-xs text-indigo-600 dark:text-indigo-400 truncate">' + escapeHtml(el.filterName) + '</span>';
+            html += '<button onclick="genChangeType(' + el.id + ')" class="text-xs text-slate-400 hover:text-slate-600 p-0.5" title="Changer">↻</button>';
+          } else if (el.type === 'text' && el.text) {
+            html += '<span class="flex-1 text-xs text-emerald-600 dark:text-emerald-400 truncate">"' + escapeHtml(el.text).replace(/"/g, '&quot;') + '"</span>';
+            html += '<button onclick="genChangeType(' + el.id + ')" class="text-xs text-slate-400 hover:text-slate-600 p-0.5" title="Changer">↻</button>';
+          } else {
+            html += '<span class="flex-1 text-xs text-slate-400 italic">En attente...</span>';
+          }
+          html += '<button onclick="genRemoveElement(' + el.id + ')" class="text-xs text-rose-400 hover:text-rose-300 p-1" title="Supprimer">&times;</button>';
+          html += '</div>';
+        }
+        container.innerHTML = html;
+        document.getElementById('gen-count').textContent = genElements.length;
       }
     }
 
@@ -810,37 +1071,48 @@
         }
       }
       genRender();
+      saveEPState();
     }
 
-    function genOnTypeChange(select, id) {
-      var val = select.value;
-      for (var i = 0; i < genElements.length; i++) {
-        if (genElements[i].id === id) {
-          genElements[i].type = val;
-          genElements[i].filterId = null;
-          genElements[i].text = '';
-          genElements[i].filterName = '';
-          break;
-        }
-      }
-      if (val === 'filter') {
-        openFilterPick(id);
-      } else if (val === 'text') {
-        var txt = prompt('Recherche semantique (mot ou phrase) :');
+    // Modal pour le texte semantique
+    function openSemanticModal(elId) {
+      showPrompt('Texte libre', 'Recherche semantique (mot ou phrase) :', 'ex: pose dynamique', function(txt){
         if (txt) {
           for (var i = 0; i < genElements.length; i++) {
-            if (genElements[i].id === id) {
-              genElements[i].text = txt.trim();
-              break;
-            }
+            if (genElements[i].id === elId) { genElements[i].text = txt.trim(); break; }
           }
         } else {
-          for (var i = 0; i < genElements.length; i++) {
-            if (genElements[i].id === id) { genElements[i].type = ''; break; }
-          }
+          genElements = genElements.filter(function(e){ return e.id !== elId; });
         }
+        genRender();
+        saveEPState();
+      });
+    }
+
+    // Persistance Elements Picker
+    async function saveEPState() {
+      if (!currentUser) return;
+      var s = currentUser.settings || {};
+      s.genElements = genElements.map(function(e){ return {type: e.type, filterId: e.filterId, text: e.text, filterName: e.filterName}; });
+      try {
+        await fetch(API + '/settings', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(s)
+        });
+        currentUser.settings = s;
+      } catch (e) {}
+    }
+
+    function loadEPState() {
+      if (currentUser && currentUser.settings && currentUser.settings.genElements) {
+        var saved = currentUser.settings.genElements;
+        genElements = [];
+        saved.forEach(function(e) {
+          genElements.push({id: ++genElementId, type: e.type || '', filterId: e.filterId || null, text: e.text || '', filterName: e.filterName || ''});
+        });
+        genRender();
       }
-      genRender();
     }
 
     // Filter picker modal
@@ -850,19 +1122,23 @@
       fpTargetId = elementId;
       document.getElementById('modal-filter-pick').classList.remove('hidden');
       document.getElementById('modal-filter-pick').classList.add('flex');
+      makeModalDraggable('fp-modal-header', 'fp-modal');
       loadFilterList();
     }
 
     function closeFilterPick() {
+      var target = fpTargetId;
+      fpTargetId = null;
       document.getElementById('modal-filter-pick').classList.add('hidden');
       document.getElementById('modal-filter-pick').classList.remove('flex');
-      fpTargetId = null;
       // Si l'utilisateur ferme sans choisir, enlever l'element
-      if (genElements.some(function(e){ return e.id === fpTargetId && !e.filterId; })) {
-        for (var i = 0; i < genElements.length; i++) {
-          if (genElements[i].id === fpTargetId) { genElements[i].type = ''; break; }
+      for (var i = 0; i < genElements.length; i++) {
+        if (genElements[i].id === target && !genElements[i].filterId) {
+          genElements.splice(i, 1);
+          genRender();
+          saveEPState();
+          break;
         }
-        genRender();
       }
     }
 
@@ -908,6 +1184,7 @@
         }
         closeFilterPick();
         genRender();
+        saveEPState();
       }
     }
 
@@ -919,7 +1196,7 @@
         if (el.type === 'filter' && el.filterId) items.push({type: 'filter', id: el.filterId});
         else if (el.type === 'text' && el.text) items.push({type: 'text', text: el.text});
       }
-      if (items.length === 0) { alert('Ajoute au moins un element'); return; }
+      if (items.length === 0) { showModal('Elements Picker', 'Ajoute un element (saved filter ou semantic) avant de generer', 'error'); return; }
 
       try {
         var res = await fetch(API + '/generate', {
@@ -929,7 +1206,7 @@
         });
         if (!res.ok) {
           var err = await res.json().catch(function(){ return {}; });
-          alert('Erreur: ' + (err.error || 'Generation impossible'));
+          showModal('Erreur', err.error || 'Generation impossible', 'error');
           return;
         }
         var data = await res.json();
@@ -942,7 +1219,7 @@
         }
         document.getElementById('gen-count').textContent = data.count;
       } catch (err) {
-        alert('Erreur: ' + (err.message || ''));
+        showModal('Erreur', err.message || 'Une erreur est survenue', 'error');
       }
     }
 
@@ -959,6 +1236,7 @@
       document.getElementById('modal-save-filter').classList.remove('hidden');
       document.getElementById('modal-save-filter').classList.add('flex');
       document.getElementById('save-filter-name').focus();
+      makeModalDraggable('save-modal-header', 'save-filter-modal');
     }
     function closeSaveFilter() {
       document.getElementById('modal-save-filter').classList.add('hidden');
@@ -989,7 +1267,7 @@
       var nsfw = c.nsfw_filter !== undefined ? c.nsfw_filter : '';
       document.querySelectorAll('input[name="nsfw-filter"]').forEach(function(r){ r.checked = r.value === nsfw; });
       document.getElementById('filter-confidence').value = Math.round((c.min_confidence || 0) * 100);
-      document.getElementById('filter-confidence-val').textContent = Math.round((c.min_confidence || 0) * 100) + '%';
+      document.getElementById('filter-confidence-num').value = Math.round((c.min_confidence || 0) * 100);
       applyFilters();
     }
 
@@ -1003,19 +1281,19 @@
           body: JSON.stringify({config: config})
         });
         if (res.ok) {
-          alert('Filtre mis a jour !');
+          showModal('Filtre', 'Filtre mis a jour', 'success');
         } else {
           var err = await res.json().catch(function(){ return {}; });
-          alert('Erreur: ' + (err.error || ''));
+          showModal('Erreur', err.error || '', 'error');
         }
       } catch (err) {
-        alert('Erreur: ' + (err.message || ''));
+        showModal('Erreur', err.message || 'Une erreur est survenue', 'error');
       }
     }
 
     async function saveFilter() {
       var name = document.getElementById('save-filter-name').value.trim();
-      if (!name) { alert('Donne un nom au filtre'); return; }
+      if (!name) { showModal('Filtre', 'Donne un nom au filtre', 'error'); return; }
       var cat = document.getElementById('save-filter-cat').value.trim();
       var nsfw = document.querySelector('input[name="save-filter-nsfw"]:checked');
       var nsfwVal = nsfw ? parseInt(nsfw.value) : 0;
@@ -1033,13 +1311,13 @@
           document.getElementById('save-filter-name').value = '';
           document.getElementById('save-filter-cat').value = '';
           var pvw = data.preview && data.preview.length > 0 ? '\n\nApercu: ' + data.preview.join(', ') : '';
-          alert('Sauvegarde ! ' + data.count + ' mots-cles dans le cache.' + pvw);
+          showModal('Filtre', 'Sauvegarde ! ' + data.count + ' mots-cles dans le cache.' + pvw, 'success');
         } else {
           var err = await res.json().catch(function(){ return {}; });
-          alert('Erreur: ' + (err.error || 'impossible de sauvegarder'));
+          showModal('Erreur', err.error || 'Impossible de sauvegarder', 'error');
         }
       } catch (err) {
-        alert('Erreur: ' + (err.message || ''));
+        showModal('Erreur', err.message || 'Une erreur est survenue', 'error');
       }
     }
 
@@ -1063,9 +1341,622 @@
         document.getElementById('btn-filter-save').classList.remove('hidden');
         document.getElementById('btn-filter-discard').classList.remove('hidden');
         closeFilterPick();
-        alert('Filtre charge : ' + data.name + ' (' + data.total + ' mots-cles en cache)');
       }).catch(function(){});
     }
+
+
+    // === Presets IA + Styles + Enhance ===
+
+    // -- Presets --
+
+    function toggleUserSettings() {
+      var m = document.getElementById('modal-user-settings');
+      var open = !m.classList.contains('hidden');
+      if (open) { closeUserSettings(); return; }
+      m.classList.remove('hidden');
+      m.classList.add('flex');
+      makeModalDraggable('usettings-modal-header', 'usettings-modal');
+      loadPresets();
+      // Montrer checkbox global seulement si admin
+      if (currentUser && currentUser.role === 'admin') {
+        document.getElementById('preset-global-label').style.display = '';
+      }
+    }
+
+    function closeUserSettings() {
+      document.getElementById('modal-user-settings').classList.add('hidden');
+      document.getElementById('modal-user-settings').classList.remove('flex');
+    }
+
+    function checkPresetUrl() {
+      var url = document.getElementById('preset-form-url').value.trim();
+      var warn = document.getElementById('preset-url-warning');
+      var isLocal = /(localhost|127\.0\.0\.\d+|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[01])\.\d+\.\d+)/i.test(url);
+      if (isLocal) warn.classList.remove('hidden');
+      else warn.classList.add('hidden');
+    }
+
+    function clearPresetForm() {
+      document.getElementById('preset-form-name').value = '';
+      document.getElementById('preset-form-url').value = '';
+      document.getElementById('preset-form-key').value = '';
+      document.getElementById('preset-form-model').value = '';
+      document.getElementById('preset-form-global').checked = false;
+      document.getElementById('preset-models-dropdown').classList.add('hidden');
+      document.getElementById('preset-models-dropdown').innerHTML = '';
+    }
+
+    async function loadPresets() {
+      try {
+        var res = await fetch(API + '/presets');
+        if (!res.ok) throw new Error('');
+        var presets = await res.json();
+        renderPresetsList(presets);
+        // Remplir le dropdown de l'enhancer
+        var sel = document.getElementById('enhance-preset');
+        sel.innerHTML = '<option value="">-- Preset IA --</option>';
+        presets.forEach(function(p) {
+          var opt = document.createElement('option');
+          opt.value = p.id;
+          opt.textContent = p.name + (p.is_global ? ' 🌐' : '') + (p.is_client_side ? ' 🖥️' : '');
+          sel.appendChild(opt);
+        });
+        // Restaurer si sauvegarde
+        if (currentUser && currentUser.settings && currentUser.settings.enhancePresetId) {
+          sel.value = currentUser.settings.enhancePresetId;
+        }
+      } catch (e) {}
+    }
+
+    function renderPresetsList(presets) {
+      var el = document.getElementById('presets-list');
+      if (!presets.length) { el.innerHTML = '<p class="text-xs text-slate-400">Aucun preset. Creez-en un !</p>'; return; }
+      var html = '';
+      presets.forEach(function(p) {
+        var canEdit = (!p.is_global && p.user_id === (currentUser ? currentUser.id : '')) || (currentUser && currentUser.role === 'admin');
+        html += '<div class="flex items-center justify-between py-1 px-2 rounded text-xs ' + (p.is_global ? 'bg-indigo-50 dark:bg-indigo-900/20' : 'bg-slate-50 dark:bg-slate-800/50') + '">';
+        html += '<div><span class="font-medium text-slate-700 dark:text-slate-200">' + p.name + '</span>';
+        if (p.is_global) html += ' <span class="text-indigo-500">🌐 global</span>';
+        if (p.is_client_side) html += ' <span class="text-amber-500">🖥️ client</span>';
+        if (p.owner_name && !p.is_global) html += ' <span class="text-slate-400">(' + p.owner_name + ')</span>';
+        html += '<br><span class="text-slate-400">' + p.model + ' @ ' + p.base_url + '</span></div>';
+        html += '<div class="flex gap-1">';
+        if (canEdit) {
+          html += '<button onclick="editPreset(' + p.id + ')" class="text-xs text-indigo-500 hover:text-indigo-700">Edit</button>';
+          html += '<button onclick="dupPreset(' + p.id + ')" class="text-xs text-slate-400 hover:text-slate-600">Dup</button>';
+          html += '<button onclick="delPreset(' + p.id + ')" class="text-xs text-rose-400 hover:text-rose-600">Del</button>';
+        }
+        html += '</div></div>';
+      });
+      el.innerHTML = html;
+    }
+
+    function editPreset(id) {
+      // Charger dans le formulaire (besoin de refaire un fetch)
+      fetch(API + '/presets').then(function(r){ return r.json(); }).then(function(ps){
+        var p = ps.find(function(x){ return x.id === id; });
+        if (!p) return;
+        document.getElementById('preset-form-name').value = p.name;
+        document.getElementById('preset-form-url').value = p.base_url;
+        document.getElementById('preset-form-model').value = p.model;
+        document.getElementById('preset-form-key').value = '';
+        document.getElementById('preset-form-global').checked = p.is_global;
+        // Stocker l'ID pour un update
+        document.getElementById('preset-form-name').dataset.editId = id;
+      }).catch(function(){});
+    }
+
+    async function savePreset() {
+      var name = document.getElementById('preset-form-name').value.trim();
+      var url = document.getElementById('preset-form-url').value.trim();
+      var key = document.getElementById('preset-form-key').value.trim();
+      var model = document.getElementById('preset-form-model').value.trim();
+      var isGlobal = document.getElementById('preset-form-global').checked ? 1 : 0;
+      var isClient = document.getElementById('preset-form-client').checked ? 1 : 0;
+      var editId = document.getElementById('preset-form-name').dataset.editId;
+
+      if (!name) { showModal('Preset', 'Nom requis', 'error'); return; }
+      if (!url) { showModal('Preset', 'URL requise', 'error'); return; }
+
+      try {
+        var body = { name: name, base_url: url, api_key: key, model: model, is_global: isGlobal, is_client_side: isClient };
+        var method = 'POST';
+        var endpoint = '/presets';
+        if (editId) {
+          method = 'PUT';
+          endpoint = '/presets/' + editId;
+          if (!key) delete body.api_key;  // garder l'ancienne cle si vide
+        }
+        var res = await fetch(API + endpoint, {
+          method: method,
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body)
+        });
+        if (!res.ok) throw await res.json();
+        clearPresetForm();
+        document.getElementById('preset-form-name').dataset.editId = '';
+        loadPresets();
+        showModal('Preset', editId ? 'Preset mis a jour' : 'Preset cree', 'success');
+      } catch (err) {
+        showModal('Erreur', (err.error || err.message || 'Erreur'), 'error');
+      }
+    }
+
+    async function dupPreset(id) {
+      try {
+        var res = await fetch(API + '/presets/' + id + '/duplicate', { method: 'POST' });
+        if (!res.ok) throw await res.json();
+        loadPresets();
+        showModal('Preset', 'Preset duplique', 'success');
+      } catch (err) {
+        showModal('Erreur', (err.error || ''), 'error');
+      }
+    }
+
+    async function delPreset(id) {
+      showConfirm('Supprimer', 'Supprimer ce preset ?', async function(ok){
+        if (!ok) return;
+        try {
+          var res = await fetch(API + '/presets/' + id, { method: 'DELETE' });
+          if (!res.ok) throw await res.json();
+          loadPresets();
+        } catch (err) {}
+      });
+    }
+
+    async function fetchModelsForForm() {
+      var url = document.getElementById('preset-form-url').value.trim();
+      var key = document.getElementById('preset-form-key').value.trim();
+      if (!url) { showModal('URL', 'Saisis l\'URL du serveur d\'abord', 'error'); return; }
+
+      try {
+        var r = await fetch(API + '/presets/list-models', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ base_url: url, api_key: key })
+        });
+        if (!r.ok) throw await r.json();
+        var models = await r.json();
+        var dd = document.getElementById('preset-models-dropdown');
+        dd.innerHTML = '';
+        models.forEach(function(m) {
+          var opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = m.id + (m.owned_by ? ' (' + m.owned_by + ')' : '');
+          dd.appendChild(opt);
+        });
+        dd.classList.remove('hidden');
+        dd.onchange = function() { document.getElementById('preset-form-model').value = this.value; };
+        if (models.length === 0) showModal('Modeles', 'Aucun modele trouve', 'error');
+      } catch (e) {
+        showModal('Erreur', (e.error || e.message || 'Impossible de lister les modeles'), 'error');
+      }
+    }
+
+    // -- Styles --
+
+    function openStylesModal() {
+      document.getElementById('modal-styles').classList.remove('hidden');
+      document.getElementById('modal-styles').classList.add('flex');
+      makeModalDraggable('styles-modal-header', 'styles-modal');
+      loadStyles();
+    }
+
+    function closeStylesModal() {
+      document.getElementById('modal-styles').classList.add('hidden');
+      document.getElementById('modal-styles').classList.remove('flex');
+    }
+
+    async function loadStyles() {
+      try {
+        var r = await fetch(API + '/styles');
+        if (!r.ok) return;
+        var styles = await r.json();
+        renderStylesList(styles);
+        var sel = document.getElementById('enhance-style');
+        sel.innerHTML = '<option value="">-- Style --</option>';
+        styles.forEach(function(s) {
+          var opt = document.createElement('option');
+          opt.value = s.id;
+          opt.textContent = s.name + (s.is_public ? '' : ' (prive)') + ' - ' + (s.owner_name || 'moi');
+          sel.appendChild(opt);
+        });
+        if (currentUser && currentUser.settings && currentUser.settings.enhanceStyleId) {
+          sel.value = currentUser.settings.enhanceStyleId;
+        }
+      } catch (e) {}
+    }
+
+    function renderStylesList(styles) {
+      var el = document.getElementById('styles-list');
+      if (!styles.length) { el.innerHTML = '<p class="text-xs text-slate-400">Aucun style. Creez-en un !</p>'; return; }
+      var html = '';
+      styles.forEach(function(s) {
+        var canEdit = s.user_id === (currentUser ? currentUser.id : '');
+        html += '<div class="flex items-center justify-between py-1 px-2 rounded text-xs bg-slate-50 dark:bg-slate-800/50">';
+        html += '<div><span class="font-medium text-slate-700 dark:text-slate-200">' + s.name + '</span>';
+        html += ' <span class="text-slate-400">' + (s.is_public ? '🌐 public' : '🔒 prive') + ' (' + (s.owner_name || 'moi') + ')</span>';
+        html += '<br><span class="text-slate-400 text-xs italic">+ ' + s.style_text.substring(0, 60) + '</span>';
+        if (s.negative_prompt) html += '<br><span class="text-rose-400 text-xs">- ' + s.negative_prompt.substring(0, 50) + '</span>';
+        html += '</div>';
+        if (canEdit) {
+          html += '<div class="flex gap-1">';
+          html += '<button onclick="editStyle(' + s.id + ')" class="text-xs text-indigo-400 hover:text-indigo-600">Edit</button>';
+          html += '<button onclick="delStyle(' + s.id + ')" class="text-xs text-rose-400 hover:text-rose-600">Del</button>';
+          html += '</div>';
+        }
+        html += '</div>';
+      });
+      el.innerHTML = html;
+    }
+
+    async function saveStyle() {
+      var name = document.getElementById('style-form-name').value.trim();
+      var text = document.getElementById('style-form-text').value.trim();
+      var neg = document.getElementById('style-form-neg').value.trim();
+      var isPublic = document.getElementById('style-form-public').checked ? 1 : 0;
+      var editId = document.getElementById('style-form-name').dataset.editId;
+      if (!name || !text) { showModal('Style', 'Nom et texte requis', 'error'); return; }
+      try {
+        var body = {name: name, style_text: text, negative_prompt: neg, is_public: isPublic};
+        var endpoint = '/styles';
+        var method = 'POST';
+        if (editId) { endpoint = '/styles/' + editId; method = 'PUT'; }
+        var r = await fetch(API + endpoint, {
+          method: method,
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body)
+        });
+        if (!r.ok) throw await r.json();
+        clearStyleForm();
+        loadStyles();
+        showModal('Style', editId ? 'Style mis a jour' : 'Style ajoute !', 'success');
+      } catch (err) {
+        showModal('Erreur', (err.error || ''), 'error');
+      }
+    }
+
+    function editStyle(id) {
+      fetch(API + '/styles').then(function(r){ return r.json(); }).then(function(styles){
+        var s = styles.find(function(x){ return x.id === id; });
+        if (!s) return;
+        document.getElementById('style-form-name').value = s.name;
+        document.getElementById('style-form-name').dataset.editId = id;
+        document.getElementById('style-form-text').value = s.style_text;
+        document.getElementById('style-form-neg').value = s.negative_prompt || '';
+        document.getElementById('style-form-public').checked = s.is_public;
+        document.getElementById('btn-style-save').textContent = 'Mettre a jour';
+        document.getElementById('btn-style-clear').classList.remove('hidden');
+      }).catch(function(){});
+    }
+
+    function clearStyleForm() {
+      document.getElementById('style-form-name').value = '';
+      document.getElementById('style-form-name').dataset.editId = '';
+      document.getElementById('style-form-text').value = '';
+      document.getElementById('style-form-neg').value = '';
+      document.getElementById('style-form-public').checked = false;
+      document.getElementById('btn-style-save').textContent = 'Ajouter';
+      document.getElementById('btn-style-clear').classList.add('hidden');
+    }
+
+    function delStyle(id) {
+      showConfirm('Supprimer', 'Supprimer ce style ?', function(ok){
+        if (!ok) return;
+        fetch(API + '/styles/' + id, { method: 'DELETE' }).then(function(){
+          loadStyles();
+        }).catch(function(){});
+      });
+    }
+
+    // -- Enhance --
+
+    async function doEnhance() {
+      var text = document.getElementById('enhance-input').value.trim();
+      var presetId = document.getElementById('enhance-preset').value;
+      var promptType = document.getElementById('enhance-type').value;
+      var outputFormat = document.getElementById('enhance-format').value;
+      var styleId = document.getElementById('enhance-style').value;
+      var useEP = document.getElementById('enhance-ep').checked;
+      var useRandom = document.getElementById('enhance-random').checked;
+      var randomCount = parseInt(document.getElementById('enhance-random-count').value) || 3;
+
+      if (!text && !useEP) { showModal('Enhance', 'Saisis un texte ou active Elements Picker', 'error'); return; }
+
+      var statusEl = document.getElementById('enhance-status');
+      statusEl.textContent = 'Generation en cours...';
+      statusEl.classList.remove('hidden');
+
+      // Si Elements Picker active, generer et fusionner
+      var epItems = [];
+      if (useEP) {
+        for (var i = 0; i < genElements.length; i++) {
+          var el = genElements[i];
+          if (el.type === 'filter' && el.filterId) epItems.push({type: 'filter', id: el.filterId});
+          else if (el.type === 'text' && el.text) epItems.push({type: 'text', text: el.text});
+        }
+        // Afficher aussi dans l'output de l'Elements Picker
+        try {
+          var epRes = await fetch(API + '/generate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({elements: epItems})
+          });
+          if (epRes.ok) {
+            var epData = await epRes.json();
+            document.getElementById('gen-output').value = epData.prompt;
+          }
+        } catch (e) {}
+      }
+
+      // Recuperer le texte du style
+      var styleText = '';
+      if (styleId) {
+        try {
+          var sr = await fetch(API + '/styles');
+          if (sr.ok) {
+            var styles = await sr.json();
+            var s = styles.find(function(x){ return x.id === parseInt(styleId); });
+            if (s) styleText = s.style_text;
+          }
+        } catch (e) {}
+      }
+
+      // Verifier si le preset est client-side
+      var isClientSide = false;
+      var csUrl = '', csModel = '';
+      if (presetId) {
+        try {
+          var pr = await fetch(API + '/presets');
+          if (pr.ok) {
+            var presets = await pr.json();
+            var p = presets.find(function(x){ return x.id === parseInt(presetId); });
+            if (p && p.is_client_side) {
+              isClientSide = true;
+              csUrl = p.base_url || '';
+              csModel = p.model || '';
+            }
+          }
+        } catch (e) {}
+      }
+
+      try {
+        var data;
+        if (isClientSide && csUrl) {
+          // Appel direct depuis le navigateur
+          statusEl.textContent = 'Appel client-side...';
+          var mergedText = text;
+          if (epItems.length > 0) mergedText += '\n---\nElements Picker: ' + JSON.stringify(epItems);
+          var llmRes = await fetch(csUrl.replace(/\/+$/, '') + '/chat/completions', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              model: csModel || 'llama3',
+              messages: [
+                {role: 'system', content: 'Transforme ce texte en prompt ' + promptType + ' optimise. ' + (styleText || '') + ' Reponds UNIQUEMENT avec le prompt final.'},
+                {role: 'user', content: mergedText}
+              ],
+              temperature: 0.7, max_tokens: 1024
+            })
+          });
+          if (!llmRes.ok) {
+            var errText = await llmRes.text().catch(function(){ return ''; });
+            throw {error: 'LLM local erreur ' + llmRes.status + (errText ? ': ' + errText.substring(0,100) : ' — verifie que CORS est active sur le serveur LLM')};
+          }
+          var llmData = await llmRes.json();
+          data = {output: llmData.choices[0].message.content.trim()};
+        } else {
+          // Appel via backend
+          var body = {
+            text: text,
+            preset_id: presetId ? parseInt(presetId) : null,
+            prompt_type: promptType,
+            output_format: outputFormat,
+            style_id: styleId ? parseInt(styleId) : null,
+            style_text: styleText,
+            ep_elements: epItems,
+            random_count: useRandom ? randomCount : 0
+          };
+          var res = await fetch(API + '/enhance', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+          });
+          if (!res.ok) throw await res.json();
+          data = await res.json();
+        }
+        document.getElementById('enhance-output').value = data.output;
+        document.getElementById('btn-copy-enhance').classList.remove('hidden');
+        document.getElementById('btn-toggle-view').classList.remove('hidden');
+        statusEl.classList.add('hidden');
+        saveEnhancerSettings();
+      } catch (err) {
+        statusEl.classList.add('hidden');
+        showModal('Erreur', (err.error || 'Erreur de generation'), 'error');
+      }
+    }
+
+    function copyEnhanceOutput() {
+      var el = document.getElementById('enhance-output');
+      el.select();
+      document.execCommand('copy');
+      showModal('Copie', 'Prompt copie !', 'success');
+    }
+
+    function toggleEnhanceView() {
+      var ta = document.getElementById('enhance-output');
+      var div = document.getElementById('enhance-output-rendered');
+      var btn = document.getElementById('btn-toggle-view');
+      if (div.classList.contains('hidden')) {
+        // Passer en mode rendu
+        var raw = ta.value;
+        var format = document.getElementById('enhance-format').value;
+        if (format === 'json') {
+          try {
+            var j = JSON.parse(raw);
+            div.innerHTML = '<pre class="text-xs text-emerald-700 dark:text-emerald-400">' + JSON.stringify(j, null, 2).replace(/</g, '&lt;') + '</pre>';
+          } catch (e) {
+            div.innerHTML = '<span class="text-rose-500">JSON invalide</span>';
+          }
+        } else if (format === 'markdown') {
+          div.innerHTML = raw.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>').replace(/\n/g, '<br>').replace(/`([^`]+)`/g, '<code>$1</code>');
+        } else {
+          div.innerHTML = raw.replace(/\n/g, '<br>');
+        }
+        ta.classList.add('hidden');
+        div.classList.remove('hidden');
+        btn.textContent = 'Brut';
+      } else {
+        div.classList.add('hidden');
+        ta.classList.remove('hidden');
+        btn.textContent = 'Rendu';
+      }
+    }
+
+    // Charger presets et styles au demarrage
+    async function loadEnhancerConfig() {
+      await loadPresets();
+      await loadStyles();
+      // Restaurer les autres preferences sauvegardees
+      if (currentUser && currentUser.settings) {
+        var s = currentUser.settings;
+        if (s.enhanceType) document.getElementById('enhance-type').value = s.enhanceType;
+        if (s.enhanceFormat) document.getElementById('enhance-format').value = s.enhanceFormat;
+        if (s.enhanceInput) document.getElementById('enhance-input').value = s.enhanceInput;
+        if (s.enhanceEP) document.getElementById('enhance-ep').checked = s.enhanceEP;
+        if (s.enhanceRandom) {
+          document.getElementById('enhance-random').checked = s.enhanceRandom;
+          document.getElementById('enhance-random-count').disabled = !s.enhanceRandom;
+          if (s.enhanceRandomCount) document.getElementById('enhance-random-count').value = s.enhanceRandomCount;
+        }
+        if (s.enhanceOutput) {
+          document.getElementById('enhance-output').value = s.enhanceOutput;
+          document.getElementById('btn-copy-enhance').classList.remove('hidden');
+          document.getElementById('btn-toggle-view').classList.remove('hidden');
+        }
+      }
+      // Sauvegarde auto au changement
+      var elPreset = document.getElementById('enhance-preset');
+      var elType = document.getElementById('enhance-type');
+      var elStyle = document.getElementById('enhance-style');
+      var elInput = document.getElementById('enhance-input');
+      elPreset.onchange = saveEnhancerSettings;
+      elType.onchange = saveEnhancerSettings;
+      elStyle.onchange = saveEnhancerSettings;
+      elInput.oninput = function() { clearTimeout(elInput._saveTimer); elInput._saveTimer = setTimeout(saveEnhancerSettings, 800); };
+      // Toggle random count
+      var randCb = document.getElementById('enhance-random');
+      var randNum = document.getElementById('enhance-random-count');
+      if (randCb && randNum) {
+        randCb.onchange = function() { randNum.disabled = !this.checked; };
+        randNum.disabled = !randCb.checked;
+      }
+    }
+
+    var _saveSettingsBusy = false;
+    async function saveEnhancerSettings() {
+      if (_saveSettingsBusy || !currentUser) return;
+      _saveSettingsBusy = true;
+      var settings = currentUser.settings || {};
+      settings.enhancePresetId = document.getElementById('enhance-preset').value || null;
+      settings.enhanceType = document.getElementById('enhance-type').value;
+      settings.enhanceFormat = document.getElementById('enhance-format').value;
+      settings.enhanceEP = document.getElementById('enhance-ep').checked;
+      settings.enhanceRandom = document.getElementById('enhance-random').checked;
+      settings.enhanceRandomCount = document.getElementById('enhance-random-count').value;
+      settings.enhanceInput = document.getElementById('enhance-input').value;
+      settings.enhanceOutput = document.getElementById('enhance-output').value || null;
+      try {
+        var r = await fetch(API + '/settings', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(settings)
+        });
+        if (r.ok) currentUser.settings = settings;
+      } catch (e) {}
+      _saveSettingsBusy = false;
+    }
+
+
+    // === Modale generique ===
+    var modalCallback = null;
+    var modalType = '';
+
+    function showModal(title, msg, type) {
+      document.getElementById('modal-generic-title').textContent = title;
+      document.getElementById('modal-generic-body').textContent = msg;
+      document.getElementById('modal-generic-input-area').classList.add('hidden');
+      document.getElementById('modal-generic-cancel').classList.add('hidden');
+      document.getElementById('modal-generic-ok').textContent = 'OK';
+      var header = document.getElementById('modal-generic-header');
+      if (type === 'error') {
+        var okBtn = document.getElementById('modal-generic-ok');
+        okBtn.className = 'px-3 py-1.5 text-sm font-medium bg-rose-600 text-white rounded-md hover:bg-rose-500';
+        header.className = header.className.replace('bg-slate-50','bg-rose-50').replace('dark:bg-slate-800/80','dark:bg-rose-900/20');
+      } else if (type === 'success') {
+        var okBtn = document.getElementById('modal-generic-ok');
+        okBtn.className = 'px-3 py-1.5 text-sm font-medium bg-emerald-600 text-white rounded-md hover:bg-emerald-500';
+        header.className = header.className.replace('bg-slate-50','bg-emerald-50').replace('dark:bg-slate-800/80','dark:bg-emerald-900/20');
+      } else {
+        var okBtn = document.getElementById('modal-generic-ok');
+        okBtn.className = 'px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500';
+      }
+      modalType = type || '';
+      modalCallback = null;
+      document.getElementById('modal-generic').classList.remove('hidden');
+      document.getElementById('modal-generic').classList.add('flex');
+    }
+
+    function showConfirm(title, msg, cb) {
+      document.getElementById('modal-generic-title').textContent = title;
+      document.getElementById('modal-generic-body').textContent = msg;
+      document.getElementById('modal-generic-input-area').classList.add('hidden');
+      document.getElementById('modal-generic-cancel').classList.remove('hidden');
+      document.getElementById('modal-generic-ok').textContent = 'Oui';
+      document.getElementById('modal-generic-ok').className = 'px-3 py-1.5 text-sm font-medium bg-rose-600 text-white rounded-md hover:bg-rose-500';
+      modalType = 'confirm';
+      modalCallback = cb;
+      document.getElementById('modal-generic').classList.remove('hidden');
+      document.getElementById('modal-generic').classList.add('flex');
+    }
+
+    function showPrompt(title, msg, placeholder, cb) {
+      document.getElementById('modal-generic-title').textContent = title;
+      document.getElementById('modal-generic-body').textContent = msg;
+      document.getElementById('modal-generic-input-area').classList.remove('hidden');
+      document.getElementById('modal-generic-input').value = '';
+      document.getElementById('modal-generic-input').placeholder = placeholder || '';
+      document.getElementById('modal-generic-input').focus();
+      document.getElementById('modal-generic-cancel').classList.remove('hidden');
+      document.getElementById('modal-generic-ok').textContent = 'OK';
+      document.getElementById('modal-generic-ok').className = 'px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500';
+      modalType = 'prompt';
+      modalCallback = cb;
+      document.getElementById('modal-generic').classList.remove('hidden');
+      document.getElementById('modal-generic').classList.add('flex');
+    }
+
+    function closeModal() {
+      document.getElementById('modal-generic').classList.add('hidden');
+      document.getElementById('modal-generic').classList.remove('flex');
+      var header = document.getElementById('modal-generic-header');
+      header.className = 'border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none';
+      modalCallback = null;
+    }
+
+    function modalOK() {
+      var result = null;
+      if (modalType === 'confirm') result = true;
+      if (modalType === 'prompt') result = document.getElementById('modal-generic-input').value.trim() || null;
+      var cb = modalCallback;
+      closeModal();
+      if (cb && result !== null) cb(result);
+    }
+
+    // Drag pour la modale generique
+    document.addEventListener('DOMContentLoaded', function() {
+      makeModalDraggable('modal-generic-header', 'modal-generic');
+    });
 
     // === Panneau Admin ===
     function toggleAdmin() {
@@ -1092,7 +1983,7 @@
       var container = document.getElementById('members-list');
       container.innerHTML = '<p class="text-sm text-slate-400">Chargement...</p>';
       try {
-        var res = await fetch(API + '/api/members');
+        var res = await fetch(API + '/members');
         if (!res.ok) {
           container.innerHTML = '<p class="text-sm text-rose-500">Erreur ' + res.status + '</p>';
           return;
@@ -1166,17 +2057,17 @@
         });
         if (res.ok) loadAdminUsers();
       } catch (err) {
-        alert('Erreur: ' + (err.message || 'action impossible'));
+        showModal('Erreur', err.message || 'Action impossible', 'error');
       }
     }
 
     async function deleteUser(userId) {
-      if (!confirm('Supprimer cet utilisateur et tous ses mots-cles ?')) return;
+      showConfirm('Suppression', 'Supprimer cet utilisateur et tous ses mots-cles ?', function(ok){ if (ok) deleteUserConfirm(userId); }); return;
       try {
         var res = await fetch(API + '/admin/users/' + encodeURIComponent(userId), {method: 'DELETE'});
         if (res.ok) loadAdminUsers();
       } catch (err) {
-        alert('Erreur: ' + (err.message || ''));
+        showModal('Erreur', err.message || 'Une erreur est survenue', 'error');
       }
     }
 
@@ -1200,7 +2091,7 @@
     async function saveOllamaConfig() {
       var url = document.getElementById('admin-ollama-url').value.trim();
       var model = document.getElementById('admin-ollama-model').value.trim();
-      if (!url || !model) { alert('URL et modele requis'); return; }
+      if (!url || !model) { showModal('Config', 'URL et modele requis', 'error'); return; }
       try {
         var res = await fetch(API + '/admin/settings/ollama', {
           method: 'POST',
@@ -1213,15 +2104,15 @@
           st.className = 'text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400';
         } else {
           var err = await res.json();
-          alert('Erreur: ' + (err.error || ''));
+          showModal('Erreur', err.error || '', 'error');
         }
       } catch (err) {
-        alert('Erreur: ' + (err.message || ''));
+        showModal('Erreur', err.message || '', 'error');
       }
     }
 
     async function adminClearDb() {
-      if (!confirm('Vider la base de donnees ? Cette action est irreversible.')) return;
+      showConfirm('Vider la BDD', 'Vider la base de donnees ? Cette action est irreversible.', function(ok){ if (ok) adminClearDbConfirm(); }); return;
       try {
         var res = await fetch(API + '/admin/db/clear', {method: 'POST'});
         if (res.ok) {
@@ -1230,7 +2121,7 @@
           await checkData();
         }
       } catch (err) {
-        alert('Erreur: ' + (err.message || 'action impossible'));
+        showModal('Erreur', err.message || 'Action impossible', 'error');
       }
     }
 
@@ -1519,7 +2410,7 @@
         a.remove();
         URL.revokeObjectURL(url);
       } catch (err) {
-        alert('Erreur export : ' + err.message);
+        showModal('Erreur', 'Export impossible : ' + err.message, 'error');
       }
     }
   </script>

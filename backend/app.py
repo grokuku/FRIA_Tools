@@ -17,6 +17,8 @@ from embeddings import generate_embedding, cosine_similarity, is_available, set_
 from auth import init_oauth, make_discord_session, check_guild_access, get_guild_member, get_user_info, avatar_url, get_logged_user
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+from cryptography.fernet import Fernet
+
 DB_PATH = BASE_DIR / 'keywords.db'
 MD_PATH = BASE_DIR / 'Keywords-Complete.md'
 
@@ -44,6 +46,33 @@ def _load_ollama_config_at_startup():
 _load_ollama_config_at_startup()
 
 # ── helpers ──────────────────────────────────────────────────────────
+
+# ── encryption ───────────────────────────────────────────────────────
+
+def _get_encryption_key():
+    """Recupere ou genere la cle de chiffrement."""
+    conn = sqlite3.connect(str(DB_PATH))
+    cur = conn.execute("SELECT value FROM app_settings WHERE key = 'encryption_key'")
+    row = cur.fetchone()
+    conn.close()
+    key = row[0] if row else None
+    if not key:
+        key = Fernet.generate_key().decode()
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)", ('encryption_key', key))
+        conn.commit()
+        conn.close()
+    return Fernet(key.encode())
+
+def encrypt_api_key(plain):
+    if not plain: return ''
+    return _get_encryption_key().encrypt(plain.encode()).decode()
+
+def decrypt_api_key(encrypted):
+    if not encrypted: return ''
+    return _get_encryption_key().decrypt(encrypted.encode()).decode()
+
+# ──────────────────────────────────────────────────────────────────────
 
 def get_db():
     _init_db()
@@ -118,6 +147,75 @@ def _init_db():
             PRIMARY KEY (filter_id, keyword_id),
             FOREIGN KEY (filter_id) REFERENCES saved_filters(id) ON DELETE CASCADE,
             FOREIGN KEY (keyword_id) REFERENCES keywords(id) ON DELETE CASCADE
+        )
+    """)
+
+    # === Nouvelles tables (Phase 1 — Prompt Generator/Enhancer) ===
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ai_presets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT,
+            name TEXT NOT NULL,
+            engine TEXT DEFAULT 'openai',
+            base_url TEXT NOT NULL DEFAULT '',
+            api_key_encrypted TEXT DEFAULT '',
+            model TEXT NOT NULL DEFAULT '',
+            is_global INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS styles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            style_text TEXT NOT NULL DEFAULT '',
+            negative_prompt TEXT DEFAULT '',
+            is_public INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS prompt_examples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT NOT NULL DEFAULT 'sdxl',
+            prompt_text TEXT NOT NULL,
+            author_id TEXT NOT NULL,
+            rating INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (author_id) REFERENCES users(id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS prompt_votes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prompt_example_id INTEGER NOT NULL,
+            user_id TEXT NOT NULL,
+            vote INTEGER NOT NULL CHECK(vote IN (-1, 1)),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (prompt_example_id) REFERENCES prompt_examples(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS generated_prompts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            preset_id INTEGER,
+            prompt_type TEXT DEFAULT 'sdxl',
+            input_text TEXT NOT NULL DEFAULT '',
+            output_text TEXT NOT NULL DEFAULT '',
+            negative_prompt TEXT DEFAULT '',
+            style_id INTEGER,
+            model_used TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (preset_id) REFERENCES ai_presets(id),
+            FOREIGN KEY (style_id) REFERENCES styles(id)
         )
     """)
 
@@ -603,6 +701,7 @@ def list_keywords():
     cur = conn.cursor()
 
     q = request.args.get('q', '').strip().lower()
+    q_neg = request.args.get('q_neg', '').strip().lower()
     section = request.args.get('section', '').strip()
     nsfw_raw = request.args.get('nsfw', '').strip()
 
@@ -610,9 +709,14 @@ def list_keywords():
     params = []
 
     if q:
-        conditions.append("(LOWER(k.keyword) LIKE ? OR LOWER(k.description) LIKE ?)")
         like = f"%{q}%"
-        params.extend([like, like])
+        conditions.append("(LOWER(k.keyword) LIKE ? OR LOWER(k.description) LIKE ? OR LOWER(k.section_title) LIKE ? OR LOWER(k.subsection_title) LIKE ?)")
+        params.extend([like, like, like, like])
+
+    if q_neg:
+        like_neg = f"%{q_neg}%"
+        conditions.append("(LOWER(k.keyword) NOT LIKE ? AND LOWER(k.description) NOT LIKE ? AND LOWER(k.section_title) NOT LIKE ? AND LOWER(k.subsection_title) NOT LIKE ?)")
+        params.extend([like_neg, like_neg, like_neg, like_neg])
 
     if section:
         conditions.append("k.section_id = ?")
@@ -674,8 +778,10 @@ def stats():
         FROM keywords k
     """)
     row = dict(cur.fetchone())
-    # Gérer les NULL (SUM sur table vide)
     row = {k: (v if v is not None else 0) for k, v in row.items()}
+    cur.execute("SELECT COUNT(*) as total FROM generated_prompts")
+    gen = cur.fetchone()
+    row['generated_total'] = gen['total'] if gen else 0
     conn.close()
     return jsonify(row)
 
@@ -960,6 +1066,534 @@ def preview_filter(filter_id):
         'keywords': keywords,
         'config': json.loads(info['config']) if info and isinstance(info['config'], str) else (info['config'] if info else {})
     })
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Phase 1 : Presets IA + Styles + Enhance
+# ═══════════════════════════════════════════════════════════════════
+
+def _admin_required():
+    """Verifie que l'utilisateur est admin."""
+    guard = _login_required()
+    if guard: return guard
+    user_id = _get_current_user_id()
+    conn = get_db()
+    row = conn.execute("SELECT role FROM users WHERE id = ?", (user_id,)).fetchone()
+    conn.close()
+    if not row or row['role'] != 'admin':
+        return jsonify({'error': 'Admin requis'}), 403
+    return None
+
+
+# ── Presets ─────────────────────────────────────────────────────────
+
+@app.route('/api/presets', methods=['GET', 'POST'])
+def presets():
+    guard = _login_required()
+    if guard: return guard
+    user_id = _get_current_user_id()
+    conn = get_db()
+    cur = conn.cursor()
+
+    if request.method == 'GET':
+        rows = cur.execute("""
+            SELECT p.*, u.username, u.display_name
+            FROM ai_presets p
+            LEFT JOIN users u ON u.id = p.user_id
+            WHERE p.is_global = 1 OR p.user_id = ?
+            ORDER BY p.is_global DESC, p.name
+        """, (user_id,)).fetchall()
+        conn.close()
+        result = []
+        for r in rows:
+            result.append({
+                'id': r['id'],
+                'user_id': r['user_id'],
+                'name': r['name'],
+                'engine': r['engine'],
+                'base_url': r['base_url'],
+                'model': r['model'],
+                'is_global': bool(r['is_global']),
+                'is_client_side': bool(r.get('is_client_side', 0)),
+                'owner_name': r['display_name'] or r['username'] or '',
+                'created_at': r['created_at']
+            })
+        return jsonify(result)
+
+    # POST : creation (admin pour global, tout le monde pour perso)
+    data = request.get_json() or {}
+    name = data.get('name', '').strip()
+    base_url = data.get('base_url', '').strip()
+    api_key = data.get('api_key', '').strip()
+    model = data.get('model', '').strip()
+    is_global = int(data.get('is_global', 0))
+    is_client_side = int(data.get('is_client_side', 0))
+
+    if not name or not base_url:
+        conn.close()
+        return jsonify({'error': 'Nom et URL requis'}), 400
+
+    if is_global:
+        admin_guard = _admin_required()
+        if admin_guard:
+            conn.close()
+            return admin_guard
+
+    enc = encrypt_api_key(api_key)
+    cur.execute(
+        "INSERT INTO ai_presets (user_id, name, engine, base_url, api_key_encrypted, model, is_global, is_client_side) VALUES (?, ?, 'openai', ?, ?, ?, ?, ?)",
+        (user_id if not is_global else None, name, base_url, enc, model, is_global, is_client_side)
+    )
+    conn.commit()
+    pid = cur.lastrowid
+    conn.close()
+    return jsonify({'id': pid, 'name': name}), 201
+
+
+@app.route('/api/presets/<int:preset_id>', methods=['PUT', 'DELETE'])
+def single_preset(preset_id):
+    guard = _login_required()
+    if guard: return guard
+    user_id = _get_current_user_id()
+    conn = get_db()
+    cur = conn.cursor()
+    row = cur.execute("SELECT * FROM ai_presets WHERE id = ?", (preset_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Not found'}), 404
+
+    # Verifier propriete : global = admin only, perso = owner or admin
+    if row['is_global']:
+        admin_guard = _admin_required()
+        if admin_guard:
+            conn.close()
+            return admin_guard
+    elif row['user_id'] != user_id:
+        conn.close()
+        return jsonify({'error': 'Not found'}), 404
+
+    if request.method == 'DELETE':
+        cur.execute("DELETE FROM ai_presets WHERE id = ?", (preset_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'ok'})
+
+    # PUT
+    data = request.get_json() or {}
+    api_key_val = data.get('api_key', None)
+    if api_key_val is not None:
+        enc = encrypt_api_key(api_key_val.strip()) if api_key_val.strip() else ''
+    else:
+        enc = row['api_key_encrypted']  # garder l'ancienne
+
+    cur.execute("""
+        UPDATE ai_presets
+        SET name = ?, base_url = ?, api_key_encrypted = ?, model = ?, is_client_side = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    """, (
+        data.get('name', row['name']),
+        data.get('base_url', row['base_url']),
+        enc,
+        data.get('model', row['model']),
+        int(data.get('is_client_side', row.get('is_client_side', 0))),
+        preset_id
+    ))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/presets/<int:preset_id>/duplicate', methods=['POST'])
+def duplicate_preset(preset_id):
+    guard = _login_required()
+    if guard: return guard
+    user_id = _get_current_user_id()
+    conn = get_db()
+    row = conn.execute("SELECT * FROM ai_presets WHERE id = ?", (preset_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Not found'}), 404
+
+    # Seulement les globaux ou ses propres presets peuvent être dupliques
+    if not row['is_global'] and row['user_id'] != user_id:
+        conn.close()
+        return jsonify({'error': 'Not found'}), 404
+
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO ai_presets (user_id, name, engine, base_url, api_key_encrypted, model, is_global)
+        VALUES (?, ? || ' (copie)', ?, ?, ?, ?, 0)
+    """, (user_id, row['name'], row['engine'], row['base_url'], row['api_key_encrypted'], row['model']))
+    conn.commit()
+    pid = cur.lastrowid
+    conn.close()
+    return jsonify({'id': pid, 'name': row['name'] + ' (copie)'}), 201
+
+
+@app.route('/api/presets/<int:preset_id>/models', methods=['GET'])
+def list_preset_models(preset_id):
+    guard = _login_required()
+    if guard: return guard
+    conn = get_db()
+    row = conn.execute("SELECT * FROM ai_presets WHERE id = ?", (preset_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Not found'}), 404
+
+    base_url = row['base_url'].rstrip('/')
+    api_key = decrypt_api_key(row['api_key_encrypted'])
+    conn.close()
+
+    import requests
+    try:
+        headers = {'Authorization': f'Bearer {api_key}'} if api_key else {}
+        r = requests.get(f'{base_url}/models', headers=headers, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        models = []
+        for m in data.get('data', data.get('models', [])):
+            if isinstance(m, dict):
+                models.append({'id': m.get('id', ''), 'name': m.get('name', m.get('id', '')), 'owned_by': m.get('owned_by', '')})
+            elif isinstance(m, str):
+                models.append({'id': m, 'name': m, 'owned_by': ''})
+        return jsonify(models)
+    except Exception as e:
+        return jsonify({'error': f'Impossible de lister les modeles : {e}'}), 502
+
+
+@app.route('/api/presets/list-models', methods=['POST'])
+def list_models_temp():
+    """Endpoint temporaire pour lister les modeles sans preset enregistre."""
+    guard = _login_required()
+    if guard: return guard
+    data = request.get_json() or {}
+    base_url = (data.get('base_url') or '').rstrip('/')
+    api_key = (data.get('api_key') or '').strip()
+    if not base_url:
+        return jsonify({'error': 'URL requise'}), 400
+    import requests
+    try:
+        headers = {'Authorization': f'Bearer {api_key}'} if api_key else {}
+        r = requests.get(f'{base_url}/models', headers=headers, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        models = []
+        raw = data.get('data', data.get('models', []))
+        for m in raw:
+            if isinstance(m, dict):
+                models.append({'id': m.get('id', ''), 'name': m.get('name', m.get('id', '')), 'owned_by': m.get('owned_by', '')})
+            elif isinstance(m, str):
+                models.append({'id': m, 'name': m, 'owned_by': ''})
+        return jsonify(models)
+    except Exception as e:
+        return jsonify({'error': f'Impossible de lister les modeles : {e}'}), 502
+
+
+# ── Styles ──────────────────────────────────────────────────────────
+
+@app.route('/api/styles', methods=['GET', 'POST'])
+def styles():
+    guard = _login_required()
+    if guard: return guard
+    user_id = _get_current_user_id()
+    conn = get_db()
+    cur = conn.cursor()
+
+    if request.method == 'GET':
+        rows = cur.execute("""
+            SELECT s.*, u.username, u.display_name
+            FROM styles s
+            LEFT JOIN users u ON u.id = s.user_id
+            WHERE s.is_public = 1 OR s.user_id = ?
+            ORDER BY s.is_public DESC, s.name
+        """, (user_id,)).fetchall()
+        conn.close()
+        result = []
+        for r in rows:
+            result.append({
+                'id': r['id'],
+                'name': r['name'],
+                'style_text': r['style_text'],
+                'negative_prompt': r.get('negative_prompt', ''),
+                'is_public': bool(r['is_public']),
+                'user_id': r['user_id'],
+                'owner_name': r['display_name'] or r['username'] or ''
+            })
+        return jsonify(result)
+
+    data = request.get_json() or {}
+    name = data.get('name', '').strip()
+    style_text = data.get('style_text', '').strip()
+    negative_prompt = data.get('negative_prompt', '').strip()
+    is_public = int(data.get('is_public', 0))
+    if not name or not style_text:
+        conn.close()
+        return jsonify({'error': 'Nom et texte requis'}), 400
+
+    cur.execute(
+        "INSERT INTO styles (user_id, name, style_text, negative_prompt, is_public) VALUES (?, ?, ?, ?, ?)",
+        (user_id, name, style_text, negative_prompt, is_public)
+    )
+    conn.commit()
+    sid = cur.lastrowid
+    conn.close()
+    return jsonify({'id': sid, 'name': name}), 201
+
+
+@app.route('/api/styles/<int:style_id>', methods=['PUT', 'DELETE'])
+def single_style(style_id):
+    guard = _login_required()
+    if guard: return guard
+    user_id = _get_current_user_id()
+    conn = get_db()
+    row = conn.execute("SELECT * FROM styles WHERE id = ?", (style_id,)).fetchone()
+    if not row or row['user_id'] != user_id:
+        conn.close()
+        return jsonify({'error': 'Not found'}), 404
+
+    if request.method == 'DELETE':
+        conn.execute("DELETE FROM styles WHERE id = ?", (style_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'ok'})
+
+    data = request.get_json() or {}
+    conn.execute("""
+        UPDATE styles SET name = ?, style_text = ?, negative_prompt = ?, is_public = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    """, (
+        data.get('name', row['name']),
+        data.get('style_text', row['style_text']),
+        data.get('negative_prompt', row.get('negative_prompt', '')),
+        int(data.get('is_public', row['is_public'])),
+        style_id
+    ))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'ok'})
+
+
+# ── Enhance ─────────────────────────────────────────────────────────
+
+@app.route('/api/enhance', methods=['POST'])
+def enhance_prompt():
+    guard = _login_required()
+    if guard: return guard
+    user_id = _get_current_user_id()
+    data = request.get_json() or {}
+
+    preset_id = data.get('preset_id')
+    text = data.get('text', '').strip()
+    prompt_type = data.get('prompt_type', 'sdxl').strip()
+    output_format = data.get('output_format', 'text').strip()
+    style_text = data.get('style_text', '').strip()
+    special_instructions = data.get('special_instructions', '').strip()
+    ep_elements = data.get('ep_elements', [])
+    random_count = int(data.get('random_count', 0))
+
+    # Resoudre les elements EP
+    ep_keywords = []
+    if ep_elements:
+        conn = get_db()
+        cur = conn.cursor()
+        for elem in ep_elements:
+            if elem.get('type') == 'filter' and elem.get('id'):
+                cur.execute("SELECT keyword_id FROM filter_cache WHERE filter_id = ?", (elem['id'],))
+                kids = [r[0] for r in cur.fetchall()]
+                if kids:
+                    cur.execute("SELECT keyword FROM keywords WHERE id IN (" + ','.join('?' for _ in kids) + ")", kids)
+                    kws = [r[0] for r in cur.fetchall()]
+                    if kws:
+                        ep_keywords.append(random.choice(kws))
+            elif elem.get('type') == 'text' and elem.get('text'):
+                try:
+                    qv = generate_embedding(elem['text'])
+                    cur.execute("SELECT k.keyword FROM keywords k JOIN keyword_embeddings ke ON ke.keyword_id = k.id")
+                    rows = cur.fetchall()
+                    scored = []
+                    for r in rows:
+                        vec = json.loads(r[1] if len(r) > 1 else '')
+                        if vec:
+                            s = cosine_similarity(qv, vec)
+                            if s >= 0.45:
+                                scored.append((r[0], s))
+                    scored.sort(key=lambda x: x[1], reverse=True)
+                    top5 = [k for k, _ in scored[:5]]
+                    if top5:
+                        ep_keywords.append(random.choice(top5))
+                except Exception:
+                    pass
+        conn.close()
+
+    ep_text = ', '.join(ep_keywords) if ep_keywords else ''
+
+    # Random elements : piocher depuis sections non encore utilisees
+    rand_keywords = []
+    if random_count > 0:
+        conn = get_db()
+        cur = conn.cursor()
+        # Trouver les sections deja utilisees
+        all_kw_text = (text + ' ' + ep_text).lower()
+        existing = []
+        for kw in all_kw_text.replace(',', ' ').split():
+            kw = kw.strip()
+            if len(kw) >= 3:
+                existing.append(kw)
+        if existing:
+            placeholders = ','.join('?' for _ in existing)
+            cur.execute(f"SELECT DISTINCT section_id FROM keywords WHERE LOWER(keyword) IN ({placeholders})", existing)
+            used_sections = {r[0] for r in cur.fetchall() if r[0]}
+        else:
+            used_sections = set()
+        # Piocher des keywords depuis des sections inutilisees
+        if used_sections:
+            ph = ','.join('?' for _ in used_sections)
+            cur.execute(f"SELECT keyword FROM keywords WHERE section_id NOT IN ({ph}) OR section_id IS NULL ORDER BY RANDOM() LIMIT ?", list(used_sections) + [random_count])
+        else:
+            cur.execute("SELECT keyword FROM keywords ORDER BY RANDOM() LIMIT ?", (random_count,))
+        rand_keywords = [r[0] for r in cur.fetchall()]
+        conn.close()
+
+    rand_text = ', '.join(rand_keywords) if rand_keywords else ''
+
+    # Fusionner avec priorites
+    merged_parts = []
+    if text:
+        merged_parts.append(f"[PRIORITE HAUTE] {text}")
+    if ep_text:
+        merged_parts.append(f"[PRIORITE MOYENNE] {ep_text}")
+    if rand_text:
+        merged_parts.append(f"[PRIORITE BASSE] {rand_text}")
+
+    merged_text = '\n'.join(merged_parts)
+
+    if not merged_text.strip():
+        return jsonify({'error': 'Aucun contenu a generer'}), 400
+
+    # Recuperer le preset
+    conn = get_db()
+    preset = None
+    if preset_id:
+        preset = conn.execute("SELECT * FROM ai_presets WHERE id = ?", (preset_id,)).fetchone()
+    if not preset:
+        # Fallback : premier preset personnel dispo
+        preset = conn.execute(
+            "SELECT * FROM ai_presets WHERE user_id = ? OR is_global = 1 ORDER BY is_global DESC LIMIT 1",
+            (user_id,)
+        ).fetchone()
+    if not preset:
+        conn.close()
+        return jsonify({'error': 'Aucun preset IA configure. Cree un preset dans la configuration.'}), 400
+
+    api_key = decrypt_api_key(preset['api_key_encrypted'])
+    base_url = preset['base_url'].rstrip('/')
+    model = preset['model']
+    conn.close()
+
+    # Construire le prompt systeme
+    type_formats = {
+        'liste': 'Liste de tags separes par des virgules, ordonnes par importance (exemple: "masterpiece, 1girl, blue sky, city street, long hair").',
+        'sdxl': 'Prompt SDXL optimise avec Natural Language + tags Danbooru, bien equilibre. Format: qualite + sujet principal + description scene + details techniques.',
+        'sd15': 'Prompt Stable Diffusion 1.5 avec tags Danbooru. Format court et dense, priorite aux tags essentiels.',
+        'flux': 'Prompt Flux, description longue et naturelle en anglais.',
+        'anima': 'Prompt Anime/Manga, tags Danbooru avec suffixes specifiques (pixel art, lineart, flat color, etc.).',
+        'qwen': 'Prompt Qwen, format optimise pour modele Qwen2-VL / image generation.',
+    }
+
+    format_instruction = type_formats.get(prompt_type, type_formats['sdxl'])
+
+    # Recuperer les top 5 examples pour ce type
+    conn = get_db()
+    examples = conn.execute(
+        "SELECT prompt_text FROM prompt_examples WHERE type = ? ORDER BY rating DESC LIMIT 5",
+        (prompt_type,)
+    ).fetchall()
+    conn.close()
+
+    examples_text = ''
+    if examples:
+        examples_text = '\nExemples de prompts ' + prompt_type + ' :\n'
+        for ex in examples:
+            examples_text += '- ' + ex['prompt_text'] + '\n'
+
+    # Construire le format de sortie
+    format_rules = {
+        'text': 'Reponds UNIQUEMENT avec le prompt final, sans guillemets ni code blocks. Pas d\'explications.',
+        'markdown': 'Reponds en Markdown pur, SANS bloc de code (pas de \`\`\`). Le prompt doit etre le contenu principal, tu peux ajouter des titres et listes si pertinent.',
+        'json': 'Reponds en JSON pur, SANS bloc de code (pas de \`\`\`json). Format: {\"prompt\": \"...\", \"format\": \"' + prompt_type + '\", \"negative_prompt\": \"\"}.'
+    }
+
+    system_prompt = f"""Tu es un assistant expert en generation de prompts d'images.
+Ta tache : transformer le contenu fourni en un prompt optimise pour {prompt_type}.
+
+Le contenu peut avoir des annotations de priorite :
+- [PRIORITE HAUTE] = choix explicite de l'utilisateur, a preserver au maximum
+- [PRIORITE MOYENNE] = suggestions d'un picker automatique, a integrer si pertinent
+- [PRIORITE BASSE] = elements aleatoires pour diversifier, a utiliser seulement si ils enrichissent vraiment le prompt
+
+Format demande : {format_instruction}
+
+{examples_text}
+Regles :
+- En cas de conflit entre tags (ex: "long hair" vs "short hair"), privilegie [PRIORITE HAUTE]
+- Supprime les doublons automatiquement
+- Organise les tags par ordre d'importance
+- Ajoute des qualifiers si pertinent (masterpiece, best quality, etc.)
+{format_rules.get(output_format, "Reponds UNIQUEMENT avec le prompt final.")}
+"""
+
+    if style_text:
+        system_prompt += f"\nStyle impose : {style_text}"
+    if special_instructions:
+        system_prompt += f"\nInstructions speciales : {special_instructions}"
+
+    # Appel LLM
+    import requests
+    try:
+        headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {api_key}'} if api_key else {'Content-Type': 'application/json'}
+        payload = {
+            'model': model,
+            'messages': [
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': merged_text}
+            ],
+            'temperature': 0.7,
+            'max_tokens': 1024
+        }
+        r = requests.post(f'{base_url}/chat/completions', headers=headers, json=payload, timeout=60)
+        r.raise_for_status()
+        result = r.json()
+        output = result['choices'][0]['message']['content'].strip()
+        # Nettoyer les balises de code eventuelles
+        if output.startswith('```'):
+            lines = output.split('\n')
+            if lines[0].startswith('```'):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == '```':
+                lines = lines[:-1]
+            output = '\n'.join(lines).strip()
+    except Exception as e:
+        msg = str(e)
+        if '429' in msg:
+            return jsonify({'error': 'Rate limit atteint sur le serveur LLM. Attends un peu et reessaye.'}), 429
+        if 'connect' in msg.lower() or 'refused' in msg.lower():
+            return jsonify({'error': f'Serveur LLM inaccessible : verifie l\'URL ({base_url})'}), 502
+        return jsonify({'error': f'Erreur LLM: {msg}'}), 502
+
+    # Sauvegarde du prompt genere
+    try:
+        conn2 = get_db()
+        conn2.execute(
+            """INSERT INTO generated_prompts (user_id, preset_id, prompt_type, input_text, output_text, style_id, model_used)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, preset['id'] if preset else None, prompt_type, merged_text, output, data.get('style_id'), model)
+        )
+        conn2.commit()
+        conn2.close()
+    except Exception:
+        pass  # non-bloquant
+
+    return jsonify({'output': output, 'model_used': model})
 
 
 @app.route('/api/generate', methods=['POST'])
