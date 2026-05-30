@@ -997,9 +997,11 @@ def _rebuild_filter_cache(cur, filter_id, config):
     params = []
     section = config.get('section', '').strip()
     search_text = config.get('search_text', '').strip()
+    search_neg = config.get('search_neg', '').strip()
     semantic_text = config.get('semantic_text', '').strip()
     min_confidence = float(config.get('min_confidence', 0))
     nsfw = str(config.get('nsfw_filter', ''))
+    hidden_ids = config.get('hidden_kw_ids', [])
 
     if section:
         conditions.append("k.section_id = ?")
@@ -1010,8 +1012,16 @@ def _rebuild_filter_cache(cur, filter_id, config):
         conditions.append("k.nsfw = 1")
     if search_text and not semantic_text:
         like = f"%{search_text.lower()}%"
-        conditions.append("(LOWER(k.keyword) LIKE ? OR LOWER(k.description) LIKE ?)")
-        params.extend([like, like])
+        conditions.append("(LOWER(k.keyword) LIKE ? OR LOWER(k.description) LIKE ? OR LOWER(k.section_title) LIKE ? OR LOWER(k.subsection_title) LIKE ?)")
+        params.extend([like, like, like, like])
+    if search_neg:
+        like_neg = f"%{search_neg.lower()}%"
+        conditions.append("(LOWER(k.keyword) NOT LIKE ? AND LOWER(k.description) NOT LIKE ?)")
+        params.extend([like_neg, like_neg])
+    if hidden_ids and isinstance(hidden_ids, list) and len(hidden_ids) > 0:
+        ph = ','.join('?' for _ in hidden_ids)
+        conditions.append(f"k.id NOT IN ({ph})")
+        params.extend(hidden_ids)
 
     if semantic_text:
         try:

@@ -703,16 +703,15 @@
     }
 
     // --- Reset functions ---
-    function hideKeyword(id) {
-      hiddenKWs[id] = true;
+    function toggleHideKeyword(id) {
+      if (hiddenKWs[id]) delete hiddenKWs[id];
+      else hiddenKWs[id] = true;
       renderTable(allKeywords);
-      updateCountDisplay();
     }
 
     function showAllHidden() {
       hiddenKWs = {};
       renderTable(allKeywords);
-      updateCountDisplay();
     }
 
     function resetFilters() {
@@ -961,24 +960,30 @@
       const isSemantic = semanticInput.value.trim() !== '';
       scoreHeader.classList.toggle('hidden', !isSemantic);
       // Filtrer les mots masques localement
-      var visible = rows.filter(function(r){ return !hiddenKWs[r.id]; });
-      var hiddenCount = rows.length - visible.length;
-      countDisplay.textContent = visible.length;
-      countLabel.textContent = (visible.length > 1 ? 'resultats' : 'resultat') + (hiddenCount > 0 ? ' (' + hiddenCount + ' masques)' : '');
-      if (visible.length === 0) {
+      var hiddenCount = rows.filter(function(r){ return hiddenKWs[r.id]; }).length;
+      if (rows.length === 0) {
         const colspan = isSemantic ? 4 : 3;
-        if (hiddenCount > 0) {
-          tableBody.innerHTML = '<tr><td colspan="' + colspan + '" class="px-4 py-8 text-center text-sm text-slate-400">Tous les mots-cles sont masques. <button onclick="showAllHidden()" class="text-indigo-500 hover:underline">Reafficher</button></td></tr>';
-        } else {
-          tableBody.innerHTML = '<tr><td colspan="' + colspan + '" class="px-4 py-10 text-center text-slate-400 dark:text-slate-500">Aucun resultat trouve.</td></tr>';
-        }
+        tableBody.innerHTML = '<tr><td colspan="' + colspan + '" class="px-4 py-10 text-center text-slate-400 dark:text-slate-500">Aucun resultat trouve.</td></tr>';
+        countDisplay.textContent = '0';
+        countLabel.textContent = 'resultat';
+        return;
+      }
+      if (hiddenCount === rows.length) {
+        const colspan = isSemantic ? 4 : 3;
+        tableBody.innerHTML = '<tr><td colspan="' + colspan + '" class="px-4 py-8 text-center text-sm text-slate-400">Tous les mots-cles sont masques. <button onclick="showAllHidden()" class="text-indigo-500 hover:underline">Tout reafficher</button></td></tr>';
+        countDisplay.textContent = '0';
+        countLabel.textContent = 'resultat (masques)';
         return;
       }
       const frag = document.createDocumentFragment();
       const isDark = document.documentElement.classList.contains('dark');
-      for (const row of visible) {
+      var hiddenCount = 0;
+      for (const row of rows) {
+        var isHidden = !!hiddenKWs[row.id];
+        if (isHidden) hiddenCount++;
         const tr = document.createElement('tr');
         tr.className = row.nsfw ? (isDark ? 'bg-rose-950/30' : 'bg-rose-50/40') : '';
+        if (isHidden) tr.className += ' opacity-40 line-through decoration-1 decoration-slate-400';
         const nsfwClass = row.nsfw
           ? (isDark ? 'bg-rose-900/50 text-rose-300' : 'bg-rose-100 text-rose-700')
           : (isDark ? 'bg-slate-700 text-indigo-300' : 'bg-slate-100 text-indigo-600');
@@ -986,7 +991,7 @@
         const scoreTd = isSemantic
           ? '<td class="px-4 py-2 align-top w-24"><div class="score-bar' + (isDark ? ' bg-slate-700' : '') + '"><div class="score-bar-fill" style="width:' + pct + '%"></div></div><span class="text-xs text-slate-400 dark:text-slate-500">' + pct + '%</span></td>'
           : '';
-        tr.innerHTML = '<td class="px-4 py-2 align-top"><div class="flex items-center gap-1"><button onclick="hideKeyword(' + row.id + ')" title="Masquer" class="text-xs text-slate-300 hover:text-rose-400 transition p-0.5 leading-none">👁️</button><code class="text-xs font-mono px-1.5 py-0.5 rounded ' + nsfwClass + '">' + escapeHtml(row.keyword) + '</code></div></td>'
+        tr.innerHTML = '<td class="px-4 py-2 align-top"><div class="flex items-center gap-1"><button onclick="toggleHideKeyword(' + row.id + ')" title="' + (isHidden ? 'Reafficher' : 'Masquer') + '" class="text-xs transition p-0.5 leading-none ' + (isHidden ? 'text-rose-400' : 'text-slate-300 hover:text-rose-400') + '">' + (isHidden ? '🙈' : '👁️') + '</button><code class="text-xs font-mono px-1.5 py-0.5 rounded ' + nsfwClass + '">' + escapeHtml(row.keyword) + '</code></div></td>'
           + '<td class="px-4 py-2 text-slate-700 align-top dark:text-slate-300">' + escapeHtml(row.description) + '</td>'
           + '<td class="px-4 py-2 text-xs text-slate-500 align-top dark:text-slate-400 max-w-[160px]"><div class="font-medium text-slate-600 dark:text-slate-300 truncate">' + escapeHtml(row.subsection_title) + '</div><div class="text-slate-400 mt-0.5 dark:text-slate-500 truncate">' + escapeHtml(row.section_id) + '. ' + escapeHtml(row.section_title) + '</div></td>'
           + scoreTd;
@@ -995,6 +1000,8 @@
       tableBody.appendChild(frag);
       initColResize();
       loadColWidths();
+      countDisplay.textContent = rows.length - hiddenCount;
+      countLabel.textContent = (rows.length - hiddenCount > 1 ? 'resultats' : 'resultat') + (hiddenCount > 0 ? ' (' + hiddenCount + ' masques)' : '');
     }
 
     function escapeHtml(str) {
@@ -1253,9 +1260,11 @@
       return {
         section: document.getElementById('section-select').value,
         search_text: document.getElementById('search-input').value,
+        search_neg: document.getElementById('search-neg-input').value,
         semantic_text: document.getElementById('search-semantic-input').value,
         nsfw_filter: getNsfwFilter(),
-        min_confidence: parseFloat(document.getElementById('filter-confidence').value) / 100
+        min_confidence: parseFloat(document.getElementById('filter-confidence').value) / 100,
+        hidden_kw_ids: Object.keys(hiddenKWs).map(Number)
       };
     }
 
@@ -1263,6 +1272,7 @@
       var c = config || {};
       document.getElementById('section-select').value = c.section || '';
       document.getElementById('search-input').value = c.search_text || '';
+      document.getElementById('search-neg-input').value = c.search_neg || '';
       document.getElementById('search-semantic-input').value = c.semantic_text || '';
       var nsfw = c.nsfw_filter !== undefined ? c.nsfw_filter : '';
       document.querySelectorAll('input[name="nsfw-filter"]').forEach(function(r){ r.checked = r.value === nsfw; });

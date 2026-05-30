@@ -42,6 +42,7 @@ Générer un prompt complet en combinant des **éléments**. Chaque élément es
 - [x] À la sauvegarde : exécute la requête → stocke les IDs des mots-clés correspondants dans `filter_cache`
 - [x] Le générateur pioche dans le cache → pas d'appel Ollama à chaque génération
 - [x] Invalidation du cache après un import de `.md`
+- [x] Cache inclut : recherche (+), recherche (-), mots masqués (hidden_kw_ids), NSFW, section
 
 ---
 
