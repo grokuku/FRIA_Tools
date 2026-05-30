@@ -229,6 +229,14 @@ def _init_db():
         if col not in cols_users:
             conn.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT DEFAULT {default}")
 
+    cols_presets = [r[1] for r in conn.execute("PRAGMA table_info(ai_presets)").fetchall()]
+    if "is_client_side" not in cols_presets:
+        conn.execute("ALTER TABLE ai_presets ADD COLUMN is_client_side INTEGER DEFAULT 0")
+
+    cols_styles = [r[1] for r in conn.execute("PRAGMA table_info(styles)").fetchall()]
+    if "negative_prompt" not in cols_styles:
+        conn.execute("ALTER TABLE styles ADD COLUMN negative_prompt TEXT DEFAULT ''")
+
     conn.commit()
     conn.close()
 
@@ -1106,13 +1114,17 @@ def presets():
     cur = conn.cursor()
 
     if request.method == 'GET':
-        rows = cur.execute("""
-            SELECT p.*, u.username, u.display_name
-            FROM ai_presets p
-            LEFT JOIN users u ON u.id = p.user_id
-            WHERE p.is_global = 1 OR p.user_id = ?
-            ORDER BY p.is_global DESC, p.name
-        """, (user_id,)).fetchall()
+        try:
+            rows = cur.execute("""
+                SELECT p.*, u.username, u.display_name
+                FROM ai_presets p
+                LEFT JOIN users u ON u.id = p.user_id
+                WHERE p.is_global = 1 OR p.user_id = ?
+                ORDER BY p.is_global DESC, p.name
+            """, (user_id,)).fetchall()
+        except Exception as e:
+            conn.close()
+            return jsonify({'error': f'DB error: {e}'}), 500
         conn.close()
         result = []
         for r in rows:
@@ -1310,13 +1322,17 @@ def styles():
     cur = conn.cursor()
 
     if request.method == 'GET':
-        rows = cur.execute("""
-            SELECT s.*, u.username, u.display_name
-            FROM styles s
-            LEFT JOIN users u ON u.id = s.user_id
-            WHERE s.is_public = 1 OR s.user_id = ?
-            ORDER BY s.is_public DESC, s.name
-        """, (user_id,)).fetchall()
+        try:
+            rows = cur.execute("""
+                SELECT s.*, u.username, u.display_name
+                FROM styles s
+                LEFT JOIN users u ON u.id = s.user_id
+                WHERE s.is_public = 1 OR s.user_id = ?
+                ORDER BY s.is_public DESC, s.name
+            """, (user_id,)).fetchall()
+        except Exception as e:
+            conn.close()
+            return jsonify({'error': f'DB error: {e}'}), 500
         conn.close()
         result = []
         for r in rows:
@@ -1628,10 +1644,14 @@ def generate_prompt():
 
         if elem.get('type') == 'filter' and elem.get('id'):
             kind = 'filter'
+            # Recuperer le nom du filtre et la taille du cache
+            finfo = cur.execute("SELECT name, (SELECT COUNT(*) FROM filter_cache WHERE filter_id = ?) as cnt FROM saved_filters WHERE id = ?", (elem['id'], elem['id'])).fetchone()
             cur.execute("SELECT keyword_id FROM filter_cache WHERE filter_id = ? ORDER BY RANDOM() LIMIT 1", (elem['id'],))
             row = cur.fetchone()
             if row:
                 kid = row['keyword_id']
+            if finfo:
+                debug.append({'source': f"filtre '{finfo['name']}' (cache: {finfo['cnt']})", 'picked': bool(kid)})
 
         elif elem.get('type') == 'text' and elem.get('text'):
             kind = 'semantic'
@@ -1663,7 +1683,7 @@ def generate_prompt():
 
     conn.close()
     prompt = ", ".join(keywords) if keywords else ""
-    return jsonify({'prompt': prompt, 'count': len(keywords), 'elements': debug})
+    return jsonify({'prompt': prompt, 'count': len(keywords), 'elements': debug, 'debug': debug})
 
 
 @app.route('/api/export', methods=['GET'])

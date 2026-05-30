@@ -2,6 +2,23 @@
 
 > Fichier vivant pour noter les idées, fonctionnalités et réflexions.
 
+## 🚀 Reprise rapide (dernière session)
+
+**Contexte** : Serveur `kw.holaf.fr`, Ollama en Docker sur la même machine.
+
+**Blocage actuel** : `GET /api/presets` et `GET /api/styles` retournent 500. Les erreurs s'affichent maintenant dans la console navigateur (try/catch ajouté).
+
+**Cause probable** :
+1. Le dossier du projet sur la prod est `/root/.openclaw/workspace/pi-projects/FR.IA-keywords` alors que le code modifié est dans `/projects/FR.IA-keywords` → le serveur tourne avec l'ancien code sans les migrations
+2. Ou les colonnes `is_client_side` / `negative_prompt` manquent dans la BDD de prod malgré la migration auto
+
+**Actions à faire en premier** :
+1. S'assurer que le serveur pointe vers `/projects/FR.IA-keywords` (ou copier le code modifié)
+2. Redémarrer le serveur → `_init_db()` applique les migrations
+3. Ouvrir la console navigateur → le message d'erreur exact des 500 s'affiche
+
+**Fichiers modifiés** : `backend/app.py`, `frontend/index.html`, `frontend/beta.html`
+
 ---
 
 ## 🧠 Elements Picker (panneau droit haut)
@@ -32,8 +49,9 @@ Générer un prompt complet en combinant des **éléments**. Chaque élément es
   - **×** : décharge le filtre courant
 - [x] Capture tous les paramètres : section, recherche texte, recherche sémantique, NSFW, slider confiance
 - [x] Modale de création : nom, catégorie (texte libre), SFW/NSFW, public/privé
-- [ ] Modale de gestion des filtres : liste, modifier, supprimer, recharger
+- [x] Bouton "Mng" → modale avec rename, delete, rebuild cache (↻)
 - [x] Recharger un filtre dans la fenêtre gauche → charge ses paramètres dans les filtres
+- [ ] **🔴 Bug : Anciens filtres piochent dans la liste globale** — Le cache des filtres créés avant les migrations récentes peut être vide ou incorrect. Utiliser le bouton ↻ dans la modale "Mng" pour regénérer le cache.
 - [ ] Bouton "Tout recharger" → regénère le cache pour tous les filtres
 - [x] Pas de limite de filtres par utilisateur
 - [x] Les filtres publics sont visibles par tous les membres connectés
@@ -205,7 +223,8 @@ Styles réutilisables ajoutés aux prompts avant envoi au LLM (ex: "Hyper realis
 
 ### Backend — app.py
 
-- [ ] **Bug : URLs LLM locales invalides pour les utilisateurs distants** — Résolu avec l'option "Client-side" dans les presets. Quand cochée, l'appel LLM passe par le navigateur (pas le backend), ce qui permet d'utiliser un LLM local. L'utilisateur doit activer CORS sur son serveur LLM (ex: `OLLAMA_ORIGINS=*`).
+- [ ] **🔴 CRITIQUE : 500 sur GET /api/presets et GET /api/styles** — Les endpoints lister les presets et styles retournent une erreur 500 sur la prod (`kw.holaf.fr`). Cause probable : les colonnes `is_client_side` (ai_presets) et `negative_prompt` (styles) n'existent pas dans la BDD de production. La migration est dans `_init_db()` (lignes 235-239) et s'exécute automatiquement au démarrage du serveur. Vérifier que : 1) le serveur pointe vers le bon dossier (`/projects/FR.IA-keywords` et non `/root/.openclaw/workspace/pi-projects/FR.IA-keywords`), 2) le log serveur ne montre pas d'erreur Python. Après redémarrage, le message d'erreur exact s'affichera dans la console navigateur grâce au try/catch ajouté dans `loadPresets()` et `loadStyles()`.
+- [ ] **Bug : URLs LLM locales invalides pour les utilisateurs distants** — Résolu avec l'option "Client-side" dans les presets.
 - [x] **Bug : Mauvaise URL pour le endpoint members** — `fetch(API + '/api/members')` → `/api/api/members` (404). Corrigé en `API + '/members'`.
 - [ ] **Bug : Liste des utilisateurs cassée dans le panneau admin** — La fonction `loadAdminUsers()` retourne une erreur ou n'affiche plus correctement la liste (vérifier endpoint `/api/admin/users` et le rendu frontend).
 - [x] **Bug : PUT /api/filters/<id> plante (KeyError)** — `SELECT user_id` empêchait d'accéder à `row['name']`. Corrigé avec `SELECT *`.
