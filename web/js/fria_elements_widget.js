@@ -487,11 +487,10 @@ function hideWidget(node, name) {
                 });
 
                 // ---- Persistance workflow (sauvegarde/chargement) ----
-                // ComfyUI charge les valeurs des widgets APRÈS onNodeCreated,
-                // donc on ne peut pas restaurer immédiatement.
-                // On utilise deux mécanismes :
-                //   1. onConfigure : appelé quand les données du workflow sont appliquées
-                //   2. Delayed fallback : si onConfigure n'a pas été appelé, on réessaie
+                // ComfyUI charge les valeurs des widgets APRÈS onNodeCreated.
+                // On stocke la fonction de restauration sur l'instance du node
+                // pour pouvoir l'appeler depuis loadedGraphNode ou afterConfigureGraph.
+                // En fallback, on tente aussi périodiquement.
 
                 function restoreFromWidgets(n) {
                     const ej = n.widgets?.find(w => w.name === "_elements_json");
@@ -526,25 +525,19 @@ function hideWidget(node, name) {
                     }
                 }
 
-                // Mécanisme 1 : onConfigure appelé quand le workflow charge les données
-                const origOnConfigure = nodeType.prototype.onConfigure;
-                nodeType.prototype.onConfigure = function (info) {
-                    if (origOnConfigure) origOnConfigure.apply(this, arguments);
-                    // Les widgets viennent d'être mis à jour, on peut restaurer
-                    restoreFromWidgets(this);
-                };
+                // Stocker sur l'instance pour que les hooks d'extension puissent l'appeler
+                node._friaRestore = restoreFromWidgets.bind(null, node);
 
-                // Mécanisme 2 : Fallback retardé pour les cas où onConfigure n'est pas appelé
-                // (ex : premier chargement, F5 sur un workflow déjà chargé)
+                // Fallback : tente de restaurer périodiquement (pour F5 et cas où les hooks ne marchent pas)
                 let restoreAttempts = 0;
                 function delayedRestore() {
-                    if (restoreFromWidgets(node)) return; // Succès, on arrête
+                    if (restoreFromWidgets(node)) return;
                     restoreAttempts++;
-                    if (restoreAttempts < 10) {
+                    if (restoreAttempts < 20) {
                         setTimeout(delayedRestore, 300);
                     }
                 }
-                setTimeout(delayedRestore, 200);
+                setTimeout(delayedRestore, 100);
 
                 // Stocker les refs
                 node._resultArea = result;
@@ -561,27 +554,47 @@ function hideWidget(node, name) {
             // ComfyUI passe le résultat à onExecuted. Le format peut varier :
             //   - Objet : { elements: "text" } (par RETURN_NAMES)
             //   - Array : ["text"] (par position)
-            const onExecuted = nodeType.prototype.onExecuted;
+            const origExec = nodeType.prototype.onExecuted;
             nodeType.prototype.onExecuted = function (output) {
-                onExecuted?.apply(this, arguments);
+                origExec?.apply(this, arguments);
 
+                // ComfyUI passe le résultat differemment selon la version :
+                //   Nouveau frontend : { output: { elements: "text" }, ... }
+                //   Ancien frontend : { elements: "text" } ou ["text"]
+                //   Parfois : output est direct la valeur string
                 let text = null;
-                if (output) {
-                    // Format objet : { elements: "text" }
-                    if (typeof output === 'object' && !Array.isArray(output)) {
-                        if (output.elements !== undefined) text = output.elements;
+                if (output && typeof output === 'object') {
+                    // Nouveau format avec clé "output"
+                    if (output.output !== undefined) {
+                        const out = output.output;
+                        if (typeof out === 'object' && !Array.isArray(out) && out.elements !== undefined) text = out.elements;
+                        else if (Array.isArray(out) && out.length > 0) text = out[0];
+                        else if (typeof out === 'string') text = out;
                     }
-                    // Format array : ["text"]
-                    if (Array.isArray(output) && output.length > 0) text = output[0];
+                    // Ancien format direct
+                    if (text === null && output.elements !== undefined) text = output.elements;
+                    if (text === null && Array.isArray(output) && output.length > 0) text = output[0];
                 }
+                // Valeur string directe
+                if (text === null && typeof output === 'string') text = output;
 
                 if (text !== null && text !== undefined) {
                     const str = Array.isArray(text) ? text.join("") : String(text);
+                    console.log("[FR.IA] onExecuted result:", str.substring(0, 80));
                     if (this._resultArea) {
                         this._resultArea.value = str;
                     }
+                } else if (output) {
+                    console.log("[FR.IA] onExecuted: format inconnu:", JSON.stringify(output).substring(0, 200));
                 }
             };
+        },
+
+        // Hook appelé APRÈS que ComfyUI a restauré les widgets depuis le workflow
+        async loadedGraphNode(node) {
+            if (node._friaRestore) {
+                setTimeout(() => node._friaRestore(), 0);
+            }
         }
     });
 })();
