@@ -28,6 +28,10 @@ _enhance_mod = _load_module(
     os.path.join(_nodes_dir, "enhance_node.py"),
     "FRIAEnhanceNode"
 )
+_diag_mod = _load_module(
+    os.path.join(_nodes_dir, "diagnostic_node.py"),
+    "FRIADiagnosticNode"
+)
 
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
@@ -42,5 +46,10 @@ if _enhance_mod and hasattr(_enhance_mod, "FRIAEnhanceNode"):
     cls = _enhance_mod.FRIAEnhanceNode
     NODE_CLASS_MAPPINGS["FRIAEnhanceNode"] = cls
     NODE_DISPLAY_NAME_MAPPINGS["FRIAEnhanceNode"] = "FR.IA Prompt Enhancer"
+
+if _diag_mod and hasattr(_diag_mod, "FRIADiagnosticNode"):
+    cls = _diag_mod.FRIADiagnosticNode
+    NODE_CLASS_MAPPINGS["FRIADiagnosticNode"] = cls
+    NODE_DISPLAY_NAME_MAPPINGS["FRIADiagnosticNode"] = "FR.IA Diagnostic"
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
