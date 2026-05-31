@@ -79,7 +79,7 @@
                 }
 
                 // ---- Populate un select depuis l'API ----
-                async function populateSelect(select, apiPath, labelKey, valKey, placeholder) {
+                async function populateSelect(select, apiPath, labelKey, valKey, placeholder, onDone) {
                     select.innerHTML = `<option value="0">${placeholder}</option>`;
                     try {
                         const items = await apiGet(apiPath);
@@ -92,6 +92,7 @@
                             });
                         }
                     } catch {}
+                    onDone?.();
                 }
 
                 // ---- Container (flex column, result prend tout l'espace) ----
@@ -290,8 +291,10 @@
                 node._domWidget = domWidget;
 
                 // ---- Peupler les dropdowns depuis l'API ----
-                populateSelect(presetSelect, "presets", "name", "id", "-- Preset IA --");
-                populateSelect(styleSelect, "styles", "name", "id", "-- Style --");
+                populateSelect(presetSelect, "presets", "name", "id", "-- Preset IA --",
+                    () => restoreFromWidgets(node));
+                populateSelect(styleSelect, "styles", "name", "id", "-- Style --",
+                    () => restoreFromWidgets(node));
 
                 // ---- Restauration workflow ----
                 function restoreFromWidgets(n) {
@@ -304,9 +307,13 @@
                         const f = read("output_format");
                         if (f && f.value) formatSelect.value = f.value;
                         const p = read("preset_id");
-                        if (p && p.value > 0) presetSelect.value = String(p.value);
+                        if (p && p.value > 0 && [...presetSelect.options].some(o => o.value === String(p.value))) {
+                            presetSelect.value = String(p.value);
+                        }
                         const s = read("style_id");
-                        if (s && s.value > 0) styleSelect.value = String(s.value);
+                        if (s && s.value > 0 && [...styleSelect.options].some(o => o.value === String(s.value))) {
+                            styleSelect.value = String(s.value);
+                        }
                         const sp = read("special_instructions");
                         if (sp && sp.value) specialTextarea.value = sp.value;
                         return true;
