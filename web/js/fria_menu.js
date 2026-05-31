@@ -89,13 +89,25 @@ function initMenu(appInstance) {
     paramsItem.style.borderBottom = "none";
     dd.appendChild(paramsItem);
 
+    // Statut serveur (séparateur + indicateur)
+    const statusDiv = document.createElement("div");
+    statusDiv.id = "fria-server-status";
+    Object.assign(statusDiv.style, {
+        padding: "8px 16px", fontSize: "11px", color: "#888",
+        borderTop: "1px solid #444", cursor: "default",
+    });
+    statusDiv.textContent = "Statut : vérification...";
+    dd.appendChild(statusDiv);
+
     wrapper.appendChild(btn);
     wrapper.appendChild(dd);
 
-    // Toggle dropdown
+    // Toggle dropdown + vérifier le statut du serveur
     btn.onclick = (e) => {
         e.stopPropagation();
-        dd.style.display = dd.style.display === "block" ? "none" : "block";
+        const opening = dd.style.display !== "block";
+        dd.style.display = opening ? "block" : "none";
+        if (opening) checkServerStatus(statusDiv);
     };
 
     // Fermer au clic ailleurs
@@ -108,6 +120,27 @@ function initMenu(appInstance) {
     // Insérer avant le bouton Settings (comme la référence)
     settingsButton.parentNode.insertBefore(wrapper, settingsButton);
     console.log("[FR.IA] Menu initialized");
+}
+
+async function checkServerStatus(el) {
+    const cfg = getConfig();
+    const baseUrl = (cfg.serverUrl || "https://kw.holaf.fr").replace(/\/+$/, "");
+    try {
+        const resp = await fetch(`${baseUrl}/api/stats`, {
+            method: "GET",
+            signal: AbortSignal.timeout(5000),
+        });
+        if (resp.ok) {
+            el.textContent = "🟢  Serveur en ligne";
+            el.style.color = "#4ade80";
+        } else {
+            el.textContent = "🟡  Serveur répond (HTTP " + resp.status + ")";
+            el.style.color = "#facc15";
+        }
+    } catch {
+        el.textContent = "🔴  Serveur hors ligne";
+        el.style.color = "#f87171";
+    }
 }
 
 function openSettings() {

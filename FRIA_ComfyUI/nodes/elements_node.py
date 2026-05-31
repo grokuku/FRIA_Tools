@@ -15,14 +15,13 @@ class FRIAElementsNode:
         return {
             "required": {
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
-                "control_after_generate": (["fixed", "increment", "decrement", "randomize"], {"default": "randomize"}),
             }
         }
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("elements",)
 
-    def generate(self, seed, control_after_generate="randomize"):
+    def generate(self, seed):
         # Le widget JS stocke le résultat dans un widget caché _result
         prompt = ""
         if hasattr(self, "widgets") and self.widgets:
