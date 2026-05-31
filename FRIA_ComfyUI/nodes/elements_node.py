@@ -1,7 +1,7 @@
 """
 FR.IA Elements Picker Node — Custom widget (JavaScript).
-The interactive UI is rendered by web/js/fria_elements_widget.js
-This Python stub just defines the node's interface and output.
+L'UI interactive est rendue par web/js/fria_elements_widget.js.
+Le seed est une entrée standard ComfyUI → changement de seed = ré-exécution.
 """
 
 
@@ -12,14 +12,18 @@ class FRIAElementsNode:
 
     @classmethod
     def INPUT_TYPES(cls):
-        return {}
+        return {
+            "required": {
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+                "control_after_generate": (["fixed", "increment", "decrement", "randomize"], {"default": "randomize"}),
+            }
+        }
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("elements",)
 
-    def generate(self):
-        # The JS widget stores the result in this node's widgets.
-        # Read the first widget's value (the hidden output).
+    def generate(self, seed, control_after_generate="randomize"):
+        # Le widget JS stocke le résultat dans un widget caché _result
         prompt = ""
         if hasattr(self, "widgets") and self.widgets:
             for w in self.widgets:

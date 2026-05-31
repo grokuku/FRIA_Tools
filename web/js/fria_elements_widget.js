@@ -54,6 +54,7 @@ async function apiCall(method, path, body) {
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 const r = onNodeCreated?.apply(this, arguments);
+                const node = this;
 
                 // Stockage local des éléments pour cette instance de node
                 if (!this._friaElements) this._friaElements = [];
@@ -100,6 +101,19 @@ async function apiCall(method, path, body) {
                 const addSemBtn = mkBtn("+ Add semantic");
                 tb.appendChild(addFilterBtn);
                 tb.appendChild(addSemBtn);
+
+                // ---- Seed widget (créé automatiquement par ComfyUI) ----
+                let seedWidget = this.widgets?.find(w => w.name === "seed");
+                if (!seedWidget) {
+                    // Fallback : créer nous-mêmes si ComfyUI ne l'a pas fait
+                    seedWidget = this.addWidget("number", "seed", 0, () => {}, { min: 0 });
+                }
+                // Auto-générer quand le seed change
+                const origCallback = seedWidget.callback;
+                seedWidget.callback = (val) => {
+                    if (origCallback) origCallback(val);
+                    triggerGenerate(node);
+                };
 
                 // ---- Liste des éléments ----
                 const listEl = document.createElement("div");
@@ -224,9 +238,13 @@ async function apiCall(method, path, body) {
                 genBtn.style.padding = "6px";
                 genBtn.style.marginBottom = "8px";
 
-                genBtn.onclick = async () => {
-                    const elements = this._friaElements || [];
-                    const resultArea = document.getElementById("fria-result-" + this.id);
+                const node = this;
+                genBtn.onclick = () => triggerGenerate(node);
+
+                // ---- triggerGenerate : appelle l'API avec le seed courant ----
+                function triggerGenerate(n) {
+                    const elements = n._friaElements || [];
+                    const resultArea = document.getElementById("fria-result-" + n.id);
                     if (!resultArea) return;
 
                     if (elements.length === 0 && !randCb.checked) {
@@ -234,35 +252,34 @@ async function apiCall(method, path, body) {
                         return;
                     }
 
-                    // Construire le payload
-                    const payload = { elements: [] };
+                    // Lire le seed depuis le widget ComfyUI
+                    const sw = n.widgets?.find(w => w.name === "seed");
+                    const seed = sw ? parseInt(sw.value) || 0 : 0;
 
-                    // Éléments
+                    // Construire le payload
+                    const payload = { elements: [], seed: seed };
+
                     elements.forEach(e => {
                         if (e.type === "filter") payload.elements.push({ type: "filter", id: e.id });
                         else if (e.type === "text") payload.elements.push({ type: "text", text: e.text });
                     });
 
-                    // Random
                     if (randCb.checked) {
                         payload.random_count = parseInt(randN.value) || 3;
                     }
 
                     resultArea.value = "Génération en cours...";
 
-                    try {
-                        const data = await apiCall("POST", "generate", payload);
+                    apiCall("POST", "generate", payload).then(data => {
                         const prompt = data.prompt || "";
                         resultArea.value = prompt;
-
-                        // Stocker dans le widget caché pour la sortie de la node
-                        if (this._resultWidget) {
-                            this._resultWidget.value = prompt;
+                        if (n._resultWidget) {
+                            n._resultWidget.value = prompt;
                         }
-                    } catch (err) {
+                    }).catch(err => {
                         resultArea.value = "Erreur : " + err.message;
-                    }
-                };
+                    });
+                }
 
                 // ---- Result area ----
                 const result = document.createElement("textarea");

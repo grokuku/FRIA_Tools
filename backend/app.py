@@ -1710,6 +1710,11 @@ def generate_prompt():
     if not data or not data.get('elements'):
         return jsonify({'error': 'elements requis'}), 400
 
+    # Seed optionnel pour reproductibilité
+    seed = data.get('seed')
+    if seed is not None:
+        random.seed(seed)
+
     elements = data['elements']
     conn = get_db()
     cur = conn.cursor()
