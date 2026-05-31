@@ -1765,6 +1765,8 @@ def generate_prompt():
     random_count = int(data.get('random_count', 0))
     random_sfw = data.get('random_sfw', True)   # Défaut : SFW autorisé
     random_nsfw = data.get('random_nsfw', False)  # Défaut : NSFW non autorisé
+
+    if not elements and random_count <= 0:
         return jsonify({'prompt': '', 'count': 0, 'elements': [], 'debug': []})
 
     conn = get_db()

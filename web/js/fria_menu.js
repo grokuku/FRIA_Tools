@@ -18,19 +18,16 @@ function setConfig(cfg) {
 // ── Modale draggable (style FR.IA, pas de fermeture au clic extérieur) ──
 
 function friaOpenModal(title, contentHtml, width) {
-    const overlay = document.createElement("div");
-    Object.assign(overlay.style, {
-        position: "fixed", inset: "0", zIndex: "99999",
-        background: "rgba(0,0,0,0.35)",
-    });
-
+    // Pas d'overlay — la modale flotte au-dessus de ComfyUI sans bloquer les clics
     const modal = document.createElement("div");
     Object.assign(modal.style, {
-        position: "absolute",
-        background: "#2a2a2e", borderRadius: "12px",
+        position: "fixed",
+        background: "#2a2a2e",
+        borderRadius: "12px",
         boxShadow: "0 16px 48px rgba(0,0,0,0.6)",
         width: (width || "440px"),
         maxHeight: "80vh",
+        zIndex: "99999",
     });
 
     // Header draggable
@@ -53,7 +50,7 @@ function friaOpenModal(title, contentHtml, width) {
     });
     closeBtn.onmouseenter = () => closeBtn.style.color = "#f87171";
     closeBtn.onmouseleave = () => closeBtn.style.color = "#999";
-    closeBtn.onclick = () => { overlay.remove(); };
+    closeBtn.onclick = () => { modal.remove(); };
 
     header.appendChild(titleEl);
     header.appendChild(closeBtn);
@@ -71,8 +68,7 @@ function friaOpenModal(title, contentHtml, width) {
 
     modal.appendChild(header);
     modal.appendChild(body);
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
+    document.body.appendChild(modal);
 
     // Center modal initially
     modal.style.left = Math.max(100, (window.innerWidth - parseInt(width || "440")) / 2) + "px";
@@ -100,7 +96,7 @@ function friaOpenModal(title, contentHtml, width) {
         if (drag.active) { drag.active = false; header.style.cursor = "grab"; }
     });
 
-    return { overlay, modal, body, close: () => overlay.remove() };
+    return { modal, body, close: () => modal.remove() };
 }
 
 // Wait for ComfyUI app to be available
@@ -374,16 +370,17 @@ function openSettings() {
     btnRow.appendChild(saveBtn);
     content.appendChild(btnRow);
 
-    const modal = friaOpenModal("", content, "420px");
-    // Override title since we have our own
-    modal.modal.querySelector("div:first-child span")?.remove();
+    const modalRef = friaOpenModal("", content, "420px");
+    // Cacher le titre par défaut car on a notre propre h2
+    const titleSpan = modalRef.modal.querySelector("div:first-child span");
+    if (titleSpan) titleSpan.style.display = "none";
 
-    cancelBtn.onclick = () => modal.close();
+    cancelBtn.onclick = () => modalRef.close();
     saveBtn.onclick = () => {
         setConfig({
             serverUrl: inputUrl.value.trim(),
             apiKey: inputKey.value.trim(),
         });
-        modal.close();
+        modalRef.close();
     };
 }

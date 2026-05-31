@@ -194,8 +194,57 @@ function hideWidget(node, name) {
                             padding: "3px 4px", borderRadius: "3px", marginBottom: "2px",
                             background: item.type === "filter" ? "#2d3748" : "#1a365d",
                             border: "1px solid #555",
+                            cursor: "grab",
                         });
-                        // Icône + nom (ellipsis si trop long)
+
+                        // Poignée de drag (⠿) + boutons haut/bas
+                        const grip = document.createElement("span");
+                        grip.textContent = "⠿";
+                        Object.assign(grip.style, {
+                            cursor: "grab", color: "#666", fontSize: "10px", flexShrink: "0",
+                            userSelect: "none", marginRight: "2px",
+                        });
+
+                        // Boutons monter/descendre
+                        const upBtn = document.createElement("button");
+                        upBtn.textContent = "▲";
+                        Object.assign(upBtn.style, {
+                            background: "none", border: "none", color: "#888", cursor: "pointer",
+                            fontSize: "8px", padding: "0", lineHeight: "1", flexShrink: "0",
+                        });
+                        upBtn.title = "Monter";
+                        upBtn.onclick = () => {
+                            if (idx > 0) {
+                                [items[idx - 1], items[idx]] = [items[idx], items[idx - 1]];
+                                renderList();
+                                syncElementsWidget();
+                            }
+                        };
+
+                        const dnBtn = document.createElement("button");
+                        dnBtn.textContent = "▼";
+                        Object.assign(dnBtn.style, {
+                            background: "none", border: "none", color: "#888", cursor: "pointer",
+                            fontSize: "8px", padding: "0", lineHeight: "1", flexShrink: "0",
+                        });
+                        dnBtn.title = "Descendre";
+                        dnBtn.onclick = () => {
+                            if (idx < items.length - 1) {
+                                [items[idx + 1], items[idx]] = [items[idx], items[idx + 1]];
+                                renderList();
+                                syncElementsWidget();
+                            }
+                        };
+
+                        row.appendChild(grip);
+                        row.appendChild(upBtn);
+                        row.appendChild(dnBtn);
+                        const iconSpan = document.createElement("span");
+                        iconSpan.style.cssText = "flex-shrink:0;";
+                        iconSpan.textContent = item.type === "filter" ? "🔽" : "🧠";
+                        row.appendChild(iconSpan);
+
+                        // Nom (ellipsis si trop long)
                         const label = document.createElement("span");
                         label.style.cssText = "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
                         if (item.type === "filter") {
@@ -204,7 +253,8 @@ function hideWidget(node, name) {
                             label.textContent = item.text || "?";
                         }
                         row.appendChild(label);
-                        // Badge auteur + visibilité (aligné à droite avant ✕)
+
+                        // Badge auteur + visibilité
                         if (item.type === "filter" && item.author) {
                             const meta = document.createElement("span");
                             meta.style.cssText = "font-size:10px;color:#999;white-space:nowrap;flex-shrink:0;";
@@ -216,12 +266,8 @@ function hideWidget(node, name) {
                             vis.textContent = item.is_public ? "🌐" : "🔒";
                             row.appendChild(vis);
                         }
-                        // Type icon on far left
-                        const iconSpan = document.createElement("span");
-                        iconSpan.style.cssText = "flex-shrink:0;margin-right:2px;";
-                        iconSpan.textContent = item.type === "filter" ? "🔽" : "🧠";
-                        row.insertBefore(iconSpan, row.firstChild);
 
+                        // Bouton supprimer
                         const del = document.createElement("button");
                         del.textContent = "✕";
                         Object.assign(del.style, {
@@ -234,7 +280,7 @@ function hideWidget(node, name) {
                             syncElementsWidget();
                         };
                         row.appendChild(del);
-                        listEl.appendChild(row);
+
                     });
                 }
 
@@ -437,25 +483,66 @@ function hideWidget(node, name) {
                 domWidget.options.height = 300;
 
                 // ---- Taille minimum de la node ----
-                // On force la node à ne pas pouvoir être plus petite
-                // que ce que nécessite le contenu JS
-                const MIN_WIDTH = 320;
-                const MIN_WIDGET_HEIGHT = 300;
-
-                // Appliquer la taille initiale
-                requestAnimationFrame(() => {
-                    if (node.size) {
-                        node.size[0] = Math.max(node.size[0], MIN_WIDTH);
-                    }
-                });
+                const MIN_WIDTH = 360;
 
                 // Intercepter le resize pour imposer un minimum
                 const origOnResize = node.onResize;
                 node.onResize = function (size) {
                     if (origOnResize) origOnResize.call(this, size);
-                    // Forcer la largeur minimum
                     if (size[0] < MIN_WIDTH) size[0] = MIN_WIDTH;
                 };
+
+                // Appliquer la taille initiale
+                requestAnimationFrame(() => {
+                    if (node.size) {
+                        if (node.size[0] < MIN_WIDTH) {
+                            node.setSize([MIN_WIDTH, node.size[1]]);
+                        }
+                    }
+                });
+
+                // ---- Persistance workflow (sauvegarde/chargement) ----
+                // Au chargement d'un workflow, on restaure les éléments depuis _elements_json
+                const origOnAdded = nodeType.prototype.onAdded;
+                nodeType.prototype.onAdded = function () {
+                    if (origOnAdded) origOnAdded.apply(this, arguments);
+                    restoreFromWidgets(this);
+                };
+
+                // Si la node existe déjà (coller un workflow), on restaure immédiatement
+                restoreFromWidgets(node);
+
+                function restoreFromWidgets(n) {
+                    const ej = n.widgets?.find(w => w.name === "_elements_json");
+                    if (!ej || !ej.value || ej.value === "{}" || ej.value === "") return;
+                    try {
+                        const data = JSON.parse(ej.value);
+                        if (data.elements && Array.isArray(data.elements) && data.elements.length > 0 && n._friaElements.length === 0) {
+                            n._friaElements = data.elements.map(e => {
+                                // Restaurer les champs d'affichage pour les filtres
+                                if (e.type === "filter") {
+                                    return {
+                                        type: "filter",
+                                        id: e.id,
+                                        name: e.name || `Filtre #${e.id}`,
+                                        author: e.author || "?",
+                                        is_public: !!e.is_public,
+                                    };
+                                }
+                                return e; // text elements sont complets
+                            });
+                            renderList();
+                        }
+                        if (data.random_sfw !== undefined) sfwCb.checked = !!data.random_sfw;
+                        if (data.random_nsfw !== undefined) nsfwCb.checked = !!data.random_nsfw;
+                        if (data.random_count > 0) {
+                            randCb.checked = true;
+                            randN.value = data.random_count;
+                        }
+                    } catch (err) {
+                        console.warn("[FR.IA] Impossible de restaurer les éléments :", err);
+                    }
+                }
 
                 // Stocker les refs
                 node._resultArea = result;
