@@ -503,11 +503,26 @@ def discord_callback():
 
 @app.route('/api/auth/me')
 def auth_me():
-    """Retourne l'utilisateur connecté ou 401."""
+    """Retourne l'utilisateur connecté ou 401. Fonctionne avec session ET Bearer token."""
+    # Essayer d'abord la session
     user = get_logged_user()
-    if not user:
-        return jsonify({"error": "Non connecté"}), 401
-    return jsonify(user)
+    if user:
+        return jsonify(user)
+    # Essayer le Bearer token
+    user_id = _authenticate_via_token()
+    if user_id:
+        try:
+            conn = get_db()
+            row = conn.execute(
+                "SELECT id, username, display_name, avatar, role FROM users WHERE id = ?",
+                (user_id,)
+            ).fetchone()
+            conn.close()
+            if row:
+                return jsonify(dict(row))
+        except Exception:
+            pass
+    return jsonify({"error": "Non connecté"}), 401
 
 
 @app.route('/api/auth/logout')
@@ -1707,15 +1722,17 @@ def generate_prompt():
     if guard:
         return guard
     data = request.get_json()
-    if not data or not data.get('elements'):
-        return jsonify({'error': 'elements requis'}), 400
+    if not data:
+        return jsonify({'error': 'payload requis'}), 400
 
+    elements = data.get('elements', [])
     # Seed optionnel pour reproductibilité
     seed = data.get('seed')
     if seed is not None:
         random.seed(seed)
 
-    elements = data['elements']
+    random_count = int(data.get('random_count', 0))
+
     conn = get_db()
     cur = conn.cursor()
     keywords = []
@@ -1728,7 +1745,6 @@ def generate_prompt():
 
         if elem.get('type') == 'filter' and elem.get('id'):
             kind = 'filter'
-            # Recuperer le nom du filtre et la taille du cache
             finfo = cur.execute("SELECT name, (SELECT COUNT(*) FROM filter_cache WHERE filter_id = ?) as cnt FROM saved_filters WHERE id = ?", (elem['id'], elem['id'])).fetchone()
             cur.execute("SELECT keyword_id FROM filter_cache WHERE filter_id = ? ORDER BY RANDOM() LIMIT 1", (elem['id'],))
             row = cur.fetchone()
@@ -1764,6 +1780,30 @@ def generate_prompt():
             if row:
                 keywords.append(row['keyword'])
                 debug.append({'keyword': row['keyword'], 'source': kind, 'score': round(score, 3)})
+
+    # Random elements : piocher depuis des sections non encore utilisées
+    if random_count > 0:
+        existing_kw_text = ', '.join(keywords).lower()
+        existing_words = [w.strip() for w in existing_kw_text.replace(',', ' ').split() if len(w.strip()) >= 3]
+        used_sections = set()
+        if existing_words:
+            placeholders = ','.join('?' for _ in existing_words)
+            try:
+                cur.execute(f"SELECT DISTINCT section_id FROM keywords WHERE LOWER(keyword) IN ({placeholders})", existing_words)
+                used_sections = {r[0] for r in cur.fetchall() if r[0]}
+            except Exception:
+                pass
+
+        if used_sections:
+            ph = ','.join('?' for _ in used_sections)
+            cur.execute(f"SELECT keyword FROM keywords WHERE section_id NOT IN ({ph}) OR section_id IS NULL ORDER BY RANDOM() LIMIT ?",
+                        list(used_sections) + [random_count])
+        else:
+            cur.execute("SELECT keyword FROM keywords ORDER BY RANDOM() LIMIT ?", (random_count,))
+        rand_keywords = [r[0] for r in cur.fetchall()]
+        keywords.extend(rand_keywords)
+        for rk in rand_keywords:
+            debug.append({'keyword': rk, 'source': 'random', 'score': 0})
 
     conn.close()
     prompt = ", ".join(keywords) if keywords else ""

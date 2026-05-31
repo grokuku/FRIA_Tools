@@ -4,7 +4,7 @@
  *   - Add saved filter / Add semantic buttons
  *   - List of elements with remove (✕)
  *   - Add random checkbox + count
- *   - Generate button + preview area
+ *   - Test generation button + preview area
  *   - Calls API with Bearer token from localStorage
  */
 
@@ -56,17 +56,27 @@ async function apiCall(method, path, body) {
                 const r = onNodeCreated?.apply(this, arguments);
                 const node = this;
 
-                // Widget caché pour la sortie
-                this._resultWidget = this.addWidget("hidden", "_result", "", () => {});
+                // ---- Récupérer le widget _result créé par ComfyUI depuis INPUT_TYPES ----
+                // Il est dans "optional", ComfyUI crée un widget string multiligne.
+                // On le masque visuellement mais sa valeur reste sérialisée.
+                const resultWidget = node.widgets?.find(w => w.name === "_result");
+                if (resultWidget) {
+                    node._resultWidget = resultWidget;
+                    // Cacher le widget : on retire son rendu en le marquant hidden
+                    resultWidget.hidden = true;
+                    // Certains versions de ComfyUI vérifient .type pour le rendu
+                    resultWidget.origType = resultWidget.type;
+                    resultWidget.type = "hidden";
+                } else {
+                    // Fallback : créer un widget caché si ComfyUI ne l'a pas fait
+                    node._resultWidget = node.addWidget("hidden", "_result", "", () => {});
+                }
 
                 // Le widget seed est géré nativement par ComfyUI (avec control_after_generate).
-                // On NE PASSE PAS de callback personnalisé — le seed est lu au moment
-                // de la génération via triggerGenerate.
-                // L'ancien code écrasait le callback par défaut de ComfyUI, ce qui
-                // cassait le comportement "randomize" / "increment" du seed.
+                // On ne touche PAS à son callback.
 
-                // Stockage local des éléments
-                if (!this._friaElements) this._friaElements = [];
+                // Stockage local des éléments (non sérialisé, réinitialisé au rechargement)
+                if (!node._friaElements) node._friaElements = [];
 
                 // ---- UI Container ----
                 const container = document.createElement("div");
@@ -150,7 +160,6 @@ async function apiCall(method, path, body) {
                         del.onclick = () => {
                             items.splice(idx, 1);
                             renderList();
-                            // Mettre à jour le widget résultat si vide
                             if (items.length === 0 && node._resultWidget) {
                                 node._resultWidget.value = "";
                             }
@@ -165,8 +174,12 @@ async function apiCall(method, path, body) {
                 // ---- Add saved filter ----
                 addFilterBtn.onclick = async () => {
                     try {
-                        const filters = await apiCall("GET", "filters");
-                        showFilterPicker(filters, (filter) => {
+                        const [filters, me] = await Promise.all([
+                            apiCall("GET", "filters"),
+                            apiCall("GET", "auth/me").catch(() => null),
+                        ]);
+                        const currentUserId = me?.id || null;
+                        showFilterPicker(filters, currentUserId, (filter) => {
                             node._friaElements.push({
                                 type: "filter",
                                 id: filter.id,
@@ -201,6 +214,7 @@ async function apiCall(method, path, body) {
                 const randCb = document.createElement("input");
                 randCb.type = "checkbox";
                 randCb.checked = false;
+                randCb.id = "fria-rand-" + node.id;
 
                 const randN = document.createElement("input");
                 randN.type = "number";
@@ -210,11 +224,12 @@ async function apiCall(method, path, body) {
                     border: "1px solid #555", background: "#1a1a1e",
                     color: "#fff", fontSize: "11px", textAlign: "center",
                 });
-                randN.min = 0;
+                randN.min = 1;
                 randN.max = 20;
 
                 const randLabel = document.createElement("label");
                 randLabel.style.fontSize = "11px";
+                randLabel.htmlFor = randCb.id;
                 randLabel.textContent = "Add random";
 
                 randRow.appendChild(randCb);
@@ -222,8 +237,8 @@ async function apiCall(method, path, body) {
                 randRow.appendChild(document.createTextNode(" N:"));
                 randRow.appendChild(randN);
 
-                // ---- Generate button ----
-                const genBtn = mkBtn("🔄  Générer", true);
+                // ---- Test generation button ----
+                const genBtn = mkBtn("🔄  Test generation", true);
                 genBtn.style.width = "100%";
                 genBtn.style.padding = "6px";
                 genBtn.style.marginBottom = "8px";
@@ -233,11 +248,9 @@ async function apiCall(method, path, body) {
                 // ---- triggerGenerate : appelle l'API avec le seed courant ----
                 function triggerGenerate(n) {
                     const elements = n._friaElements || [];
-                    // Utiliser la référence directe plutôt que getElementById (plus fiable)
-                    const resultArea = result;
 
                     if (elements.length === 0 && !randCb.checked) {
-                        resultArea.value = "Ajoutez au moins un élément ou activez Add random.";
+                        result.value = "Ajoutez au moins un élément ou activez Add random.";
                         return;
                     }
 
@@ -245,7 +258,7 @@ async function apiCall(method, path, body) {
                     const sw = n.widgets?.find(w => w.name === "seed");
                     const seed = sw ? parseInt(sw.value) || 0 : 0;
 
-                    // Construire le payload (seed=0 = aléatoire, seed>0 = déterministe)
+                    // Construire le payload
                     const payload = { elements: [] };
                     if (seed > 0) payload.seed = seed;
 
@@ -258,23 +271,22 @@ async function apiCall(method, path, body) {
                         payload.random_count = parseInt(randN.value) || 3;
                     }
 
-                    resultArea.value = "Génération en cours...";
+                    result.value = "Génération en cours...";
 
                     apiCall("POST", "generate", payload).then(data => {
                         const prompt = data.prompt || "";
-                        resultArea.value = prompt;
+                        result.value = prompt;
+                        // Synchroniser le widget _result pour la sérialisation ComfyUI
                         if (n._resultWidget) {
                             n._resultWidget.value = prompt;
                         }
                     }).catch(err => {
-                        resultArea.value = "Erreur : " + err.message;
+                        result.value = "Erreur : " + err.message;
                     });
                 }
 
                 // ---- Result area ----
                 const result = document.createElement("textarea");
-                // Plus besoin d'y accéder par ID — on utilise la référence directe
-                // result.id n'est plus nécessaire
                 Object.assign(result.style, {
                     width: "100%", minHeight: "50px", borderRadius: "4px",
                     border: "1px solid #555", padding: "4px",
@@ -291,17 +303,34 @@ async function apiCall(method, path, body) {
                 container.appendChild(genBtn);
                 container.appendChild(result);
 
-                // Utiliser addDOMWidget pour cohabiter avec les widgets standard (seed, etc.)
-                // ComfyUI alloue automatiquement l'espace et gère le rendu
+                // Intégrer le container dans le layout ComfyUI via addDOMWidget
                 const domWidget = node.addDOMWidget("elements_ui", "custom", container, {
                     getValue: () => "",
                     setValue: (v) => {},
-                    // Hauteur explicite pour que ComfyUI alloue l'espace correct
                 });
                 domWidget.options = domWidget.options || {};
                 domWidget.options.height = 340;
 
+                // Stocker la référence au textarea sur la node pour onExecuted
+                node._resultArea = result;
+
                 return r;
+            };
+
+            // ---- onExecuted : mettre à jour le textarea quand ComfyUI exécute la node ----
+            const onExecuted = nodeType.prototype.onExecuted;
+            nodeType.prototype.onExecuted = function (output) {
+                onExecuted?.apply(this, arguments);
+                // output contient les RETURN_NAMES → { elements: "..." }
+                if (output && output.elements !== undefined) {
+                    const text = Array.isArray(output.elements) ? output.elements.join("") : String(output.elements);
+                    if (this._resultArea) {
+                        this._resultArea.value = text;
+                    }
+                    if (this._resultWidget) {
+                        this._resultWidget.value = text;
+                    }
+                }
             };
         }
     });
@@ -311,7 +340,7 @@ async function apiCall(method, path, body) {
 // Utilitaires : modales et toasts
 // ========================
 
-function showFilterPicker(filters, onSelect) {
+function showFilterPicker(filters, currentUserId, onSelect) {
     const overlay = document.createElement("div");
     Object.assign(overlay.style, {
         position: "fixed", inset: "0", zIndex: "99999",
@@ -326,10 +355,13 @@ function showFilterPicker(filters, onSelect) {
         boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
     });
 
-    let html = `<h3 style="margin:0 0 12px; font-size:14px; color:#fff;">Choisir un filtre</h3>`;
-
-    const mine = filters.filter(f => f.user_id && !f.is_public);
+    // Séparer les filtres : les miens vs publics
+    const mine = currentUserId
+        ? filters.filter(f => f.user_id === currentUserId && !f.is_public)
+        : filters.filter(f => f.user_id && !f.is_public);
     const pub = filters.filter(f => f.is_public);
+
+    let html = `<h3 style="margin:0 0 12px; font-size:14px; color:#fff;">Choisir un filtre</h3>`;
 
     if (mine.length > 0) {
         html += `<p style="margin:8px 0 4px; font-size:11px; color:#888;">Mes filtres</p>`;
@@ -356,7 +388,6 @@ function showFilterPicker(filters, onSelect) {
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
 
-    // Callback global pour les clics sur les filtres
     const pickerData = filters;
     window._friaPickFilter = (id) => {
         const f = pickerData.find(x => x.id === id);
