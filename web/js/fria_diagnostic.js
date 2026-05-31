@@ -131,80 +131,33 @@
                 const origExec = node.onExecuted; // null (mis par LiteGraph)
                 node.onExecuted = function (output) {
                     console.log("[DIAG] ✅ onExecuted APPELÉ !");
-                    console.log("[DIAG] typeof output:", typeof output);
                     console.log("[DIAG] JSON output:",
                         JSON.stringify(output).substring(0, 500));
 
-                    if (origExec) {
-                        console.log("[DIAG] Calling origExec...");
-                        origExec.call(this, output);
-                    } else {
-                        console.log("[DIAG] origExec is", origExec);
-                    }
+                    if (origExec) origExec.call(this, output);
 
-                    let text = null;
-
-                    // Détail complet
-                    if (output && typeof output === 'object') {
-                        console.log("[DIAG] output keys:", Object.keys(output));
-                        console.log("[DIAG] output.elements:", output.elements);
-                        console.log("[DIAG] output[\"0\"]:", output["0"]);
-                        console.log("[DIAG] output.output:", output.output);
-                        if (output.output !== undefined) {
-                            const out = output.output;
-                            console.log("[DIAG] output.output keys:", Object.keys(out));
-                            console.log("[DIAG] output.output.elements:", out.elements);
-                            console.log("[DIAG] output.output[\"0\"]:", out["0"]);
-                            if (typeof out === 'object' && !Array.isArray(out) &&
-                                out.elements !== undefined) text = out.elements;
-                            else if (Array.isArray(out) && out.length > 0) text = out[0];
-                            else if (typeof out === 'string') text = out;
-                        }
-                        if (text === null && output.elements !== undefined) text = output.elements;
-                        if (text === null && Array.isArray(output) && output.length > 0) text = output[0];
-                        // Clés numériques
-                        if (text === null) {
-                            for (const key of Object.keys(output)) {
-                                if (/^\d+$/.test(key)) {
-                                    console.log("[DIAG] Found numeric key:", key);
-                                    text = output[key];
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    if (text === null && typeof output === 'string') text = output;
-
-                    console.log("[DIAG] Extracted text:", text !== null ?
-                        JSON.stringify(String(text).substring(0, 100)) : "null");
-
-                    if (text !== null && text !== undefined) {
-                        const str = Array.isArray(text) ? text.join("") :
-                            String(text);
+                    // HolafToText pattern: output = ui dict
+                    // ex: {"diagnostic": ["Hello from FR.IA!"]}
+                    const arr = output?.diagnostic;
+                    if (Array.isArray(arr) && arr.length > 0) {
+                        const text = String(arr[0]);
                         console.log("[DIAG] Setting result.value =",
-                            JSON.stringify(str.substring(0, 100)));
-                        console.log("[DIAG] node._resultArea exists:",
-                            !!node._resultArea);
-
+                            JSON.stringify(text.substring(0, 100)));
                         if (node._resultArea) {
                             const oldVal = node._resultArea.value;
-                            node._resultArea.value = str;
+                            node._resultArea.value = text;
                             console.log("[DIAG] result.value updated:",
                                 JSON.stringify(oldVal.substring(0, 50)),
-                                "→", JSON.stringify(str.substring(0, 50)));
-                            console.log("[DIAG] result.value AFTER:",
-                                JSON.stringify(node._resultArea.value.substring(0, 100)));
+                                "→", JSON.stringify(text.substring(0, 50)));
                             node._diagInfo.textContent =
-                                "✅ Mis à jour : " + str.substring(0, 50);
-                        } else {
-                            console.log("[DIAG] ❌ node._resultArea is null/undefined!");
-                            node._diagInfo.textContent = "❌ _resultArea manquant !";
+                                "✅ " + text.substring(0, 60);
                         }
-                    } else if (output) {
-                        console.log("[DIAG] ❌ Format inconnu:",
-                            JSON.stringify(output).substring(0, 500));
+                    } else {
+                        console.log("[DIAG] ❌ Format inattendu:",
+                            JSON.stringify(output));
                         node._diagInfo.textContent =
-                            "❌ Format inconnu (voir console)";
+                            "❌ Format inattendu: " +
+                            JSON.stringify(output).substring(0, 80);
                     }
                 };
 

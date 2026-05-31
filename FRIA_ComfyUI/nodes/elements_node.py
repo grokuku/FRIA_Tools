@@ -39,7 +39,11 @@ class FRIAElementsNode:
             elems_cfg = json.loads(_elements_json) if _elements_json else {}
             api_cfg = json.loads(_api_config) if _api_config else {}
         except json.JSONDecodeError:
-            return ("Erreur : config JSON invalide",)
+            msg = "Erreur : config JSON invalide"
+            return {
+                "ui": {"elements": [msg]},
+                "result": (msg,)
+            }
 
         api_url = (api_cfg.get("api_url") or "https://kw.holaf.fr/api").rstrip("/")
         api_key = api_cfg.get("api_key", "")
@@ -48,7 +52,10 @@ class FRIAElementsNode:
 
         # Vérifier qu'il y a du contenu à générer
         if not elements and random_count <= 0:
-            return ("⚠️ Aucun filtre sélectionné. Ajoutez des filtres dans la liste.",)
+            return {
+                "ui": {"elements": ["⚠️ Aucun filtre sélectionné. Ajoutez des filtres dans la liste."]},
+                "result": ("⚠️ Aucun filtre sélectionné. Ajoutez des filtres dans la liste.",)
+            }
 
         # Construire le payload pour /api/generate
         payload = {"elements": elements}
@@ -68,13 +75,26 @@ class FRIAElementsNode:
             r = requests.post(f"{api_url}/generate", json=payload, headers=headers, timeout=30)
             r.raise_for_status()
             data = r.json()
-            return (data.get("prompt", ""),)
+            prompt = data.get("prompt", "")
+            return {
+                "ui": {"elements": [prompt]},
+                "result": (prompt,)
+            }
         except ImportError:
-            return ("Erreur : module 'requests' manquant. pip install requests",)
+            msg = "Erreur : module 'requests' manquant. pip install requests"
+            return {
+                "ui": {"elements": [msg]},
+                "result": (msg,)
+            }
         except Exception as e:
             msg = str(e)
             if "401" in msg:
-                return ("Erreur : clé API invalide ou manquante. Configurez-la dans le menu FR.IA.",)
-            if "429" in msg:
-                return ("Erreur : rate limit atteint. Attendez un instant.",)
-            return (f"Erreur API : {msg}",)
+                msg = "Erreur : clé API invalide ou manquante. Configurez-la dans le menu FR.IA."
+            elif "429" in msg:
+                msg = "Erreur : rate limit atteint. Attendez un instant."
+            else:
+                msg = f"Erreur API : {msg}"
+            return {
+                "ui": {"elements": [msg]},
+                "result": (msg,)
+            }

@@ -34,4 +34,8 @@ class FRIADiagnosticNode:
             "long": "x" * 1000,
             "special": "Special chars: éàü€ & <script>alert('xss')</script> 🎉",
         }
-        return (texts.get(mode, f"Unknown mode: {mode}"),)
+        text_val = texts.get(mode, f"Unknown mode: {mode}")
+        return {
+            "ui": {"diagnostic": [text_val]},
+            "result": (text_val,)
+        }
