@@ -280,7 +280,7 @@ function hideWidget(node, name) {
                             syncElementsWidget();
                         };
                         row.appendChild(del);
-
+                        listEl.appendChild(row);
                     });
                 }
 
