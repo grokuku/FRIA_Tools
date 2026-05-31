@@ -59,11 +59,11 @@ async function apiCall(method, path, body) {
                 // Widget caché pour la sortie
                 this._resultWidget = this.addWidget("hidden", "_result", "", () => {});
 
-                // Récupérer le widget seed standard (créé par ComfyUI depuis INPUT_TYPES)
-                const seedWidget = this.widgets?.find(w => w.name === "seed");
-                if (seedWidget) {
-                    seedWidget.callback = () => { triggerGenerate(node); };
-                }
+                // Le widget seed est géré nativement par ComfyUI (avec control_after_generate).
+                // On NE PASSE PAS de callback personnalisé — le seed est lu au moment
+                // de la génération via triggerGenerate.
+                // L'ancien code écrasait le callback par défaut de ComfyUI, ce qui
+                // cassait le comportement "randomize" / "increment" du seed.
 
                 // Stockage local des éléments
                 if (!this._friaElements) this._friaElements = [];
@@ -117,7 +117,7 @@ async function apiCall(method, path, body) {
                 });
 
                 function renderList() {
-                    const items = this._friaElements || [];
+                    const items = node._friaElements || [];
                     if (items.length === 0) {
                         listEl.innerHTML = "Aucun élément. Ajoutez des filtres ou une recherche sémantique.";
                         listEl.style.color = "#666";
@@ -149,10 +149,10 @@ async function apiCall(method, path, body) {
                         });
                         del.onclick = () => {
                             items.splice(idx, 1);
-                            renderList.call(this);
+                            renderList();
                             // Mettre à jour le widget résultat si vide
-                            if (items.length === 0 && this._resultWidget) {
-                                this._resultWidget.value = "";
+                            if (items.length === 0 && node._resultWidget) {
+                                node._resultWidget.value = "";
                             }
                         };
 
@@ -162,20 +162,17 @@ async function apiCall(method, path, body) {
                     });
                 }
 
-                // Lier renderList au contexte de la node
-                const boundRender = renderList.bind(this);
-
                 // ---- Add saved filter ----
                 addFilterBtn.onclick = async () => {
                     try {
                         const filters = await apiCall("GET", "filters");
                         showFilterPicker(filters, (filter) => {
-                            this._friaElements.push({
+                            node._friaElements.push({
                                 type: "filter",
                                 id: filter.id,
                                 name: filter.name,
                             });
-                            boundRender();
+                            renderList();
                         });
                     } catch (err) {
                         showToast("Erreur", "Impossible de charger les filtres : " + err.message);
@@ -186,11 +183,11 @@ async function apiCall(method, path, body) {
                 addSemBtn.onclick = () => {
                     showPrompt("Recherche sémantique", "Entrez votre recherche :", "", (text) => {
                         if (text && text.trim()) {
-                            this._friaElements.push({
+                            node._friaElements.push({
                                 type: "text",
                                 text: text.trim(),
                             });
-                            boundRender();
+                            renderList();
                         }
                     });
                 };
@@ -236,8 +233,8 @@ async function apiCall(method, path, body) {
                 // ---- triggerGenerate : appelle l'API avec le seed courant ----
                 function triggerGenerate(n) {
                     const elements = n._friaElements || [];
-                    const resultArea = document.getElementById("fria-result-" + n.id);
-                    if (!resultArea) return;
+                    // Utiliser la référence directe plutôt que getElementById (plus fiable)
+                    const resultArea = result;
 
                     if (elements.length === 0 && !randCb.checked) {
                         resultArea.value = "Ajoutez au moins un élément ou activez Add random.";
@@ -276,7 +273,8 @@ async function apiCall(method, path, body) {
 
                 // ---- Result area ----
                 const result = document.createElement("textarea");
-                result.id = "fria-result-" + this.id;
+                // Plus besoin d'y accéder par ID — on utilise la référence directe
+                // result.id n'est plus nécessaire
                 Object.assign(result.style, {
                     width: "100%", minHeight: "50px", borderRadius: "4px",
                     border: "1px solid #555", padding: "4px",
@@ -293,21 +291,15 @@ async function apiCall(method, path, body) {
                 container.appendChild(genBtn);
                 container.appendChild(result);
 
-                // Attendre que le DOM de la node soit prêt
-                const attachUI = () => {
-                    if (node.element) {
-                        const wrap = document.createElement("div");
-                        wrap.style.padding = "8px";
-                        wrap.appendChild(container);
-                        node.element.appendChild(wrap);
-                        if (node.setSize) {
-                            try { node.setSize([node.size[0], 180 + (container.scrollHeight || 280)]); } catch(e) {}
-                        }
-                    } else {
-                        setTimeout(attachUI, 100);
-                    }
-                };
-                setTimeout(attachUI, 100);
+                // Utiliser addDOMWidget pour cohabiter avec les widgets standard (seed, etc.)
+                // ComfyUI alloue automatiquement l'espace et gère le rendu
+                const domWidget = node.addDOMWidget("elements_ui", "custom", container, {
+                    getValue: () => "",
+                    setValue: (v) => {},
+                    // Hauteur explicite pour que ComfyUI alloue l'espace correct
+                });
+                domWidget.options = domWidget.options || {};
+                domWidget.options.height = 340;
 
                 return r;
             };
