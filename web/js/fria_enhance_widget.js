@@ -24,10 +24,15 @@
                 // ---- Cacher les widgets standards ----
                 const hideWidget = (n, name) => {
                     const w = n.widgets?.find(x => x.name === name);
-                    if (w) { w.hidden = true; w.computeSize = () => [0, -4]; }
+                    if (w) {
+                        // Ne PAS mettre w.hidden = true (cacherait le port des opt. inputs)
+                        w.computeSize = () => [0, -4];
+                        if (w.inputEl) w.inputEl.style.display = "none";
+                        if (w.parentEl) w.parentEl.style.display = "none";
+                    }
                 };
                 ["base_prompt", "prompt_type", "output_format", "preset_id", "style_id",
-                 "special_instructions", "_api_config"].forEach(
+                 "special_instructions", "elements", "_api_config"].forEach(
                     n => hideWidget(node, n)
                 );
 
