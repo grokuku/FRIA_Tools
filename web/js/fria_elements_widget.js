@@ -502,24 +502,19 @@ function hideWidget(node, name) {
                 });
 
                 // ---- Persistance workflow (sauvegarde/chargement) ----
-                // Au chargement d'un workflow, on restaure les éléments depuis _elements_json
-                const origOnAdded = nodeType.prototype.onAdded;
-                nodeType.prototype.onAdded = function () {
-                    if (origOnAdded) origOnAdded.apply(this, arguments);
-                    restoreFromWidgets(this);
-                };
-
-                // Si la node existe déjà (coller un workflow), on restaure immédiatement
-                restoreFromWidgets(node);
+                // ComfyUI charge les valeurs des widgets APRÈS onNodeCreated,
+                // donc on ne peut pas restaurer immédiatement.
+                // On utilise deux mécanismes :
+                //   1. onConfigure : appelé quand les données du workflow sont appliquées
+                //   2. Delayed fallback : si onConfigure n'a pas été appelé, on réessaie
 
                 function restoreFromWidgets(n) {
                     const ej = n.widgets?.find(w => w.name === "_elements_json");
-                    if (!ej || !ej.value || ej.value === "{}" || ej.value === "") return;
+                    if (!ej || !ej.value || ej.value === "{}" || ej.value === "") return false;
                     try {
                         const data = JSON.parse(ej.value);
                         if (data.elements && Array.isArray(data.elements) && data.elements.length > 0 && n._friaElements.length === 0) {
                             n._friaElements = data.elements.map(e => {
-                                // Restaurer les champs d'affichage pour les filtres
                                 if (e.type === "filter") {
                                     return {
                                         type: "filter",
@@ -539,10 +534,32 @@ function hideWidget(node, name) {
                             randCb.checked = true;
                             randN.value = data.random_count;
                         }
+                        return true; // Succès
                     } catch (err) {
                         console.warn("[FR.IA] Impossible de restaurer les éléments :", err);
+                        return false;
                     }
                 }
+
+                // Mécanisme 1 : onConfigure appelé quand le workflow charge les données
+                const origOnConfigure = nodeType.prototype.onConfigure;
+                nodeType.prototype.onConfigure = function (info) {
+                    if (origOnConfigure) origOnConfigure.apply(this, arguments);
+                    // Les widgets viennent d'être mis à jour, on peut restaurer
+                    restoreFromWidgets(this);
+                };
+
+                // Mécanisme 2 : Fallback retardé pour les cas où onConfigure n'est pas appelé
+                // (ex : premier chargement, F5 sur un workflow déjà chargé)
+                let restoreAttempts = 0;
+                function delayedRestore() {
+                    if (restoreFromWidgets(node)) return; // Succès, on arrête
+                    restoreAttempts++;
+                    if (restoreAttempts < 10) {
+                        setTimeout(delayedRestore, 300);
+                    }
+                }
+                setTimeout(delayedRestore, 200);
 
                 // Stocker les refs
                 node._resultArea = result;

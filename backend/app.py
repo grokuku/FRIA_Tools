@@ -1040,13 +1040,22 @@ def filters():
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, user_id, name, category, nsfw, is_public, config FROM saved_filters WHERE user_id = ? OR is_public = 1 ORDER BY name", (user_id,))
+    cur.execute("""
+        SELECT f.id, f.user_id, f.name, f.category, f.nsfw, f.is_public, f.config,
+               u.display_name, u.username
+        FROM saved_filters f
+        LEFT JOIN users u ON u.id = f.user_id
+        WHERE f.user_id = ? OR f.is_public = 1
+        ORDER BY f.name
+    """, (user_id,))
     rows = cur.fetchall()
     conn.close()
     result = []
     for r in rows:
         d = dict(r)
         d['config'] = json.loads(d['config']) if isinstance(d['config'], str) else d['config']
+        # Ajouter owner_name pour l'affichage dans l'UI
+        d['owner_name'] = d.pop('display_name', None) or d.pop('username', None) or d['user_id']
         result.append(d)
     return jsonify(result)
 
