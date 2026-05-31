@@ -1726,12 +1726,17 @@ def generate_prompt():
         return jsonify({'error': 'payload requis'}), 400
 
     elements = data.get('elements', [])
-    # Seed optionnel pour reproductibilité
+    # Seed pour reproductibilité — on utilise un Random local pour ne pas
+    # polluer l'état global et garantir le déterminisme.
+    # IMPORTANT : les requêtes SQL ne DOIVENT PAS utiliser ORDER BY RANDOM()
+    # car SQLite a son propre RNG qui ignore random.seed().
     seed = data.get('seed')
-    if seed is not None:
-        random.seed(seed)
+    rng = random.Random(seed if seed is not None else None)
 
     random_count = int(data.get('random_count', 0))
+
+    if not elements and random_count <= 0:
+        return jsonify({'prompt': '', 'count': 0, 'elements': [], 'debug': []})
 
     conn = get_db()
     cur = conn.cursor()
@@ -1745,11 +1750,18 @@ def generate_prompt():
 
         if elem.get('type') == 'filter' and elem.get('id'):
             kind = 'filter'
-            finfo = cur.execute("SELECT name, (SELECT COUNT(*) FROM filter_cache WHERE filter_id = ?) as cnt FROM saved_filters WHERE id = ?", (elem['id'], elem['id'])).fetchone()
-            cur.execute("SELECT keyword_id FROM filter_cache WHERE filter_id = ? ORDER BY RANDOM() LIMIT 1", (elem['id'],))
-            row = cur.fetchone()
-            if row:
-                kid = row['keyword_id']
+            finfo = cur.execute(
+                "SELECT name, (SELECT COUNT(*) FROM filter_cache WHERE filter_id = ?) as cnt FROM saved_filters WHERE id = ?",
+                (elem['id'], elem['id'])
+            ).fetchone()
+            # Charger TOUS les keyword_ids du filtre, puis choisir en Python (déterministe)
+            cur.execute(
+                "SELECT keyword_id FROM filter_cache WHERE filter_id = ?",
+                (elem['id'],)
+            )
+            all_kids = [r['keyword_id'] for r in cur.fetchall()]
+            if all_kids:
+                kid = rng.choice(all_kids)
             if finfo:
                 debug.append({'source': f"filtre '{finfo['name']}' (cache: {finfo['cnt']})", 'picked': bool(kid)})
 
@@ -1758,7 +1770,9 @@ def generate_prompt():
             try:
                 from embeddings import generate_embedding, cosine_similarity
                 qe = generate_embedding(elem['text'])
-                cur.execute("SELECT k.id, ke.embedding FROM keywords k JOIN keyword_embeddings ke ON ke.keyword_id = k.id")
+                cur.execute(
+                    "SELECT k.id, ke.embedding FROM keywords k JOIN keyword_embeddings ke ON ke.keyword_id = k.id"
+                )
                 rows = cur.fetchall()
                 if rows:
                     scored = []
@@ -1770,7 +1784,7 @@ def generate_prompt():
                     if scored:
                         scored.sort(key=lambda x: x[1], reverse=True)
                         top = scored[:min(5, len(scored))]
-                        kid, score = random.choice(top)
+                        kid, score = rng.choice(top)
             except Exception:
                 pass
 
@@ -1789,18 +1803,26 @@ def generate_prompt():
         if existing_words:
             placeholders = ','.join('?' for _ in existing_words)
             try:
-                cur.execute(f"SELECT DISTINCT section_id FROM keywords WHERE LOWER(keyword) IN ({placeholders})", existing_words)
+                cur.execute(
+                    f"SELECT DISTINCT section_id FROM keywords WHERE LOWER(keyword) IN ({placeholders})",
+                    existing_words
+                )
                 used_sections = {r[0] for r in cur.fetchall() if r[0]}
             except Exception:
                 pass
 
+        # Charger les candidats, puis choisir en Python (déterministe avec rng)
         if used_sections:
             ph = ','.join('?' for _ in used_sections)
-            cur.execute(f"SELECT keyword FROM keywords WHERE section_id NOT IN ({ph}) OR section_id IS NULL ORDER BY RANDOM() LIMIT ?",
-                        list(used_sections) + [random_count])
+            cur.execute(
+                f"SELECT keyword FROM keywords WHERE section_id NOT IN ({ph}) OR section_id IS NULL",
+                list(used_sections)
+            )
         else:
-            cur.execute("SELECT keyword FROM keywords ORDER BY RANDOM() LIMIT ?", (random_count,))
-        rand_keywords = [r[0] for r in cur.fetchall()]
+            cur.execute("SELECT keyword FROM keywords")
+        candidates = [r[0] for r in cur.fetchall()]
+        n = min(random_count, len(candidates))
+        rand_keywords = rng.sample(candidates, n) if n > 0 else []
         keywords.extend(rand_keywords)
         for rk in rand_keywords:
             debug.append({'keyword': rk, 'source': 'random', 'score': 0})

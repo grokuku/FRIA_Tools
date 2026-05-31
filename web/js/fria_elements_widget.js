@@ -1,11 +1,13 @@
 /**
  * FR.IA Elements Picker — Custom widget for ComfyUI node.
- * Renders an interactive UI inside the node :
- *   - Add saved filter / Add semantic buttons
- *   - List of elements with remove (✕)
- *   - Add random checkbox + count
- *   - Test generation button + preview area
- *   - Calls API with Bearer token from localStorage
+ *
+ * Flux de données :
+ *   - "Test generation" : JS appelle l'API → aperçu instantané dans le textarea
+ *   - "Run" (workflow) : Python lit _elements_json + _api_config, appelle l'API
+ *     lui-même avec le seed → résultat déterministe affiché via onExecuted
+ *
+ * Les widgets _elements_json et _api_config sont masqués dans l'UI ComfyUI
+ * mais sérialisés dans le workflow pour que Python y ait accès.
  */
 
 const STORAGE_KEY = "FRIA_config";
@@ -41,6 +43,18 @@ async function apiCall(method, path, body) {
     return resp.json();
 }
 
+// Cacher un widget ComfyUI : il reste dans node.widgets mais n'est plus rendu
+function hideWidget(node, name) {
+    const w = node.widgets?.find(x => x.name === name);
+    if (w) {
+        w.hidden = true;
+        w.origType = w.type;
+        w.type = "hidden";
+        return w;
+    }
+    return null;
+}
+
 // Attendre que l'app ComfyUI soit disponible
 (function waitForApp() {
     const app = window.app || window.comfyAPI?.app?.app;
@@ -56,27 +70,44 @@ async function apiCall(method, path, body) {
                 const r = onNodeCreated?.apply(this, arguments);
                 const node = this;
 
-                // ---- Récupérer le widget _result créé par ComfyUI depuis INPUT_TYPES ----
-                // Il est dans "optional", ComfyUI crée un widget string multiligne.
-                // On le masque visuellement mais sa valeur reste sérialisée.
-                const resultWidget = node.widgets?.find(w => w.name === "_result");
-                if (resultWidget) {
-                    node._resultWidget = resultWidget;
-                    // Cacher le widget : on retire son rendu en le marquant hidden
-                    resultWidget.hidden = true;
-                    // Certains versions de ComfyUI vérifient .type pour le rendu
-                    resultWidget.origType = resultWidget.type;
-                    resultWidget.type = "hidden";
-                } else {
-                    // Fallback : créer un widget caché si ComfyUI ne l'a pas fait
-                    node._resultWidget = node.addWidget("hidden", "_result", "", () => {});
-                }
+                // ---- Masquer les widgets sérialisés (_elements_json, _api_config) ----
+                // Ils sont dans "optional" de INPUT_TYPES, ComfyUI les crée automatiquement.
+                // On les cache pour qu'ils ne polluent pas l'UI, mais leur valeur
+                // reste sérialisée dans le workflow → lisible par Python au run.
+                hideWidget(node, "_elements_json");
+                hideWidget(node, "_api_config");
 
                 // Le widget seed est géré nativement par ComfyUI (avec control_after_generate).
                 // On ne touche PAS à son callback.
 
-                // Stockage local des éléments (non sérialisé, réinitialisé au rechargement)
+                // Stockage local des éléments (UI state, pas sérialisé directement)
                 if (!node._friaElements) node._friaElements = [];
+
+                // ---- Sync les widgets sérialisés ----
+                function syncElementsWidget() {
+                    const w = node.widgets?.find(x => x.name === "_elements_json");
+                    if (!w) return;
+                    w.value = JSON.stringify({
+                        elements: node._friaElements.map(e => {
+                            if (e.type === "filter") return { type: "filter", id: e.id };
+                            if (e.type === "text") return { type: "text", text: e.text };
+                            return e;
+                        }),
+                        random_count: randCb.checked ? (parseInt(randN.value) || 3) : 0,
+                    });
+                }
+
+                function syncApiConfigWidget() {
+                    const w = node.widgets?.find(x => x.name === "_api_config");
+                    if (!w) return;
+                    w.value = JSON.stringify({
+                        api_url: getApiUrl(),
+                        api_key: getApiKey(),
+                    });
+                }
+
+                // Sync initial
+                syncApiConfigWidget();
 
                 // ---- UI Container ----
                 const container = document.createElement("div");
@@ -160,9 +191,7 @@ async function apiCall(method, path, body) {
                         del.onclick = () => {
                             items.splice(idx, 1);
                             renderList();
-                            if (items.length === 0 && node._resultWidget) {
-                                node._resultWidget.value = "";
-                            }
+                            syncElementsWidget();
                         };
 
                         row.appendChild(label);
@@ -186,6 +215,7 @@ async function apiCall(method, path, body) {
                                 name: filter.name,
                             });
                             renderList();
+                            syncElementsWidget();
                         });
                     } catch (err) {
                         showToast("Erreur", "Impossible de charger les filtres : " + err.message);
@@ -201,6 +231,7 @@ async function apiCall(method, path, body) {
                                 text: text.trim(),
                             });
                             renderList();
+                            syncElementsWidget();
                         }
                     });
                 };
@@ -236,6 +267,11 @@ async function apiCall(method, path, body) {
                 randRow.appendChild(randLabel);
                 randRow.appendChild(document.createTextNode(" N:"));
                 randRow.appendChild(randN);
+
+                // Sync elements widget quand random change
+                randCb.onchange = () => { syncElementsWidget(); };
+                randN.onchange = () => { syncElementsWidget(); };
+                randN.oninput = () => { syncElementsWidget(); };
 
                 // ---- Test generation button ----
                 const genBtn = mkBtn("🔄  Test generation", true);
@@ -276,10 +312,9 @@ async function apiCall(method, path, body) {
                     apiCall("POST", "generate", payload).then(data => {
                         const prompt = data.prompt || "";
                         result.value = prompt;
-                        // Synchroniser le widget _result pour la sérialisation ComfyUI
-                        if (n._resultWidget) {
-                            n._resultWidget.value = prompt;
-                        }
+                        // Synchroniser les widgets sérialisés pour le prochain run
+                        syncElementsWidget();
+                        syncApiConfigWidget();
                     }).catch(err => {
                         result.value = "Erreur : " + err.message;
                     });
@@ -314,6 +349,10 @@ async function apiCall(method, path, body) {
                 // Stocker la référence au textarea sur la node pour onExecuted
                 node._resultArea = result;
 
+                // Sync initial des widgets
+                syncElementsWidget();
+                syncApiConfigWidget();
+
                 return r;
             };
 
@@ -321,14 +360,12 @@ async function apiCall(method, path, body) {
             const onExecuted = nodeType.prototype.onExecuted;
             nodeType.prototype.onExecuted = function (output) {
                 onExecuted?.apply(this, arguments);
-                // output contient les RETURN_NAMES → { elements: "..." }
                 if (output && output.elements !== undefined) {
-                    const text = Array.isArray(output.elements) ? output.elements.join("") : String(output.elements);
+                    const text = Array.isArray(output.elements)
+                        ? output.elements.join("")
+                        : String(output.elements);
                     if (this._resultArea) {
                         this._resultArea.value = text;
-                    }
-                    if (this._resultWidget) {
-                        this._resultWidget.value = text;
                     }
                 }
             };
@@ -355,7 +392,6 @@ function showFilterPicker(filters, currentUserId, onSelect) {
         boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
     });
 
-    // Séparer les filtres : les miens vs publics
     const mine = currentUserId
         ? filters.filter(f => f.user_id === currentUserId && !f.is_public)
         : filters.filter(f => f.user_id && !f.is_public);
