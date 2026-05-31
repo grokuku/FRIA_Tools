@@ -6,10 +6,11 @@ Extension ComfyUI pour le générateur de prompts FR.IA.
 
 ```bash
 cd ComfyUI/custom_nodes/
-git clone <url-du-repo> FR.IA-ComfyUI
-# ou copier le dossier directement
-pip install -r FR.IA-ComfyUI/requirements.txt
+git clone https://github.com/grokuku/FRIA_Tools.git FRIA_Tools
+pip install -r FRIA_Tools/FRIA_ComfyUI/requirements.txt
 ```
+
+> ⚠️ Le nom du dossier doit être **`FRIA_Keywords`** (pas de points ni tirets) pour que Python puisse l'importer correctement.
 
 Redémarrer ComfyUI.
 

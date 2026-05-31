@@ -256,11 +256,29 @@ def _get_current_user_id() -> str | None:
     return user["id"] if user else None
 
 
+def _authenticate_via_token() -> str | None:
+    """Vérifie si la requête contient un Bearer token valide.
+    Retourne l'user_id ou None."""
+    auth = request.headers.get('Authorization', '')
+    if not auth.startswith('Bearer '):
+        return None
+    token = auth[7:]
+    try:
+        conn = get_db()
+        row = conn.execute("SELECT id FROM users WHERE api_token = ?", (token,)).fetchone()
+        conn.close()
+        return row['id'] if row else None
+    except Exception:
+        return None
+
+
 def _login_required():
-    """Retourne une erreur 401 si non connecté."""
+    """Retourne une erreur 401 si non connecté (session OU token API)."""
     user_id = _get_current_user_id()
     if not user_id:
-        return jsonify({"error": "Connexion requise. Utilisez le bouton 'Connexion Discord'."}), 401
+        user_id = _authenticate_via_token()
+    if not user_id:
+        return jsonify({"error": "Connexion requise. Utilisez le bouton 'Connexion Discord' ou un token API."}), 401
     _sync_session_user(user_id)
     return None
 

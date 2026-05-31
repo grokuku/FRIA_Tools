@@ -20,7 +20,7 @@
 - **Parser ignorait les chiffres romains** avec L, C, D → sections XL+ ignorées.
 
 ### ⚠️ À faire au prochain déploiement
-1. S'assurer que le serveur pointe vers `/projects/FR.IA-keywords` (ou copier le code modifié)
+1. S'assurer que le serveur pointe vers `/projects/FRIA_Tools` (ou copier le code modifié)
 2. Redémarrer le serveur → `_init_db()` applique les migrations
 3. Vérifier la console navigateur pour les éventuelles erreurs résiduelles
 
@@ -469,7 +469,7 @@ FR.IA-ComfyUI/
 | 1 | Migration BDD : colonne `api_token` | Site web |
 | 2 | Endpoint `GET/POST /api/auth/token` | Site web |
 | 3 | Page `/settings` (UI du token) | Site web |
-| 4 | Middleware auth token sur les endpoints | Site web |
+| 4 | ✅ Middleware auth token | Site web |
 | 5 | Menu extension ComfyUI | ComfyUI |
 | 6 | Widget Elements Picker | ComfyUI |
 | 7 | Node Elements Picker (stub Python) | ComfyUI |
