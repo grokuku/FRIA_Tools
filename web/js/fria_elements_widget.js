@@ -564,6 +564,12 @@ function hideWidget(node, name) {
                         }
                         if (text === null && output.elements !== undefined) text = output.elements;
                         if (text === null && Array.isArray(output) && output.length > 0) text = output[0];
+                        // ComfyUI sérialise souvent les sorties avec des clés numériques : {"0": "text"}
+                        if (text === null) {
+                            for (const key of Object.keys(output)) {
+                                if (/^\d+$/.test(key)) { text = output[key]; break; }
+                            }
+                        }
                     }
                     if (text === null && typeof output === 'string') text = output;
 
@@ -617,6 +623,12 @@ function hideWidget(node, name) {
                     const o = output.output;
                     if (o.elements !== undefined) text = o.elements;
                     else if (Array.isArray(o) && o.length > 0) text = o[0];
+                }
+                // ComfyUI sérialise souvent avec clés numériques : {"0": "text"}
+                if (text === null && typeof output === 'object') {
+                    for (const key of Object.keys(output)) {
+                        if (/^\d+$/.test(key)) { text = output[key]; break; }
+                    }
                 }
 
                 if (text !== null && text !== undefined) {
