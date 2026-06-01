@@ -291,18 +291,19 @@ Utilise des parenthèses pour le poids : (important:1.2) pour +20% d'importance.
 Utilise des crochets pour réduire : [moins important:0.8].
 Évite les phrases complètes, préfère les tokens courts."""
 
-    DOC_SDXL = """Pour SDXL, utilise un mélange de langage naturel et de tags Danbooru.
-Structure recommandée :
-1. Sujet principal : description naturelle du sujet
-2. Description détaillée : apparence, vêtements, expression
-3. Environnement : cadre, décor, fond
-4. Atmosphère : humeur, éclairage, météo
-5. Style : artistique, technique, référence
-6. Qualité : masterpiece, best quality, 8k
+    DOC_SDXL = """Pour SDXL, utilise un mélange de langage naturel et de tags concis.
+Structure :
+1. Sujet principal : description naturelle
+2. Description : apparence, vêtements, expression (3-4 détails max)
+3. Environnement : cadre (1-2 éléments)
+4. Atmosphère : éclairage, humeur (1-2 éléments)
+5. Qualité : 1-2 qualifiers max (masterpiece, photorealistic)
 
-SDXL comprend mieux les phrases complètes que SD1.5.
-Tu peux utiliser des phrases comme "a woman with long red hair wearing a flowing dress".
-Limite les poids aux cas vraiment importants."""
+IMPORTANT :
+- Limite à 20-25 tags ou 2-3 phrases max
+- Ne jamais répéter un même concept
+- Pas de artist names, pas de "trending on...", pas de "artstation"
+- Privilégie la qualité à la quantité"""
 
     DOC_FLUX = """Pour Flux (Black Forest Labs), utilise des descriptions en langage natureL.
 Structure : Sujet + Action + Style + Contexte
@@ -382,28 +383,29 @@ Les tags doivent être concis mais descriptifs."""
 
     # ---- Règles de format de sortie ----
     FORMAT_RULES = {
-        "text": "Réponds UNIQUEMENT avec le prompt final, sans guillemets ni code blocks. Pas d'explications, pas de commentaires. Le prompt doit être directement utilisable dans le générateur d'images.",
-        "markdown": "Réponds en Markdown pur, SANS bloc de code (pas de ```). Le prompt doit être le contenu principal. Tu peux ajouter des titres et listes si pertinent pour enrichir la présentation.",
-        "json": "Réponds en JSON pur, SANS bloc de code (pas de ```json). Format attendu : {\"prompt\": \"...\", \"negative_prompt\": \"...\"}",
+        "text": "Réponds UNIQUEMENT avec le prompt final, sans guillemets ni code blocks. Pas d'explications, pas de commentaires, pas de phrases d'introduction. Maximum 30 tags ou 3 phrases. Le prompt doit être directement utilisable.",
+        "markdown": "Réponds en Markdown pur. Le prompt est le contenu principal. Maximum 30 éléments. Pas de bloc de code (```).",
+        "json": "Réponds en JSON pur, SANS bloc de code (pas de ```json). Format : {\"prompt\": \"...\", \"negative_prompt\": \"...\"}. Maximum 30 tags dans le prompt.",
     }
 
     # ---- Consignes communes ----
     CONSIGNES = """
 Règles impératives :
-- Le STYLE imposé en début de prompt doit être conservé à l'identique et enrichi si possible, jamais modifié ou supprimé
-- En cas de conflit entre éléments (ex: "long hair" vs "short hair"), privilégie l'ordre de priorité : prompt de base > éléments picker > éléments aléatoires
-- Supprime les doublons automatiquement
-- Organise les éléments par ordre d'importance
-- Ajoute des qualifiers si pertinent (masterpiece, best quality)
-- Ne JAMAIS ajouter d'explications, de commentaires ou de texte hors-prompt dans la réponse
-- La réponse doit contenir UNIQUEMENT le prompt généré"""
+- Le STYLE imposé doit être conservé à l'identique
+- En cas de conflit, privilégie l'ordre : prompt de base > éléments > aléatoire
+- Supprime les doublons
+- Organise par ordre d'importance (30 tags max)
+- Ajoute 2-3 qualifiers max (masterpiece, best quality)
+- **NE RÉPÈTE PAS** les mêmes tags/concepts
+- **RÉPONDS UNIQUEMENT avec le prompt**, rien d'autre : pas d'explications, pas de commentaires, pas de phrases d'introduction
+- Le prompt doit être prêt à l'emploi dans un générateur d'images"""
 
-    # ---- Exemples ----
+    # ---- Exemples (courts et ciblés) ----
     EXAMPLES = {
         "sdxl": json.dumps([
-            "A serene portrait of a young woman with flowing auburn hair and freckles, warm golden hour sunlight streaming through window, soft bokeh background, wearing a cream linen dress, ethereal atmosphere, masterpiece, photorealistic, 8k, shot on medium format film",
-            "Epic fantasy landscape of an ancient ruined castle perched on a misty mountain peak, dramatic cloudy sky, rays of light breaking through, overgrown vines and moss, highly detailed, cinematic composition, Greg Rutkowski style, intricate environment",
-            "Close-up of a steaming cup of coffee on a rustic wooden table, morning light, shallow depth of field, steam particles, warm tones, hyperrealistic, product photography, sharp focus, 8k",
+            "A serene portrait of a young woman with auburn hair and freckles, golden hour sunlight, soft bokeh, cream linen dress, ethereal atmosphere, photorealistic",
+            "Ancient ruined castle on a misty mountain peak, dramatic cloudy sky, rays of light, overgrown vines, cinematic composition, epic fantasy",
+            "Steaming cup of coffee on rustic wooden table, morning light, shallow depth of field, steam particles, warm tones, product photography",
         ]),
         "sd15": json.dumps([
             "masterpiece, best quality, ultra-detailed, 1girl, solo, long blonde hair, blue eyes, white sundress, standing on beach, sunset, ocean waves, cinematic lighting, soft focus, photorealistic, sharp focus",
@@ -2029,8 +2031,10 @@ Regles :
                 {'role': 'system', 'content': system_prompt},
                 {'role': 'user', 'content': merged_text}
             ],
-            'temperature': 0.7,
-            'max_tokens': 1024
+            'temperature': 0.3,
+            'max_tokens': 400,
+            'frequency_penalty': 0.5,
+            'repeat_penalty': 1.2,
         }
         r = requests.post(f'{base_url}/chat/completions', headers=headers, json=payload, timeout=60)
         r.raise_for_status()
