@@ -1906,10 +1906,22 @@ def enhance_prompt():
     text = data.get('text', '').strip()
     prompt_type = data.get('prompt_type', 'sdxl').strip()
     output_format = data.get('output_format', 'text').strip()
+    style_id = data.get('style_id')
     style_text = data.get('style_text', '').strip()
     special_instructions = data.get('special_instructions', '').strip()
     ep_elements = data.get('ep_elements', [])
     random_count = int(data.get('random_count', 0))
+
+    # Resoudre le style si style_id fourni
+    negative_prompt = ''
+    if style_id:
+        conn = get_db()
+        row = conn.execute("SELECT style_text, negative_prompt FROM styles WHERE id = ?", (style_id,)).fetchone()
+        if row:
+            if not style_text:
+                style_text = row['style_text'] or ''
+            negative_prompt = row['negative_prompt'] or ''
+        conn.close()
 
     # Resoudre les elements EP
     ep_keywords = []
@@ -2115,7 +2127,7 @@ Regles :
     except Exception:
         pass  # non-bloquant
 
-    return jsonify({'output': output, 'model_used': model})
+    return jsonify({'output': output, 'negative_prompt': negative_prompt, 'model_used': model})
 
 
 @app.route('/api/generate', methods=['POST'])

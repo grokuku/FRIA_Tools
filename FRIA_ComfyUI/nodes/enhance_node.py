@@ -31,8 +31,8 @@ class FRIAEnhanceNode:
             }
         }
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("prompt",)
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("prompt", "negative_prompt")
 
     def enhance(self, seed=0, base_prompt="", prompt_type="sdxl", output_format="text",
                 preset_id=0, style_id=0, special_instructions="",
@@ -101,15 +101,16 @@ class FRIAEnhanceNode:
             r.raise_for_status()
             data = r.json()
             prompt = data.get("output", "")
+            neg_prompt = data.get("negative_prompt", "")
             return {
-                "ui": {"prompt": [prompt]},
-                "result": (prompt,)
+                "ui": {"prompt": [prompt], "negative_prompt": [neg_prompt]},
+                "result": (prompt, neg_prompt)
             }
         except ImportError:
             msg = "Erreur: module 'requests' manquant. pip install requests"
             return {
-                "ui": {"prompt": [msg]},
-                "result": (msg,)
+                "ui": {"prompt": [msg], "negative_prompt": [""]},
+                "result": (msg, "")
             }
         except Exception as e:
             msg = str(e)
@@ -120,6 +121,6 @@ class FRIAEnhanceNode:
             else:
                 msg = f"Erreur API : {msg}"
             return {
-                "ui": {"prompt": [msg]},
-                "result": (msg,)
+                "ui": {"prompt": [msg], "negative_prompt": [""]},
+                "result": (msg, "")
             }

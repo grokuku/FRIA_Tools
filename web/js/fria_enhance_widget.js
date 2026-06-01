@@ -78,7 +78,10 @@
                     if (a) a.value = JSON.stringify({ api_url: getApiUrl(), api_key: getApiKey() });
                 }
 
-                // ---- Populate un select depuis l'API ----
+                // ---- Cache de rafraîchissement intelligent ----
+                const _cache = (window.__FRIA_cache = window.__FRIA_cache || { presets: 0, styles: 0 });
+                const CACHE_TTL = 15000; // 15 secondes
+
                 async function populateSelect(select, apiPath, labelKey, valKey, placeholder, onDone) {
                     select.innerHTML = `<option value="0">${placeholder}</option>`;
                     try {
@@ -93,6 +96,17 @@
                         }
                     } catch {}
                     onDone?.();
+                }
+
+                // Rafraîchir un dropdown si le cache est périmé
+                async function refreshIfStale(select, apiPath, cacheKey) {
+                    const now = Date.now();
+                    if (now - (_cache[cacheKey] || 0) < CACHE_TTL) return;
+                    _cache[cacheKey] = now;
+                    const oldVal = select.value;
+                    await populateSelect(select, apiPath, "name", "id", select.options[0]?.textContent || "--", () => {
+                        if ([...select.options].some(o => o.value === oldVal)) select.value = oldVal;
+                    });
                 }
 
                 // ---- Container (flex column, result prend tout l'espace) ----
@@ -138,12 +152,27 @@
 
                 // Preset IA (top-left) — depuis /api/presets
                 const presetDiv = document.createElement("div");
+                const presetRow = document.createElement("div");
+                Object.assign(presetRow.style, { display: "flex", gap: "4px", alignItems: "center" });
                 const presetSelect = document.createElement("select");
                 Object.assign(presetSelect.style, selectStyle);
+                presetSelect.style.flex = "1";
                 presetSelect.onchange = syncEnhanceWidget;
                 presetSelect.dataset.filled = "false";
+                presetSelect.addEventListener("mousedown", () => refreshIfStale(presetSelect, "presets", "presets"));
+                const presetRefreshBtn = document.createElement("button");
+                presetRefreshBtn.textContent = "↻";
+                Object.assign(presetRefreshBtn.style, {
+                    padding: "2px 5px", fontSize: "10px", cursor: "pointer",
+                    border: "1px solid #555", borderRadius: "3px",
+                    background: "#3a3a3e", color: "#aaa", flex: "0 0 auto",
+                });
+                presetRefreshBtn.title = "Rafraîchir la liste des presets";
+                presetRefreshBtn.onclick = () => { _cache.presets = 0; refreshIfStale(presetSelect, "presets", "presets"); };
                 presetDiv.appendChild(mkLabel("Preset IA"));
-                presetDiv.appendChild(presetSelect);
+                presetRow.appendChild(presetSelect);
+                presetRow.appendChild(presetRefreshBtn);
+                presetDiv.appendChild(presetRow);
                 grid.appendChild(presetDiv);
 
                 // Type (top-right) — valeurs fixes comme sur le site
@@ -176,12 +205,27 @@
 
                 // Style (bottom-right) — depuis /api/styles
                 const styleDiv = document.createElement("div");
+                const styleRow = document.createElement("div");
+                Object.assign(styleRow.style, { display: "flex", gap: "4px", alignItems: "center" });
                 const styleSelect = document.createElement("select");
                 Object.assign(styleSelect.style, selectStyle);
+                styleSelect.style.flex = "1";
                 styleSelect.onchange = syncEnhanceWidget;
                 styleSelect.dataset.filled = "false";
+                styleSelect.addEventListener("mousedown", () => refreshIfStale(styleSelect, "styles", "styles"));
+                const styleRefreshBtn = document.createElement("button");
+                styleRefreshBtn.textContent = "↻";
+                Object.assign(styleRefreshBtn.style, {
+                    padding: "2px 5px", fontSize: "10px", cursor: "pointer",
+                    border: "1px solid #555", borderRadius: "3px",
+                    background: "#3a3a3e", color: "#aaa", flex: "0 0 auto",
+                });
+                styleRefreshBtn.title = "Rafraîchir la liste des styles";
+                styleRefreshBtn.onclick = () => { _cache.styles = 0; refreshIfStale(styleSelect, "styles", "styles"); };
                 styleDiv.appendChild(mkLabel("Style"));
-                styleDiv.appendChild(styleSelect);
+                styleRow.appendChild(styleSelect);
+                styleRow.appendChild(styleRefreshBtn);
+                styleDiv.appendChild(styleRow);
                 grid.appendChild(styleDiv);
 
                 container.appendChild(grid);
