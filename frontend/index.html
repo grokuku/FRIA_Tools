@@ -86,6 +86,26 @@
           <div>
             <h1 class="text-lg font-semibold tracking-tight">Prompts Keywords</h1>
           </div>
+
+          <!-- Tab: Compte -->
+          <div id="tab-account" class="tab-content hidden space-y-4">
+            <div>
+              <h3 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Connexion</h3>
+              <p class="text-sm text-slate-700 dark:text-slate-300" id="settings-user-info">Connecté en tant que <span id="settings-username" class="font-medium"></span></p>
+            </div>
+            <hr class="border-slate-200 dark:border-slate-700">
+            <div>
+              <h3 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Cle API</h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mb-2">Utilisez cette cle pour connecter ComfyUI & autres outils a votre compte.</p>
+              <div class="flex gap-2">
+                <input type="text" id="settings-api-key" readonly
+                       class="flex-1 px-3 py-2 text-xs font-mono border border-slate-300 rounded-md bg-slate-50 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                <button onclick="copyApiKey()" class="px-3 py-2 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">Copier</button>
+                <button onclick="regenerateApiKey()" class="px-3 py-2 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-500 transition">Regenerer</button>
+              </div>
+              <p id="settings-key-status" class="hidden text-xs mt-2"></p>
+            </div>
+          </div>
         </div>
         <div class="flex items-center gap-2">
           <!-- Dark mode toggle -->
@@ -106,8 +126,7 @@
               <span id="user-name" class="text-sm font-medium"></span>
               <button id="btn-admin" onclick="toggleAdmin()" class="hidden text-xs font-medium text-indigo-400 bg-indigo-900/20 border border-indigo-800/30 px-2.5 py-1 rounded-md hover:bg-indigo-900/40 transition">Admin</button>
               <button id="btn-members" onclick="toggleMembers()" class="hidden text-xs font-medium text-slate-300 bg-slate-700/50 border border-slate-600 px-2.5 py-1 rounded-md hover:bg-slate-700 transition">Membres</button>
-              <button onclick="toggleUserSettings()" class="text-xs font-medium text-slate-300 bg-slate-700/50 border border-slate-600 px-2.5 py-1 rounded-md hover:bg-slate-700 transition">Config IA</button>
-              <button onclick="toggleSettings()" class="text-xs font-medium text-slate-300 bg-slate-700/50 border border-slate-600 px-2.5 py-1 rounded-md hover:bg-slate-700 transition">Settings</button>
+              <button onclick="toggleMergedSettings()" class="text-xs font-medium text-slate-300 bg-slate-700/50 border border-slate-600 px-2.5 py-1 rounded-md hover:bg-slate-700 transition">Paramètres</button>
               <button onclick="logout()" class="text-xs font-medium text-red-400 bg-red-900/20 border border-red-800/30 px-2.5 py-1 rounded-md hover:bg-red-900/40 transition">Déconnexion</button>
             </div>
           </div>
@@ -503,6 +522,17 @@
           </div>
         </div>
       </div>
+    </div>    <!-- Modale detail membre -->
+    <div id="modal-member-detail" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+      <div id="member-detail-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 480px; max-height: 80vh; position: relative;">
+        <div class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between dark:border-slate-700 dark:bg-slate-800/80">
+          <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200" id="member-detail-name">Membre</h2>
+          <button onclick="closeMemberDetail()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+        </div>
+        <div id="member-detail-body" class="p-4 overflow-y-auto space-y-3" style="max-height: calc(80vh - 52px);">
+          <p class="text-xs text-slate-400">Chargement...</p>
+        </div>
+      </div>
     </div>    <!-- Modale generique -->
     <div id="modal-generic" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
       <div class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 380px;">
@@ -522,37 +552,12 @@
         </div>
       </div>
     </div>    <!-- Modale Settings FR.IA -->
-    <div id="modal-settings" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
-      <div id="settings-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 480px; position: relative;">
-        <div id="settings-modal-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
-          <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Paramètres FR.IA</h2>
-          <button onclick="closeSettings()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
-        </div>
-        <div class="p-5 space-y-4">
-          <div>
-            <h3 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Connexion</h3>
-            <p class="text-sm text-slate-700 dark:text-slate-300" id="settings-user-info">Connecté en tant que <span id="settings-username" class="font-medium"></span></p>
-          </div>
-          <hr class="border-slate-200 dark:border-slate-700">
-          <div>
-            <h3 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Clé API</h3>
-            <p class="text-xs text-slate-500 dark:text-slate-400 mb-2">Utilisez cette clé pour connecter ComfyUI & autres outils à votre compte.</p>
-            <div class="flex gap-2">
-              <input type="text" id="settings-api-key" readonly
-                     class="flex-1 px-3 py-2 text-xs font-mono border border-slate-300 rounded-md bg-slate-50 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
-              <button onclick="copyApiKey()" class="px-3 py-2 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">Copier</button>
-              <button onclick="regenerateApiKey()" class="px-3 py-2 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-500 transition">Regénérer</button>
-            </div>
-            <p id="settings-key-status" class="hidden text-xs mt-2"></p>
-          </div>
-        </div>
-      </div>
-    </div>    <!-- Modale User Settings -->
+
     <div id="modal-user-settings" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
-      <div id="usettings-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 520px; max-height: 80vh; position: relative;">
+      <div id="usettings-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 560px; max-height: 80vh; position: relative;">
         <div id="usettings-modal-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
-          <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Configuration IA</h2>
-          <button onclick="closeUserSettings()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+          <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Paramètres FR.IA</h2>
+          <button onclick="closeMergedSettings()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
         </div>
         <div class="modal-body" style="max-height: calc(80vh - 52px);">
           <!-- Tabs -->
@@ -560,6 +565,7 @@
             <button onclick="switchSettingsTab('provider', this)" class="tab-btn px-3 py-2 text-xs font-medium text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-500 dark:border-indigo-400" data-tab="provider">Provider LLM</button>
             <button onclick="switchSettingsTab('styles', this)" class="tab-btn px-3 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 border-b-2 border-transparent hover:text-slate-700 dark:hover:text-slate-300" data-tab="styles">Styles</button>
             <button onclick="switchSettingsTab('templates', this)" class="tab-btn px-3 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 border-b-2 border-transparent hover:text-slate-700 dark:hover:text-slate-300" data-tab="templates">Templates</button>
+            <button onclick="switchSettingsTab('account', this)" class="tab-btn px-3 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 border-b-2 border-transparent hover:text-slate-700 dark:hover:text-slate-300" data-tab="account">Compte</button>
           </div>
 
           <!-- Tab: Provider LLM -->
@@ -1484,18 +1490,40 @@
 
     // -- Presets --
 
-    function toggleUserSettings() {
+    function toggleMergedSettings() {
       var m = document.getElementById('modal-user-settings');
       var open = !m.classList.contains('hidden');
-      if (open) { closeUserSettings(); return; }
+      if (open) { closeMergedSettings(); return; }
       m.classList.remove('hidden');
       m.classList.add('flex');
       makeModalDraggable('usettings-modal-header', 'usettings-modal');
+      switchSettingsTab('provider', document.querySelector('.tab-btn'));
       loadPresets();
-      // Montrer checkbox global seulement si admin
+      loadApiKeySettings();
       if (currentUser && currentUser.role === 'admin') {
         document.getElementById('preset-global-label').style.display = '';
       }
+    }
+
+    function closeMergedSettings() {
+      document.getElementById('modal-user-settings').classList.add('hidden');
+      document.getElementById('modal-user-settings').classList.remove('flex');
+    }
+
+    async function loadApiKeySettings() {
+      loadApiKey();
+    }
+
+    async function _loadApiKeySettings() {
+      var keyEl = document.getElementById('settings-api-key');
+      var userEl = document.getElementById('settings-username');
+      try {
+        var me = await fetch(API + '/auth/me').then(function(r){ return safeJson(r); });
+        if (me && me.username) userEl.textContent = me.username;
+        var res = await fetch(API + '/auth/token');
+        var data = await safeJson(res);
+        if (data && data.token) keyEl.value = data.token;
+      } catch {}
     }
 
     function switchSettingsTab(tab, btn) {
@@ -2347,22 +2375,74 @@
       document.getElementById('members-panel').classList.add('hidden');
     }
 
+    function closeMemberDetail() {
+      document.getElementById('modal-member-detail').classList.add('hidden');
+      document.getElementById('modal-member-detail').classList.remove('flex');
+    }
+
+    async function openMemberDetail(userId) {
+      var modal = document.getElementById('modal-member-detail');
+      var body = document.getElementById('member-detail-body');
+      var nameEl = document.getElementById('member-detail-name');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      body.innerHTML = '<p class="text-xs text-slate-400">Chargement...</p>';
+      try {
+        var res = await fetch(API + '/members/' + userId);
+        if (!res.ok) { body.innerHTML = '<p class="text-xs text-red-400">Erreur</p>'; return; }
+        var m = await safeJson(res);
+        nameEl.textContent = m.display_name || m.username || 'Membre';
+        var avatarHtml = m.avatar_url
+          ? '<img src="' + m.avatar_url + '" class="w-20 h-20 rounded-full mx-auto border-2 border-slate-300 dark:border-slate-600">'
+          : '<div class="w-20 h-20 rounded-full bg-slate-500 mx-auto flex items-center justify-center text-2xl text-white">' + escapeHtml((m.display_name || m.username || '?')[0]) + '</div>';
+        var statsHtml = '<div class="grid grid-cols-2 gap-2 text-center text-xs">'
+          + '<div class="bg-slate-50 dark:bg-slate-700/50 rounded p-2"><span class="block text-lg font-bold text-indigo-600 dark:text-indigo-400">' + (m.filter_count || 0) + '</span><span class="text-slate-500">filtres</span></div>'
+          + '<div class="bg-slate-50 dark:bg-slate-700/50 rounded p-2"><span class="block text-lg font-bold text-indigo-600 dark:text-indigo-400">' + (m.prompt_count || 0) + '</span><span class="text-slate-500">prompts</span></div>'
+          + '</div>';
+        var favHtml = '';
+        if (m.favorite_type || m.favorite_style) {
+          favHtml = '<div class="text-xs space-y-1"><p class="text-slate-500 font-semibold mb-1">Preferes</p>';
+          if (m.favorite_type) favHtml += '<p><span class="text-slate-400">Type :</span> <span class="text-slate-700 dark:text-slate-300">' + m.favorite_type.toUpperCase() + '</span></p>';
+          if (m.favorite_style) favHtml += '<p><span class="text-slate-400">Style :</span> <span class="text-slate-700 dark:text-slate-300">' + escapeHtml(m.favorite_style) + '</span></p>';
+          favHtml += '</div>';
+        }
+        var promptsHtml = '<p class="text-xs text-slate-500 font-semibold">Derniers prompts</p>';
+        if (m.recent_prompts && m.recent_prompts.length > 0) {
+          promptsHtml += '<div class="space-y-1 max-h-40 overflow-y-auto">';
+          m.recent_prompts.forEach(function(p) {
+            var text = (p.output_text || '').substring(0, 120);
+            if ((p.output_text || '').length > 120) text += '...';
+            var date = p.created_at ? new Date(p.created_at).toLocaleDateString('fr-FR') : '';
+            promptsHtml += '<div class="text-xs p-2 rounded bg-slate-50 dark:bg-slate-700/30 border border-slate-200 dark:border-slate-700">'
+              + '<span class="text-indigo-500 font-medium">' + (p.prompt_type || '').toUpperCase() + '</span>'
+              + ' <span class="text-slate-400">' + date + '</span><br>'
+              + '<span class="text-slate-600 dark:text-slate-400">' + escapeHtml(text) + '</span></div>';
+          });
+          promptsHtml += '</div>';
+        } else {
+          promptsHtml += '<p class="text-xs text-slate-400 italic">Aucun prompt genere</p>';
+        }
+        body.innerHTML = '<div class="space-y-3">'
+          + '<div class="text-center">' + avatarHtml + '</div>'
+          + '<div class="text-center text-xs text-slate-500">' + (m.role === 'admin' ? 'Admin' : 'Membre') + '</div>'
+          + statsHtml
+          + (favHtml ? '<hr class="border-slate-200 dark:border-slate-700">' + favHtml : '')
+          + '<hr class="border-slate-200 dark:border-slate-700">'
+          + promptsHtml
+          + '</div>';
+      } catch (err) {
+        body.innerHTML = '<p class="text-xs text-red-400">Erreur : ' + err.message + '</p>';
+      }
+    }
+
     // === Settings (API Key) ===
 
     function toggleSettings() {
-      var modal = document.getElementById('modal-settings');
-      var isOpen = !modal.classList.contains('hidden');
-      if (isOpen) { closeSettings(); return; }
-      modal.classList.remove('hidden');
-      modal.classList.add('flex');
-      makeModalDraggable('settings-modal-header', 'settings-modal');
-      loadApiKey();
+      toggleMergedSettings();
     }
 
     function closeSettings() {
-      document.getElementById('modal-settings').classList.add('hidden');
-      document.getElementById('modal-settings').classList.remove('flex');
-      document.getElementById('settings-key-status').classList.add('hidden');
+      closeMergedSettings();
     }
 
     async function loadApiKey() {
@@ -2435,9 +2515,10 @@
           var badge = u.role === 'admin'
             ? '<span class="text-xs px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-300">admin</span>'
             : '<span class="text-xs px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400">user</span>';
-          return '<div class="flex items-center gap-2.5 p-2 rounded bg-slate-50 dark:bg-slate-700/30">'
+          return '<div class="flex items-center gap-2.5 p-2 rounded bg-slate-50 dark:bg-slate-700/30 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition" onclick="openMemberDetail(\'' + u.id + '\')">'
             + avatar + ' '
             + '<span class="flex-1 text-sm text-slate-700 dark:text-slate-300">' + escapeHtml(u.display_name || u.username) + '</span>'
+            + ' <span class="text-xs text-slate-400">' + (u.filter_count || 0) + ' filtres</span>'
             + ' ' + badge
             + '</div>';
         }).join('');

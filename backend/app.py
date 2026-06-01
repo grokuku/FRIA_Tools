@@ -871,6 +871,43 @@ def list_members():
         return jsonify({'error': f'Erreur serveur: {e}'}), 500
 
 
+@app.route('/api/members/<user_id>', methods=['GET'])
+def member_detail(user_id):
+    """Détails d'un membre : stats + historique des prompts."""
+    guard = _login_required()
+    if guard: return guard
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute('SELECT id, username, display_name, avatar, role FROM users WHERE id = ?', (user_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'error': 'Membre introuvable'}), 404
+        user = dict(row)
+        if user.get('avatar') and user.get('id'):
+            user['avatar_url'] = f"https://cdn.discordapp.com/avatars/{user['id']}/{user['avatar']}.png?size=256"
+        else:
+            user['avatar_url'] = ''
+        cur.execute('SELECT COUNT(*) FROM saved_filters WHERE user_id = ?', (user_id,))
+        user['filter_count'] = cur.fetchone()[0]
+        cur.execute('SELECT COUNT(*) FROM generated_prompts WHERE user_id = ?', (user_id,))
+        user['prompt_count'] = cur.fetchone()[0]
+        cur.execute("""SELECT prompt_type, COUNT(*) as cnt FROM generated_prompts WHERE user_id = ? GROUP BY prompt_type ORDER BY cnt DESC LIMIT 1""", (user_id,))
+        pt = cur.fetchone()
+        user['favorite_type'] = pt['prompt_type'] if pt else None
+        cur.execute("""SELECT s.name, COUNT(*) as cnt FROM generated_prompts gp JOIN styles s ON s.id = gp.style_id WHERE gp.user_id = ? AND gp.style_id IS NOT NULL GROUP BY gp.style_id ORDER BY cnt DESC LIMIT 1""", (user_id,))
+        st = cur.fetchone()
+        user['favorite_style'] = st['name'] if st else None
+        cur.execute("""SELECT prompt_type, output_text, style_id, created_at FROM generated_prompts WHERE user_id = ? ORDER BY created_at DESC LIMIT 15""", (user_id,))
+        user['recent_prompts'] = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return jsonify(user)
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/admin/users/<user_id>/role', methods=['POST'])
 def admin_set_role(user_id):
     guard = _admin_required()
