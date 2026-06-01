@@ -663,7 +663,7 @@
             </div>
             <div class="flex gap-2 mt-2">
               <button onclick="saveTemplate()" class="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500">Sauvegarder</button>
-              <button onclick="loadTemplate()" class="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 border border-slate-300 rounded-md">Recharger</button>
+              <button onclick="loadTemplate()" class="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 border border-slate-300 rounded-md">Annuler les modifications</button>
               <button onclick="exportTemplate()" class="px-3 py-1.5 text-xs text-indigo-500 hover:text-indigo-700 border border-indigo-300 rounded-md ml-auto">📥 Exporter</button>
             </div>
           </div>
@@ -1769,7 +1769,6 @@
       }
       container.innerHTML = examples.map(function(ex, i) {
         return '<div class="flex items-start gap-1.5 p-1.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">'
-          + '<input type="checkbox" class="mt-0.5 rounded" data-idx="' + i + '">'
           + '<span class="flex-1 text-xs text-slate-600 dark:text-slate-400 whitespace-pre-wrap" style="word-break:break-word;">' + escapeHtml(ex) + '</span>'
           + '<button onclick="removeTemplateExample(' + i + ')" class="text-xs text-rose-400 hover:text-rose-600 p-0.5">✕</button>'
           + '</div>';
