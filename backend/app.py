@@ -228,7 +228,7 @@ def _init_db():
         )
     """)
 
-    cur.execute("""
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS prompt_templates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT,
