@@ -2048,36 +2048,84 @@ def enhance_prompt():
         for ex in examples:
             examples_text += '- ' + ex['prompt_text'] + '\n'
 
-    # Construire le format de sortie
+    # Construire le system prompt (tout en anglais)
     format_rules = {
-        'text': 'Reponds UNIQUEMENT avec le prompt final, sans guillemets ni code blocks. Pas d\'explications.',
-        'markdown': 'Reponds en Markdown pur, SANS bloc de code (pas de \`\`\`). Le prompt doit etre le contenu principal, tu peux ajouter des titres et listes si pertinent.',
-        'json': 'Reponds en JSON pur, SANS bloc de code (pas de \`\`\`json). Format: {\"prompt\": \"...\", \"format\": \"' + prompt_type + '\", \"negative_prompt\": \"\"}.'
+        'text': 'Output ONLY the final prompt — no quotes, no code blocks, no explanations, no introduction.',
+        'markdown': 'Output in clean Markdown (no ``` code blocks). The prompt is the main content.',
+        'json': 'Output raw JSON (no ```json). Format: {"prompt": "...", "format": "' + prompt_type + '", "negative_prompt": ""}',
     }
 
-    system_prompt = f"""Tu es un assistant expert en generation de prompts d'images.
-Ta tache : transformer le contenu fourni en un prompt optimise pour {prompt_type}.
+    # Resoudre le template personnalise depuis prompt_templates
+    template_examples = []
+    conn = get_db()
+    try:
+        cur = conn.execute(
+            "SELECT system_prompt, examples FROM prompt_templates WHERE user_id = ? AND prompt_type = ? AND output_format = ?",
+            (user_id, prompt_type, output_format)
+        )
+        tmpl = cur.fetchone()
+        if not tmpl:
+            cur = conn.execute(
+                "SELECT system_prompt, examples FROM prompt_templates WHERE user_id IS NULL AND prompt_type = ? AND output_format = ? AND is_default = 1",
+                (prompt_type, output_format)
+            )
+            tmpl = cur.fetchone()
+        if tmpl:
+            try:
+                template_examples = json.loads(tmpl['examples']) if tmpl['examples'] else []
+            except:
+                template_examples = []
+    except:
+        pass
+    conn.close()
 
-Le contenu peut avoir des annotations de priorite :
-- [PRIORITE HAUTE] = choix explicite de l'utilisateur, a preserver au maximum
-- [PRIORITE MOYENNE] = suggestions d'un picker automatique, a integrer si pertinent
-- [PRIORITE BASSE] = elements aleatoires pour diversifier, a utiliser seulement si ils enrichissent vraiment le prompt
+    system_parts = []
 
-Format demande : {format_instruction}
-
-{examples_text}
-Regles :
-- En cas de conflit entre tags (ex: "long hair" vs "short hair"), privilegie [PRIORITE HAUTE]
-- Supprime les doublons automatiquement
-- Organise les tags par ordre d'importance
-- Ajoute des qualifiers si pertinent (masterpiece, best quality, etc.)
-{format_rules.get(output_format, "Reponds UNIQUEMENT avec le prompt final.")}
-"""
-
+    # 1) STYLE — tout en haut, imperatif
     if style_text:
-        system_prompt += f"\nStyle impose : {style_text}"
+        system_parts.append(f"""CRITICAL — STYLE PRESERVATION RULE
+You MUST preserve the following style in the output prompt, verbatim and unmodified:
+{style_text}
+
+This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summarize it.""")
+
+    # 2) Role generique (pas de nom de modele)
+    system_parts.append("""You are an expert image prompt engineer. Your task is to rewrite and optimize the user's input into a high-quality image generation prompt.""")
+
+    # 3) Format demande (type-agnostic)
+    format_instr = type_formats.get(prompt_type, type_formats['sdxl'])
+    system_parts.append(f"Expected output style: {format_instr}")
+
+    # 4) Exemples (inspiration, pas copie)
+    if template_examples:
+        ex_list = '\n'.join(f'- {ex}' for ex in template_examples)
+        system_parts.append(f"""Study these example prompts to understand the expected structure and quality level — use them for inspiration, do NOT copy them verbatim:
+{ex_list}""")
+    elif examples_text.strip():
+        system_parts.append(f"""Study these example prompts for reference:
+{examples_text}""")
+
+    # 5) Regles
+    system_parts.append("""Rules:
+- Preserve the user's main intent and keywords; do not discard specific requests
+- Remove duplicate concepts
+- Organize by importance (most important first)
+- Output ONLY the final prompt text — no markers, no tags like [PRIORITE HAUTE], no meta-commentary""")
+
+    # 6) Format de sortie
+    system_parts.append(format_rules.get(output_format, "Output ONLY the final prompt."))
+
+    # 7) Instructions speciales
     if special_instructions:
-        system_prompt += f"\nInstructions speciales : {special_instructions}"
+        system_parts.append(f"Additional instructions: {special_instructions}")
+
+    system_prompt = '\n\n'.join(system_parts)
+
+    # Post-nettoyage de la sortie : retirer les marqueurs [PRIORITE ...]
+    import re
+    def clean_output(text):
+        text = re.sub(r'\[PRIORITE\s+(HAUTE|MOYENNE|BASSE)\]', '', text, flags=re.IGNORECASE)
+        return text.strip()
 
     # Appel LLM
     import requests
@@ -2106,6 +2154,8 @@ Regles :
             if lines and lines[-1].strip() == '```':
                 lines = lines[:-1]
             output = '\n'.join(lines).strip()
+        # Nettoyer les marqueurs [PRIORITE ...]
+        output = clean_output(output)
     except Exception as e:
         msg = str(e)
         if '429' in msg:
