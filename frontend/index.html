@@ -104,10 +104,11 @@
             <div id="user-info" class="hidden items-center gap-2">
               <img id="user-avatar" class="w-8 h-8 rounded-full" src="" alt="Avatar">
               <span id="user-name" class="text-sm font-medium"></span>
-              <button id="btn-admin" onclick="toggleAdmin()" class="hidden text-xs text-indigo-400 hover:text-indigo-300 transition font-medium">Admin</button>
-              <button id="btn-members" onclick="toggleMembers()" class="hidden text-xs text-slate-400 hover:text-slate-300 transition font-medium">Membres</button>
-              <button onclick="toggleSettings()" class="text-xs text-slate-400 hover:text-slate-300 transition font-medium">Settings</button>
-              <button onclick="logout()" class="text-xs text-slate-400 hover:text-white transition">Déconnexion</button>
+              <button id="btn-admin" onclick="toggleAdmin()" class="hidden text-xs font-medium text-indigo-400 bg-indigo-900/20 border border-indigo-800/30 px-2.5 py-1 rounded-md hover:bg-indigo-900/40 transition">Admin</button>
+              <button id="btn-members" onclick="toggleMembers()" class="hidden text-xs font-medium text-slate-300 bg-slate-700/50 border border-slate-600 px-2.5 py-1 rounded-md hover:bg-slate-700 transition">Membres</button>
+              <button onclick="toggleUserSettings()" class="text-xs font-medium text-slate-300 bg-slate-700/50 border border-slate-600 px-2.5 py-1 rounded-md hover:bg-slate-700 transition">Config IA</button>
+              <button onclick="toggleSettings()" class="text-xs font-medium text-slate-300 bg-slate-700/50 border border-slate-600 px-2.5 py-1 rounded-md hover:bg-slate-700 transition">Settings</button>
+              <button onclick="logout()" class="text-xs font-medium text-red-400 bg-red-900/20 border border-red-800/30 px-2.5 py-1 rounded-md hover:bg-red-900/40 transition">Déconnexion</button>
             </div>
           </div>
         </div>
@@ -353,10 +354,7 @@
                     <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l-4 4h8l-4-4z"/><path d="M12 2v20"/></svg>
                     Styles
                   </button>
-                  <button onclick="toggleUserSettings()" title="Configuration IA" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-200 dark:hover:bg-slate-600 transition">
-                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-                    Config
-                  </button>
+
                 </div>
               </div>
               <div class="flex-1 flex flex-col p-3 gap-2 overflow-hidden bg-white dark:bg-slate-800">
