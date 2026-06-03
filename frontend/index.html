@@ -1635,7 +1635,7 @@
         var html = '';
         list.forEach(function(s){
           var name = s.name || '?';
-          var author = s.display_name || s.username || '?';
+          var author = s.owner_name || '?';
           var pub = s.is_public ? ' 🌐' : ' 🔒';
           var canEdit = s.user_id === (currentUser ? currentUser.id : '');
           html += '<div class="flex items-center justify-between px-2 py-1.5 rounded-md bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-700">' +

@@ -282,120 +282,141 @@ def _init_db():
     existing = conn.execute("SELECT COUNT(*) FROM prompt_templates WHERE is_default = 1").fetchone()[0]
     if existing == 0:
         _insert_default_templates(conn)
-
     conn.commit()
     conn.close()
 
+    # Migration : mise à jour des templates vers l'anglais (connexion séparée)
+    _migrate_templates_to_english()
+
+
+def _migrate_templates_to_english():
+    """Migrate default templates from French to English if needed."""
+    try:
+        mconn = sqlite3.connect(str(DB_PATH))
+        mconn.execute("PRAGMA foreign_keys = ON")
+        cur = mconn.cursor()
+        existing = cur.execute("SELECT COUNT(*) FROM prompt_templates WHERE is_default = 1").fetchone()[0]
+        if existing > 0:
+            tmpl_version = cur.execute("SELECT value FROM app_settings WHERE key = 'templates_version'").fetchone()
+            if not tmpl_version or tmpl_version[0] < '2':
+                cur.execute("DELETE FROM prompt_templates WHERE is_default = 1")
+                _insert_default_templates(mconn)
+                cur.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('templates_version', '2')")
+                mconn.commit()
+        mconn.close()
+    except Exception as e:
+        print(f"[migration] Erreur templates anglais: {e}")
+
 
 def _insert_default_templates(conn):
-    """Insère les templates système par défaut pour chaque type × format."""
+    """Insert default system templates for each prompt type × format combination."""
     import json
 
-    # ---- Docs par type ----
-    DOC_SD15 = """Pour Stable Diffusion 1.5, utilise des tags Danbooru séparés par des virgules.
-Structure recommandée (par ordre d'importance) :
-1. Qualité : masterpiece, best quality, ultra-detailed, high resolution
-2. Sujet principal : 1girl, 1boy, person, character_name
-3. Apparence du sujet : long hair, blue eyes, casual clothes
-4. Action/pose : standing, sitting, looking at viewer, walking
-5. Environnement : city street, forest, bedroom, outdoor
-6. Éclairage : cinematic lighting, soft light, moody lighting
-7. Style : photorealistic, anime, sketch, oil painting
-8. Détails techniques : sharp focus, depth of field, bokeh
+    # ---- Per-type docs ----
+    DOC_SD15 = """For Stable Diffusion 1.5, use Danbooru-style tags separated by commas.
+Recommended structure (in order of importance):
+1. Quality: masterpiece, best quality, ultra-detailed, high resolution
+2. Subject: 1girl, 1boy, person, character_name
+3. Appearance: long hair, blue eyes, casual clothes
+4. Action/pose: standing, sitting, looking at viewer, walking
+5. Environment: city street, forest, bedroom, outdoor
+6. Lighting: cinematic lighting, soft light, moody lighting
+7. Style: photorealistic, anime, sketch, oil painting
+8. Technical: sharp focus, depth of field, bokeh
 
-Utilise des parenthèses pour le poids : (important:1.2) pour +20% d'importance.
-Utilise des crochets pour réduire : [moins important:0.8].
-Évite les phrases complètes, préfère les tokens courts."""
+Use parentheses for weighting: (important:1.2) for +20% emphasis.
+Use brackets to reduce: [less important:0.8].
+Avoid full sentences, prefer short tokens."""
 
-    DOC_SDXL = """Pour SDXL, utilise un mélange de langage naturel et de tags concis.
-Structure :
-1. Sujet principal : description naturelle
-2. Description : apparence, vêtements, expression (3-4 détails max)
-3. Environnement : cadre (1-2 éléments)
-4. Atmosphère : éclairage, humeur (1-2 éléments)
-5. Qualité : 1-2 qualifiers max (masterpiece, photorealistic)
+    DOC_SDXL = """For SDXL, use a mix of natural language and concise tags.
+Structure:
+1. Subject: natural description
+2. Appearance: attire, expression (3-4 details max)
+3. Environment: setting (1-2 elements)
+4. Atmosphere: lighting, mood (1-2 elements)
+5. Quality: 1-2 qualifiers max (masterpiece, photorealistic)
 
-IMPORTANT :
-- Limite à 20-25 tags ou 2-3 phrases max
-- Ne jamais répéter un même concept
-- Pas de artist names, pas de "trending on...", pas de "artstation"
-- Privilégie la qualité à la quantité"""
+IMPORTANT:
+- Limit to 20-25 tags or 2-3 sentences max
+- Never repeat the same concept
+- No artist names, no "trending on...", no "artstation"
+- Prioritize quality over quantity"""
 
-    DOC_FLUX = """Pour Flux (Black Forest Labs), utilise des descriptions en langage natureL.
-Structure : Sujet + Action + Style + Contexte
-1. Sujet : le focus principal (personne, objet, personnage)
-2. Action : ce que le sujet fait ou sa pose
-3. Style : approche artistique, médium, esthétique
-4. Contexte : cadre, éclairage, heure, humeur
+    DOC_FLUX = """For Flux (Black Forest Labs), use natural language descriptions.
+Structure: Subject + Action + Style + Context
+1. Subject: the main focus (person, object, character)
+2. Action: what the subject is doing or their pose
+3. Style: artistic approach, medium, aesthetic
+4. Context: setting, lighting, time of day, mood
 
-IMPORTANT : Flux n'utilise PAS de tags Danbooru ni de poids (parenthèses).
-Écris des phrases naturelles et descriptives.
-Pas de prompt négatif - Flux ne le supporte pas.
+IMPORTANT: Flux does NOT use Danbooru tags or weights (parentheses).
+Write natural, descriptive sentences.
+No negative prompt - Flux does not support it.
 
-Exemple : "A young woman with red hair standing in a sunlit garden, soft focus, cinematic lighting, professional photography"""
+Example: "A young woman with red hair standing in a sunlit garden, soft focus, cinematic lighting, professional photography"""
 
-    DOC_ANIMA = """Pour les modèles Anime/Manga, utilise des tags Danbooru avec des suffixes spécifiques.
-Structure recommandée :
-1. Personnage : 1girl, 1boy, 2girls, etc.
-2. Composition : solo, multiple views, group
-3. Pose : standing, sitting, from behind, crouching
-4. Expression : smile, blush, angry, serious
-5. Apparence : long hair, twintails, red eyes, school uniform
-6. Arrière-plan : detailed background, simple background, gradient
-7. Style : anime, flat color, lineart, cel shading, pixel art
-8. Qualité : masterpiece, best quality, highres
+    DOC_ANIMA = """For Anime/Manga models, use Danbooru tags with specific suffixes.
+Recommended structure:
+1. Character: 1girl, 1boy, 2girls, etc.
+2. Composition: solo, multiple views, group
+3. Pose: standing, sitting, from behind, crouching
+4. Expression: smile, blush, angry, serious
+5. Appearance: long hair, twintails, red eyes, school uniform
+6. Background: detailed background, simple background, gradient
+7. Style: anime, flat color, lineart, cel shading, pixel art
+8. Quality: masterpiece, best quality, highres
 
-Utilise des suffixes comme (lineart), (flat color:1.2), (sketch).
-Les crochets [ ] fonctionnent aussi pour réduire l'importance."""
+Use suffixes like (lineart), (flat color:1.2), (sketch).
+Brackets [ ] also work to reduce emphasis."""
 
-    DOC_QWEN = """Pour Qwen-Image (Alibaba, 20B MMDiT), utilise des descriptions en langage naturel structuré.
-Qwen-Image est un modèle de génération d'images performant, excellent pour :
-- Le rendu de texte multilingue (anglais, chinois, coréen, japonais...)
-- Les styles variés : photoréaliste, peinture, anime, design minimaliste
-- Les scènes complexes avec personnages, architecture, nature
-- L'édition d'image précise
+    DOC_QWEN = """For Qwen-Image (Alibaba, 20B MMDiT), use structured natural language descriptions.
+Qwen-Image excels at:
+- Multilingual text rendering (English, Chinese, Korean, Japanese...)
+- Varied styles: photorealistic, painting, anime, minimalist design
+- Complex scenes with characters, architecture, nature
+- Precise image editing
 
-Format recommandé :
-1. Sujet principal : description naturelle (qui, quoi, apparence)
-2. Action/pose : ce que fait le sujet
-3. Environnement : cadre, décor, arrière-plan
-4. Atmosphère : éclairage, humeur, moment de la journée
-5. Style : approche artistique, médium, qualité
+Recommended format:
+1. Subject: natural description (who, what, appearance)
+2. Action/pose: what the subject is doing
+3. Environment: setting, decor, background
+4. Atmosphere: lighting, mood, time of day
+5. Style: artistic approach, medium, quality
 
-IMPORTANT :
-- Utilise des phrases naturelles et descriptives (comme Flux)
-- Pas de tags Danbooru ni de parenthèses de poids
-- Précise le rendu texte si nécessaire (ex: "a sign that reads '...'")
-- Structure du général au spécifique
-- Limite à 2-3 phrases ou 30 éléments max"""
+IMPORTANT:
+- Use natural, descriptive sentences (like Flux)
+- No Danbooru tags or weight parentheses
+- Specify text rendering if needed (e.g. "a sign that reads '...'")
+- Structure from general to specific
+- Limit to 2-3 sentences or 30 elements max"""
 
-    DOC_LISTE = """Format : liste structurée par catégories.
-Organise le prompt en catégories pertinentes qui décrivent l'image :
+    DOC_LISTE = """Format: structured list organized by categories.
+Organize the prompt into relevant categories describing the image:
 
-sujet :
-- [description du sujet principal, âge, origine]
+subject:
+- [description of main subject, age, origin]
 
-vetements :
-- [description des vêtements et accessoires]
+clothing:
+- [description of clothing and accessories]
 
-style :
-- [style artistique, technique]
+style:
+- [artistic style, technique]
 
-environnement :
-- [cadre, décor, ambiance]
+environment:
+- [setting, decor, ambiance]
 
-attitude :
-- [expression, pose, humeur]
+expression:
+- [expression, pose, mood]
 
-éclairage :
-- [type d'éclairage, atmosphère lumineuse]
+lighting:
+- [lighting type, luminous atmosphere]
 
-couleurs :
-- [palette dominante, teintes]
+colors:
+- [dominant palette, hues]
 
-Chaque catégorie doit être pertinente pour l'image décrite.
-Adapte les catégories selon le contenu (ex: architecture, nature, portrait...).
-Les tags doivent être concis mais descriptifs."""
+Every category should be relevant to the image being described.
+Adapt categories based on content (e.g. architecture, nature, portrait...).
+Tags should be concise but descriptive."""
 
     DOCS = {
         "sd15": DOC_SD15,
@@ -406,26 +427,26 @@ Les tags doivent être concis mais descriptifs."""
         "liste": DOC_LISTE,
     }
 
-    # ---- Règles de format de sortie ----
+    # ---- Output format rules ----
     FORMAT_RULES = {
-        "text": "Réponds UNIQUEMENT avec le prompt final, sans guillemets ni code blocks. Pas d'explications, pas de commentaires, pas de phrases d'introduction. Maximum 30 tags ou 3 phrases. Le prompt doit être directement utilisable.",
-        "markdown": "Réponds en Markdown pur. Le prompt est le contenu principal. Maximum 30 éléments. Pas de bloc de code (```).",
-        "json": "Réponds en JSON pur, SANS bloc de code (pas de ```json). Format : {\"prompt\": \"...\", \"negative_prompt\": \"...\"}. Maximum 30 tags dans le prompt.",
+        "text": "Output ONLY the final prompt, without quotes or code blocks. No explanations, no comments, no introductory sentences. Maximum 30 tags or 3 sentences. The prompt must be directly usable.",
+        "markdown": "Output in plain Markdown. The prompt is the main content. Maximum 30 elements. No code blocks (```).",
+        "json": "Output in pure JSON, WITHOUT a code block (no ```json). Format: {\"prompt\": \"...\", \"negative_prompt\": \"...\"}. Maximum 30 tags in the prompt.",
     }
 
-    # ---- Consignes communes ----
+    # ---- Common rules ----
     CONSIGNES = """
-Règles impératives :
-- Le STYLE imposé doit être conservé à l'identique
-- En cas de conflit, privilégie l'ordre : prompt de base > éléments > aléatoire
-- Supprime les doublons
-- Organise par ordre d'importance (30 tags max)
-- Ajoute 2-3 qualifiers max (masterpiece, best quality)
-- **NE RÉPÈTE PAS** les mêmes tags/concepts
-- **RÉPONDS UNIQUEMENT avec le prompt**, rien d'autre : pas d'explications, pas de commentaires, pas de phrases d'introduction
-- Le prompt doit être prêt à l'emploi dans un générateur d'images"""
+Mandatory rules:
+- The assigned STYLE must be preserved exactly as-is
+- In case of conflict, prioritize: base prompt > elements > random
+- Remove duplicates
+- Organize by importance (30 tags max)
+- Add 2-3 qualifiers max (masterpiece, best quality)
+- **DO NOT REPEAT** the same tags/concepts
+- **OUTPUT ONLY the prompt**, nothing else: no explanations, no comments, no introductory sentences
+- The prompt must be ready to use in an image generator"""
 
-    # ---- Exemples (courts et ciblés) ----
+    # ---- Examples (short and targeted) ----
     EXAMPLES = {
         "sdxl": json.dumps([
             "A serene portrait of a young woman with auburn hair and freckles, golden hour sunlight, soft bokeh, cream linen dress, ethereal atmosphere, photorealistic",
@@ -453,29 +474,29 @@ Règles impératives :
             "A cinematic wide shot of a cyberpunk city street at night, neon signs in English and Japanese, rain-slicked pavement reflecting colorful lights, a lone figure with an umbrella walking, moody blue and pink lighting, ultra-realistic",
         ]),
         "liste": json.dumps([
-            "sujet :\n- femme, 28 ans, caucasienne\n- cheveux longs auburn\n- tâches de rousseur\n\nvetements :\n- robe fluide blanche\n\nstyle :\n- photorealistic\n- masterpiece\n- 8k\n\nenvironnement :\n- forêt ensoleillée\n- rayons de lumière\n\néclairage :\n- golden hour\n- soft bokeh\n\nattitude :\n- regard doux\n- sourire léger",
-            "sujet :\n- homme, 35 ans\n- cheveux courts bruns\n- lunettes\n\nvetements :\n- costume gris\n- cravate noire\n\nstyle :\n- photorealistic\n- sharp focus\n\nenvironnement :\n- bureau moderne\n- baie vitrée\n\néclairage :\n- lumière naturelle\n- contre-jour\n\nattitude :\n- confiant\n- regard caméra",
-            "sujet :\n- château médiéval\n- ruines antiques\n\nstyle :\n- epic fantasy\n- cinematic\n- highly detailed\n\nenvironnement :\n- pic montagneux\n- brume matinale\n- nuages dramatiques\n\ncouleurs :\n- tons chauds\n- orange et pourpre\n\nambiance :\n- mystérieuse\n- grandiose",
+            "subject:\n- woman, 28 years old, caucasian\n- long auburn hair\n- freckles\n\nclothing:\n- white flowing dress\n\nstyle:\n- photorealistic\n- masterpiece\n- 8k\n\nenvironment:\n- sunlit forest\n- rays of light\n\nlighting:\n- golden hour\n- soft bokeh\n\nexpression:\n- gentle gaze\n- slight smile",
+            "subject:\n- man, 35 years old\n- short brown hair\n- glasses\n\nclothing:\n- gray suit\n- black tie\n\nstyle:\n- photorealistic\n- sharp focus\n\nenvironment:\n- modern office\n- floor-to-ceiling window\n\nlighting:\n- natural light\n- backlit\n\nexpression:\n- confident\n- looking at camera",
+            "subject:\n- medieval castle\n- ancient ruins\n\nstyle:\n- epic fantasy\n- cinematic\n- highly detailed\n\nenvironment:\n- mountain peak\n- morning mist\n- dramatic clouds\n\ncolors:\n- warm tones\n- orange and purple\n\nmood:\n- mysterious\n- majestic",
         ]),
     }
 
-    # ---- Insérer les templates ----
+    # ---- Insert templates ----
     for pt in ["sdxl", "sd15", "flux", "anima", "qwen", "liste"]:
         doc = DOCS.get(pt, "")
         examples = EXAMPLES.get(pt, "[]")
         for fmt in ["text", "markdown", "json"]:
             fmt_rule = FORMAT_RULES.get(fmt, FORMAT_RULES["text"])
-            system_prompt = f"""Tu es un assistant expert en génération de prompts d'images.
-Ta tâche : transformer le contenu fourni en un prompt optimisé pour {pt.upper()}.
+            system_prompt = f"""You are an expert assistant for image prompt generation.
+Your task: transform the provided content into an optimized {pt.upper()} prompt.
 
-## Documentation : Comment construire un prompt {pt.upper()}
+## Documentation: How to build a {pt.upper()} prompt
 {doc}
 
-## Format de sortie
+## Output format
 {fmt_rule}
 
-## Exemples
-Voici des exemples de prompts {pt.upper()} bien structurés :
+## Examples
+Here are examples of well-structured {pt.upper()} prompts:
 """
             examples_list = json.loads(examples)
             for ex in examples_list:
