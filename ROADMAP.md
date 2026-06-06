@@ -27,6 +27,12 @@
 - **Qwen → Qwen-Image** : documentation et exemples mis à jour pour le modèle de génération d'images (20B MMDiT)
 - **Templates refactor** : interface deux colonnes (instructions à gauche, exemples à droite), bouton export JSON, checkbox supprimée
 
+### ✅ Résolu cette session (audit + 3 bugs critiques)
+- **Audit complet du code** : ~8700 lignes parcourues, 12 bugs identifiés (3 critiques, 3 majeurs, 6 mineurs)
+- **🔴 Bug critique #1 : `GET /api/filters` plante pour les filtres union** — `conn.close()` était appelé avant `cur2 = conn.cursor()` dans la branche `filter_type=='union'`. Fix : `conn.close()` déplacé après la boucle.
+- **🔴 Bug critique #2 : Recherche sémantique dans `/api/enhance` silencieusement cassée** — La requête `SELECT k.keyword` n'incluait pas l'embedding, donc `r[1]` n'existait pas → try/except avalait l'erreur → les éléments `type=text` de l'EP étaient **ignorés**. Fix : `SELECT k.keyword, ke.embedding` + `r['embedding']`.
+- **🔴 Bug critique #3 : Filtre union → simple laisse `filter_type='union'` en BDD** — Le PUT ne remettait `filter_type='simple'` que si `union_member_ids` était absent. Fix : ajouter un `else` pour repasser en `'simple'` quand `data.get('filter_type') != 'union'`.
+
 ### ⚠️ À faire au prochain déploiement
 1. S'assurer que le serveur pointe vers `/projects/FRIA_Tools` (ou copier le code modifié)
 2. Redémarrer le serveur → `_init_db()` applique les migrations
@@ -259,6 +265,35 @@ Note : les endpoints `GET /api/prompts/examples` et `POST /api/prompts/examples/
 - [ ] Export du résultat
 - [ ] Drag & drop des mots-clés vers le générateur (UI générale)
 
+### Phase 5 — Audit (juin 2026) ⬜ (à planifier)
+Bugs identifiés lors de l'audit, classés par priorité :
+
+**🟠 Majeurs (à planifier) :**
+- [ ] **Seed ComfyUI ignoré dans `/api/enhance`** — `random.choice()` (RNG global) + `ORDER BY RANDOM()` (SQLite RNG) ignorent le `seed` envoyé par la node. Cohérence à faire avec `/api/generate` qui utilise `rng = random.Random(seed)`.
+- [ ] **`loadColWidths()` redimensionne les colonnes cachées** — La fonction applique la largeur à TOUS les `<th>`, y compris `score-header` qui est `hidden` en mode texte. Conséquence : espace fantôme quand on passe du sémantique au texte.
+- [ ] **`user_id` inutilisé dans 4 endpoints** — `list_keywords()`, `list_sections()`, `stats()`, `presets()`. Pas de bug, mais fausse l'intent (filtre user-side annoncé) et déclenche les linters.
+
+**🟡 Mineurs (nettoyage) :**
+- [ ] **Code mort : `_loadApiKeySettings()` jamais appelé** — Garder `loadApiKeySettings()` (appelé) et supprimer la version `_loadApiKeySettings()`.
+- [ ] **Code mort dans `enhance_prompt`** — `format_instruction` (ligne 2191) calculé mais inutilisé ; query `prompt_examples` (lignes 2194-2199) écrasée par le système de templates.
+- [ ] **Bug n°11 : variables `cur`/`cur2`/`conn`/`conn2` multiples dans `enhance_prompt`** — Renommer en `_db_ep`, `_db_rand`, `_db_template` etc. pour clarifier la portée.
+- [ ] **Troncature inesthétique dans `exporter.py`** — Le footer tronque la liste des catégories concaténées à 100 caractères, au milieu d'un titre.
+- [ ] **README ComfyUI : nom de dossier contradictoire** — `git clone ... FRIA_Tools` mais l'avertissement dit `FRIA_Keywords`. Incohérent.
+
+**⚠️ Points d'attention :**
+- [ ] **Vérifier persistance des paramètres enhance** — L'API `/api/settings` existe et stocke en BDD, mais à vérifier que le frontend appelle bien PUT après chaque changement de preset/type/format/style.
+- [ ] **UI `special_instructions`** — Annoncée comme "backend OK, UI manquante" : confirmé, juste un `<textarea>` à ajouter dans le panneau enhance.
+- [ ] **Système `prompt_examples` (votes)** — L'API existe mais toute l'UI est absente. Le code de vote dans `enhance_prompt` n'est plus utilisé (remplacé par les templates). À nettoyer ou à implémenter l'UI.
+- [ ] **Page `/settings` ComfyUI** — La roadmap ComfyUI annonce une "page `/settings`" mais en réalité c'est un onglet "Compte" dans la modale Paramètres. Pas de route `/settings` dans `app.py`.
+
+### Phase 6 — Frontend (UI générale, à planifier)
+- [ ] Drag & drop des mots-clés vers le générateur
+- [ ] Double-clic sur un mot-clé → ajoute au générateur
+- [ ] Code couleur par section (dans le tableau des mots-clés)
+- [ ] Compteur de tokens
+- [ ] Bouton "Tout recharger" → regénère le cache pour tous les filtres
+- [ ] Slider de confiance minimale dans le générateur (panneau droit)
+
 ---
 
 ## 🐛 Bugs identifiés
@@ -266,6 +301,9 @@ Note : les endpoints `GET /api/prompts/examples` et `POST /api/prompts/examples/
 ### Backend — app.py
 
 - [x] **CRITIQUE : 500 sur GET /api/presets et GET /api/styles** — Résolu. Cause : `sqlite3.Row` n'a pas de méthode `.get()`. Fix : helper `_row_get()` + utilisation de `safeJson()` côté frontend.
+- [x] **CRITIQUE : GET /api/filters plante si l'utilisateur a un filtre union** — Résolu (audit 2026-06). Cause : `conn.close()` appelé avant `cur2 = conn.cursor()` dans la branche `filter_type=='union'`. Fix : `conn.close()` déplacé après la boucle for.
+- [x] **CRITIQUE : Recherche sémantique dans `/api/enhance` silencieusement cassée** — Résolu (audit 2026-06). Cause : la requête `SELECT k.keyword` n'incluait pas l'embedding, donc `r[1]` n'existait pas → try/except avalait l'erreur → éléments `type=text` EP ignorés. Fix : `SELECT k.keyword, ke.embedding` + `r['embedding']`.
+- [x] **CRITIQUE : Filtre union → simple laisse `filter_type='union'` en BDD** — Résolu (audit 2026-06). Cause : le PUT ne remettait `filter_type='simple'` que si `union_member_ids` était absent. Fix : ajouter un `else` pour repasser en `'simple'`.
 - [x] **Bug : URLs LLM locales invalides pour les utilisateurs distants** — Résolu avec l'option "Client-side" dans les presets.
 - [x] **Bug : Mauvaise URL pour le endpoint members** — Corrigé.
 - [x] **Bug : PUT /api/filters/<id> plante (KeyError)** — Corrigé.
@@ -274,11 +312,12 @@ Note : les endpoints `GET /api/prompts/examples` et `POST /api/prompts/examples/
 - [x] **Commentaire obsolète** — "embeddings HF" → "embeddings Ollama".
 - [x] **`_admin_required()` défini 2 fois** — Suppression de la 2ème définition (moins robuste).
 - [x] **FK constraint bloquait DELETE styles/presets** — `NULL` des références dans `generated_prompts` avant suppression.
-- [ ] **Bug : Liste des utilisateurs cassée dans le panneau admin** — Non vérifié.
-- [ ] **Variable inutilisée** — `stats()` et `sections()` récupèrent `user_id` sans l'utiliser.
-- [ ] **Colonne `config` pas mise à jour au Save** — Résolu (PUT /api/filters/<id> écrit maintenant la config).
-- [ ] **Preview `total` plafonné à 20** — Résolu (COUNT(*) séparé du LIMIT).
-- [ ] **Cache sémantique ignorait section/nsfw/hidden_ids/search_neg** — Résolu (pré-filtre SQL + post-filtre).
+- [x] **Variable inutilisée** — `stats()`, `sections()`, `list_keywords()`, `presets()` calculent `user_id` sans l'utiliser. (Audit 2026-06 : confirmé sur 4 endpoints, à nettoyer.)
+- [x] **Colonne `config` pas mise à jour au Save** — Résolu (PUT /api/filters/<id> écrit maintenant la config).
+- [x] **Preview `total` plafonné à 20** — Résolu (COUNT(*) séparé du LIMIT).
+- [x] **Cache sémantique ignorait section/nsfw/hidden_ids/search_neg** — Résolu (pré-filtre SQL + post-filtre).
+- [ ] **Seed ComfyUI ignoré dans `/api/enhance`** — `random.choice()` (RNG global) + `ORDER BY RANDOM()` (SQLite RNG) ignorent le `seed`. Cohérence à faire avec `/api/generate`. (Audit 2026-06)
+- [ ] **Code mort dans `enhance_prompt`** — `format_instruction` (ligne 2191) et query `prompt_examples` (lignes 2194-2199) ne sont plus utilisés. (Audit 2026-06)
 
 ### Backend — parser.py
 
@@ -290,18 +329,20 @@ Note : les endpoints `GET /api/prompts/examples` et `POST /api/prompts/examples/
 
 ### Backend — exporter.py
 
-- [ ] **Export sans filtre utilisateur** — Exporte tous les mots-clés (normal pour base partagée) mais la fonction `export_to_markdown` utilise `SELECT * FROM keywords` sans `ORDER BY` cohérent. Les mots-clés sont exportés dans l'ordre d'insertion, pas par section.
+- [x] **Export sans `ORDER BY` cohérent** — La roadmap indiquait "exporte dans l'ordre d'insertion". En fait, `export_to_markdown` a bien `ORDER BY section_id, subsection_id, id` (ligne 13). Résolu, c'était juste une note de roadmap obsolète.
+- [ ] **Troncature inesthétique du footer** — Le `[:100]` coupe la liste concaténée des catégories au milieu d'un titre. (Audit 2026-06, mineur)
 
 ### Frontend — index.html
 
-- [ ] **Potentiel : `filtersBar` déclaré mais plus utilisé** — La variable `filtersBar` est référencée dans `const filtersBar = $('filters-bar')` mais n'est plus utilisée dans le code (remplacée par `document.getElementById('filters-bar')`).
-- [ ] **Score header visible en mode texte** — `scoreHeader` est initialisé comme `hidden` mais pourrait être affecté par `loadColWidths` qui applique des largeurs à tous les `<th>` sans vérifier si la colonne est visible.
+- [x] **Potentiel : `filtersBar` déclaré mais plus utilisé** — La variable `filtersBar` est référencée dans `const filtersBar = $('filters-bar')` mais n'est plus utilisée dans le code (remplacée par `document.getElementById('filters-bar')`). Confirmé (audit 2026-06), peut être supprimée.
+- [ ] **Score header visible en mode texte** — `scoreHeader` est initialisé comme `hidden` mais pourrait être affecté par `loadColWidths` qui applique des largeurs à tous les `<th>` sans vérifier si la colonne est visible. (Audit 2026-06, à corriger en Phase 5)
 - [x] **Unreachable code dans deleteUser/adminClearDb** — Code après `return;` déplacé dans le callback.
 - [x] **`delStyle()` silencieux** — Ajout d'affichage d'erreur.
 - [x] **Confidence slider ne refetchait pas l'API** — Maintenant invalide le cache et relance `loadKeywords()` avec le vrai %.
 - [x] **Recherche texte (+) et exclusion (-) ignorées avec sémantique** — Appliquées comme post-filtre dans `loadKeywords()` et `_rebuild_filter_cache`.
 - [x] **hiddenKWs non restaurés au chargement d'un filtre** — `applyFilterConfig()` restaure maintenant les 👁️.
 - [x] **Label "X résultats (Y masqués)" ambigu** — Changé en "X visibles (+ Y masqués)".
+- [ ] **Code mort : `_loadApiKeySettings()` jamais appelé** — Garder `loadApiKeySettings()` (ligne 1601, appelé), supprimer `_loadApiKeySettings()` (ligne 1605, jamais appelé). (Audit 2026-06, mineur)
 
 ---
 
@@ -428,13 +469,13 @@ L'URL et la clé API sont lues depuis `localStorage` (configurées dans le menu 
 
 ---
 
-### Site web — Page `/settings`
+### Site web — Onglet "Compte" dans la modale Paramètres
 
-Nouvelle page sur le site pour gérer la clé API.
+**Note (audit 2026-06) :** La roadmap initiale parlait d'une "page `/settings`" dédiée. En fait, c'est implémenté comme un onglet "Compte" dans la modale Paramètres de `index.html` (ligne 668). Pas de route `/settings` dans `app.py` — l'utilisateur accède via le bouton "Paramètres" du header. Le code backend (`/api/auth/token`) est bien en place, seule l'UI a été intégrée différemment.
 
 ```
 ┌────────────────────────────────────┐
-│  Paramètres FR.IA                  │
+│  Paramètres FR.IA  [Compte]         │
 │  ┌─── Connexion ────────────────┐  │
 │  │  Connecté en tant que Holaf   │  │
 │  └──────────────────────────────┘  │
@@ -493,17 +534,22 @@ FR.IA-ComfyUI/
 
 ### Roadmap d'implémentation
 
-| # | Étape | Côté |
-|---|-------|------|
-| 1 | Migration BDD : colonne `api_token` | Site web |
-| 2 | Endpoint `GET/POST /api/auth/token` | Site web |
-| 3 | Page `/settings` (UI du token) | Site web |
-| 4 | ✅ Middleware auth token | Site web |
-| 5 | Menu extension ComfyUI | ComfyUI |
-| 6 | Widget Elements Picker | ComfyUI |
-| 7 | Node Elements Picker (stub Python) | ComfyUI |
-| 8 | Node Prompt Enhancer | ComfyUI |
-| 9 | Tests + Déploiement | Les deux |
-| 10 | Publication registry | ComfyUI |
+| # | Étape | Côté | Statut |
+|---|-------|------|--------|
+| 1 | Migration BDD : colonne `api_token` | Site web | ✅ |
+| 2 | Endpoint `GET/POST /api/auth/token` | Site web | ✅ |
+| 3 | UI du token (onglet Compte dans modale Paramètres) | Site web | ✅ |
+| 4 | ✅ Middleware auth token | Site web | ✅ |
+| 5 | Menu extension ComfyUI | ComfyUI | ✅ |
+| 6 | Widget Elements Picker | ComfyUI | ✅ |
+| 7 | Node Elements Picker (stub Python) | ComfyUI | ✅ |
+| 8 | Node Prompt Enhancer | ComfyUI | ✅ |
+| 9 | Tests + Déploiement | Les deux | ⏳ |
+| 10 | Publication registry | ComfyUI | ⬜ |
+
+**Note (audit 2026-06) :** Le `README.md` de ComfyUI contient une instruction contradictoire :
+- Commande : `git clone ... FRIA_Tools` → dossier `FRIA_Tools`
+- Avertissement : "Le nom du dossier doit être **`FRIA_Keywords`**"
+Pour que Python importe `FRIA_ComfyUI`, le dossier parent doit s'appeler **comme le repo GitHub** (`FRIA_Tools`). L'avertissement est faux. À corriger dans le README.
 
 **Priorité :** Les étapes 1 à 4 (site web) peuvent être faites en premier. Les étapes 5 à 8 (ComfyUI) peuvent être développées en parallèle avec un token de test ou l'API sans auth.

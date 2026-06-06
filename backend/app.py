@@ -1400,7 +1400,6 @@ def filters():
         ORDER BY f.name
     """, (user_id,))
     rows = cur.fetchall()
-    conn.close()
     result = []
     for r in rows:
         d = dict(r)
@@ -1457,9 +1456,12 @@ def single_filter(filter_id):
         cur.execute("DELETE FROM filter_unions WHERE union_filter_id = ?", (filter_id,))
         for mid in data['union_member_ids']:
             cur.execute("INSERT OR IGNORE INTO filter_unions (union_filter_id, member_filter_id) VALUES (?, ?)", (filter_id, mid))
-        # Mettre à jour le filter_type si nécessaire
+        # Mettre à jour le filter_type selon la nouvelle config
         if data.get('filter_type') == 'union':
             cur.execute("UPDATE saved_filters SET filter_type = 'union', updated_at = CURRENT_TIMESTAMP WHERE id = ?", (filter_id,))
+        else:
+            # L'utilisateur a retiré les membres → repasser en filtre simple
+            cur.execute("UPDATE saved_filters SET filter_type = 'simple', updated_at = CURRENT_TIMESTAMP WHERE id = ?", (filter_id,))
 
     config = data.get('config')
     if config and isinstance(config, dict):
@@ -2096,15 +2098,15 @@ def enhance_prompt():
             elif elem.get('type') == 'text' and elem.get('text'):
                 try:
                     qv = generate_embedding(elem['text'])
-                    cur.execute("SELECT k.keyword FROM keywords k JOIN keyword_embeddings ke ON ke.keyword_id = k.id")
+                    cur.execute("SELECT k.keyword, ke.embedding FROM keywords k JOIN keyword_embeddings ke ON ke.keyword_id = k.id")
                     rows = cur.fetchall()
                     scored = []
                     for r in rows:
-                        vec = json.loads(r[1] if len(r) > 1 else '')
+                        vec = json.loads(r['embedding']) if r['embedding'] else None
                         if vec:
                             s = cosine_similarity(qv, vec)
                             if s >= 0.45:
-                                scored.append((r[0], s))
+                                scored.append((r['keyword'], s))
                     scored.sort(key=lambda x: x[1], reverse=True)
                     top5 = [k for k, _ in scored[:5]]
                     if top5:
