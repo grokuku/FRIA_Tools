@@ -317,10 +317,10 @@ def _migrate_templates_to_english():
         existing = cur.execute("SELECT COUNT(*) FROM prompt_templates WHERE is_default = 1").fetchone()[0]
         if existing > 0:
             tmpl_version = cur.execute("SELECT value FROM app_settings WHERE key = 'templates_version'").fetchone()
-            if not tmpl_version or tmpl_version[0] < '3':
+            if not tmpl_version or tmpl_version[0] < '4':
                 cur.execute("DELETE FROM prompt_templates WHERE is_default = 1")
                 _insert_default_templates(mconn)
-                cur.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('templates_version', '3')")
+                cur.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('templates_version', '4')")
                 mconn.commit()
         mconn.close()
     except Exception as e:
@@ -467,12 +467,27 @@ Every caption has THREE top-level fields. Only `compositional_deconstruction` is
 2. Use EITHER "photo" OR "art_style" in style_description — never both, never neither.
 3. Required inside style_description: aesthetics, lighting, medium. color_palette is the only optional field.
 4. `background` is REQUIRED in compositional_deconstruction (the user-provided "general description" largely feeds this field).
-5. `elements` is REQUIRED, must be an array (can be empty if no subjects).
-6. `bbox` format: [y_min, x_min, y_max, x_max] in NORMALIZED 0-1000 coordinates (origin top-left). The image is 1000x1000 in this space regardless of actual width/height.
-   - For a full-frame element: roughly [0, 0, 1000, 1000]
-   - For a center subject: roughly [200, 250, 800, 750]
-   - Never output values outside 0-1000.
-   - bbox is OPTIONAL: omit if the LLM is unsure. Better to omit than to guess badly.
+5. `elements` is REQUIRED, must be an array. When the user provides named elements to place, EACH ONE MUST appear in the array with a `bbox` (see rule 6).
+6. `bbox` is REQUIRED for every element in the `elements` array. The user has explicitly listed elements to place in the scene, and they expect to see WHERE each one goes. Format: [y_min, x_min, y_max, x_max] in NORMALIZED 0-1000 coordinates (origin top-left). The image is 1000x1000 in this space regardless of actual width/height.
+   - **NEVER** omit `bbox` for an element the user asked to place. Even a rough guess is better than no bbox.
+   - All values must be integers in [0, 1000].
+   - Aspect ratio (from IMAGE DIMENSIONS): 1:1 → square bboxes; 16:9 → wider bboxes; 9:16 → taller bboxes; 4:3 → moderate width.
+   - For a 1:1 image, useful bbox zones:
+     * Center subject: [200, 250, 800, 750]
+     * Top-left corner: [0, 0, 400, 400]
+     * Top-right: [0, 600, 400, 1000]
+     * Bottom-left: [600, 0, 1000, 400]
+     * Bottom-right: [600, 600, 1000, 1000]
+     * Top strip: [0, 100, 300, 900]
+     * Bottom strip: [700, 100, 1000, 900]
+     * Full frame: [0, 0, 1000, 1000]
+   - For 16:9 (1920x1080 → use 1000x562 equivalent): scale x values normally, compress y to ~562 max. Useful zones:
+     * Left third: [0, 0, 1000, 333]
+     * Center third: [0, 333, 1000, 666]
+     * Right third: [0, 666, 1000, 1000]
+   - For 9:16 (vertical, e.g. portrait phone): scale y normally, compress x to ~562 max.
+   - Do NOT overlap bounding boxes significantly unless the elements are clearly together.
+   - The main subject (first listed element) typically gets the largest bbox.
 7. `color_palette` format: array of UPPERCASE #RRGGBB strings (e.g. "#1B1B2F", NOT "#1b1b2f" or "#fff"). Up to 16 colors in style_description, up to 5 per element.
 8. Each element's `type` is either "obj" (object/subject) or "text" (literal text to render in the image).
 9. Output format: PURE JSON, NO code block (no ```json wrapping), NO commentary, NO markdown.
@@ -480,13 +495,13 @@ Every caption has THREE top-level fields. Only `compositional_deconstruction` is
 
 ## Mapping user input to JSON fields
 - The "general description" → high_level_description + the style_description fields (aesthetics, lighting, photo/art_style, medium) + the background of compositional_deconstruction.
-- Each "element" → one entry in the elements array (type "obj", desc = the element's text, bbox = calculated from the scene).
+- Each numbered entry under "ELEMENTS TO PLACE IN THE SCENE" → one entry in the elements array (type "obj", desc = the element's text, bbox = calculated from the scene). **Every numbered element MUST get a bbox.**
 - The IMAGE DIMENSIONS line is a HINT for aspect ratio. Map the LLM's bbox calculations to match the requested aspect ratio (e.g. for 16:9, use wider bboxes).
 - The STYLE block, if provided, MUST be preserved verbatim inside the appropriate style_description field.
 
 ## Tips
-- Don't over-specify: 2-5 elements is usually enough. The "general description" handles the rest.
-- bbox is OPTIONAL: when in doubt, omit. The model performs well even without explicit positioning.
+- **bbox is MANDATORY** for every element. The user wants to SEE where each element is placed.
+- Keep 2-5 elements unless the user listed more. Each one needs a non-overlapping bbox.
 - `medium` should be one of: "photograph", "illustration", "3d_render", "painting", "graphic_design", "sketch", "watercolor", "anime"...
 - For "aesthetics" use 2-4 keywords: "moody, cinematic, desaturated", "warm, playful, vibrant", "minimal, professional, geometric"...
 - For "lighting" be specific: "golden hour, rim light", "low-key, deep shadows", "even, diffuse studio lighting"...
