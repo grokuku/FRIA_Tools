@@ -310,6 +310,64 @@
     .dark .modal-overlay { background: rgba(0,0,0,0.6); }
     .modal-overlay.open { display: flex; }
     .col-resizing, .col-resizing * { cursor: col-resize !important; user-select: none !important; }
+    /* ═══════════════════════════════════════════════
+       ── Theme overrides pour les classes Tailwind ──
+       ═══════════════════════════════════════════════ */
+
+    /* Surfaces */
+    .bg-white, .bg-slate-50 { background-color: var(--bg-modal) !important; }
+    .dark .dark\:bg-slate-800,
+    .dark .dark\:bg-slate-800\/80 { background-color: var(--bg-modal) !important; }
+
+    /* Inputs, elevated surfaces */
+    .bg-slate-100 { background-color: var(--input-bg) !important; }
+    .dark .dark\:bg-slate-700,
+    .dark .dark\:bg-slate-700\/50,
+    .dark .dark\:bg-slate-700\/30 { background-color: var(--input-bg) !important; }
+
+    /* Textes */
+    .text-slate-800, .text-slate-700 { color: var(--text-primary) !important; }
+    .dark .dark\:text-slate-100,
+    .dark .dark\:text-slate-200 { color: var(--text-primary) !important; }
+    .text-slate-600, .text-slate-500 { color: var(--text-secondary) !important; }
+    .dark .dark\:text-slate-300 { color: var(--text-secondary) !important; }
+    .text-slate-400 { color: var(--text-primary) !important; opacity: 0.5; }
+    .text-slate-300 { color: var(--text-primary) !important; opacity: 0.35; }
+    .dark .dark\:text-slate-400,
+    .dark .dark\:text-slate-500 { color: var(--text-primary) !important; opacity: 0.6; }
+
+    /* Bordures */
+    .border-slate-200,
+    .border-slate-200\/60,
+    .border-slate-300 { border-color: var(--border) !important; }
+    .dark .dark\:border-slate-600,
+    .dark .dark\:border-slate-700,
+    .dark .dark\:border-slate-700\/60 { border-color: var(--border) !important; }
+
+    /* Accent */
+    .bg-indigo-600 { background-color: var(--accent) !important; }
+    .dark .dark\:bg-indigo-900\/20 { background-color: var(--accent) !important; opacity: 0.2; }
+    .dark .dark\:hover\:bg-indigo-900\/40:hover { background-color: var(--accent) !important; opacity: 0.4; }
+    .hover\:bg-indigo-500:hover { background-color: var(--accent-hover) !important; }
+    .text-indigo-500,
+    .text-indigo-600,
+    .text-indigo-700 { color: var(--accent) !important; }
+    .dark .dark\:text-indigo-400,
+    .dark .dark\:text-indigo-300 { color: var(--accent) !important; }
+    .hover\:text-indigo-700:hover { color: var(--accent-hover) !important; }
+    .border-indigo-200 { border-color: var(--accent) !important; }
+
+    /* NSFW badges */
+    .bg-rose-100 { background-color: var(--rose-bg) !important; }
+    .text-rose-700,
+    .text-rose-500,
+    .text-rose-400 { color: var(--rose-text) !important; }
+    .dark .dark\:text-rose-300 { color: var(--rose-text) !important; }
+    .border-rose-200 { border-color: var(--rose-text) !important; }
+
+    /* Placeholder */
+    .dark .dark\:placeholder-slate-400::placeholder,
+    .placeholder-slate-400::placeholder { color: var(--text-primary) !important; opacity: 0.4; }
   </style>
 </head>
 <body style="background-color:var(--bg-body);color:var(--text-primary)" class="antialiased overflow-hidden h-screen">
