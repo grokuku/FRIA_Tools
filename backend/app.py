@@ -2347,7 +2347,7 @@ def enhance_prompt():
         'flux': 'Prompt Flux, description longue et naturelle en anglais.',
         'anima': 'Prompt Anime/Manga, tags Danbooru avec suffixes specifiques (pixel art, lineart, flat color, etc.).',
         'qwen': 'Prompt Qwen, format optimise pour modele Qwen2-VL / image generation.',
-        'ideogram4': 'JSON Ideogram 4 : caption structuree avec high_level_description, style_description (aesthetics, lighting, photo/art_style, medium, color_palette optionnel) et compositional_deconstruction (background + elements avec bbox optionnelle en coordonnees 0-1000). Format JSON strict, ordre des cles preserve.',
+        'ideogram4': 'JSON Ideogram 4 : caption structuree avec high_level_description, style_description (aesthetics, lighting, photo/art_style, medium, color_palette optionnel) et compositional_deconstruction (background + elements avec bbox obligatoire en coordonnees 0-1000). Format JSON strict, ordre des cles preserve.',
     }
 
     format_instruction = type_formats.get(prompt_type, type_formats['sdxl'])
@@ -2366,15 +2366,18 @@ def enhance_prompt():
         for ex in examples:
             examples_text += '- ' + ex['prompt_text'] + '\n'
 
-    # Construire le system prompt (tout en anglais)
+    # Regles de format de sortie par defaut (utilisees SEULEMENT si pas de
+    # template en BDD). Ces regles sont GENERIQUES — les templates Ideogram 4
+    # en BDD contiennent leur propre regle stricte.
     format_rules = {
         'text': 'Output ONLY the final prompt — no quotes, no code blocks, no explanations, no introduction.',
         'markdown': 'Output in clean Markdown (no ``` code blocks). The prompt is the main content.',
-        'json': 'Output raw JSON (no ```json). Format: {"prompt": "...", "format": "' + prompt_type + '", "negative_prompt": ""}',
+        'json': 'Output raw JSON (no ```json). The JSON structure depends on the prompt type — follow the schema described in the documentation above.',
     }
 
     # Resoudre le template personnalise depuis prompt_templates
     template_examples = []
+    template_system_prompt = None  # system_prompt du template (peut etre None)
     conn = get_db()
     try:
         cur = conn.execute(
@@ -2389,6 +2392,7 @@ def enhance_prompt():
             )
             tmpl = cur.fetchone()
         if tmpl:
+            template_system_prompt = tmpl['system_prompt']
             try:
                 template_examples = json.loads(tmpl['examples']) if tmpl['examples'] else []
             except:
@@ -2407,33 +2411,40 @@ You MUST preserve the following style in the output prompt, verbatim and unmodif
 
 This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summarize it.""")
 
-    # 2) Role generique (pas de nom de modele)
-    system_parts.append("""You are an expert image prompt engineer. Your task is to rewrite and optimize the user's input into a high-quality image generation prompt.""")
+    # 2) System prompt du template en BDD (le coeur de l'instruction)
+    # Si le template existe en BDD, on l'utilise ENTIEREMENT — il contient
+    # deja la doc du format, les exemples, les regles. Sinon on retombe
+    # sur le system prompt generique ci-dessous.
+    if template_system_prompt and template_system_prompt.strip():
+        system_parts.append(template_system_prompt.strip())
+    else:
+        # Fallback : system prompt generique (pour les types sans template en BDD)
+        system_parts.append("""You are an expert image prompt engineer. Your task is to rewrite and optimize the user's input into a high-quality image generation prompt.""")
 
-    # 3) Format demande (type-agnostic)
-    format_instr = type_formats.get(prompt_type, type_formats['sdxl'])
-    system_parts.append(f"Expected output style: {format_instr}")
+        # Format demande (type-agnostic)
+        format_instr = type_formats.get(prompt_type, type_formats['sdxl'])
+        system_parts.append(f"Expected output style: {format_instr}")
 
-    # 4) Exemples (inspiration, pas copie)
-    if template_examples:
-        ex_list = '\n'.join(f'- {ex}' for ex in template_examples)
-        system_parts.append(f"""Study these example prompts to understand the expected structure and quality level — use them for inspiration, do NOT copy them verbatim:
+        # Exemples (inspiration, pas copie)
+        if template_examples:
+            ex_list = '\n'.join(f'- {ex}' for ex in template_examples)
+            system_parts.append(f"""Study these example prompts to understand the expected structure and quality level — use them for inspiration, do NOT copy them verbatim:
 {ex_list}""")
-    elif examples_text.strip():
-        system_parts.append(f"""Study these example prompts for reference:
+        elif examples_text.strip():
+            system_parts.append(f"""Study these example prompts for reference:
 {examples_text}""")
 
-    # 5) Regles
-    system_parts.append("""Rules:
+        # Regles
+        system_parts.append("""Rules:
 - Preserve the user's main intent and keywords; do not discard specific requests
 - Remove duplicate concepts
 - Organize by importance (most important first)
 - Output ONLY the final prompt text — no markers, no tags like [PRIORITE HAUTE], no meta-commentary""")
 
-    # 6) Format de sortie
-    system_parts.append(format_rules.get(output_format, "Output ONLY the final prompt."))
+        # Format de sortie
+        system_parts.append(format_rules.get(output_format, "Output ONLY the final prompt."))
 
-    # 7) Instructions speciales
+    # 3) Instructions speciales (toujours en dernier)
     if special_instructions:
         system_parts.append(f"Additional instructions: {special_instructions}")
 
@@ -2456,7 +2467,7 @@ This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summari
                 {'role': 'user', 'content': merged_text}
             ],
             'temperature': 0.3,
-            'max_tokens': 400,
+            'max_tokens': 2000 if output_format == 'json' else 400,
             'frequency_penalty': 0.5,
             'repeat_penalty': 1.2,
         }
