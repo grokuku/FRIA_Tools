@@ -2436,6 +2436,9 @@ def enhance_prompt():
     base_url = preset['base_url'].rstrip('/')
     model = preset['model']
     conn.close()
+    # Debug temporaire : tracer le preset utilise
+    import logging
+    logging.warning(f"[enhance] user={user_id} preset_id={preset['id']} name='{preset['name']}' is_global={preset['is_global']} model='{model}' base_url='{base_url}' api_key_len={len(api_key) if api_key else 0}")
 
     # Construire le prompt systeme
     type_formats = {
