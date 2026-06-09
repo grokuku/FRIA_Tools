@@ -2585,6 +2585,8 @@ This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summari
         r.raise_for_status()
         result = r.json()
         output = result['choices'][0]['message']['content'].strip()
+        # Debug : log la reponse LLM avec sa longueur
+        logging.warning(f"[enhance] LLM response status=200 output_len={len(output)} output_preview={output[:100]!r}")
         # Debug : sortie brute passe 1
         if debug_sections:
             debug_sections[-1]['raw_output'] = output[:3000]
@@ -2600,6 +2602,7 @@ This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summari
         output = clean_output(output)
     except Exception as e:
         msg = str(e)
+        logging.warning(f"[enhance] LLM EXCEPTION: {msg!r}")
         if '429' in msg:
             return jsonify({'error': 'Rate limit atteint sur le serveur LLM. Attends un peu et reessaye.'}), 429
         if 'connect' in msg.lower() or 'refused' in msg.lower():
