@@ -127,17 +127,16 @@ class FRIAIdeogram4Node:
 def _render_preview(prompt_text, width, height):
     import torch
     from PIL import Image, ImageDraw, ImageFont
+    import re
 
-    img = Image.new("RGB", (width, height), (42, 42, 46))
-    overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    bg_color = (42, 42, 46)
+    img = Image.new("RGB", (width, height), bg_color)
     draw = ImageDraw.Draw(img)
-    draw_o = ImageDraw.Draw(overlay)
 
     caption = None
     if prompt_text and prompt_text.strip():
         try:
             s = prompt_text.strip()
-            import re
             m = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", s)
             if m:
                 s = m.group(1)
@@ -152,8 +151,8 @@ def _render_preview(prompt_text, width, height):
             font = ImageFont.load_default()
         msg = "JSON invalide ou absent"
         try:
-            bbox = draw.textbbox((0, 0), msg, font=font)
-            w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            tb = draw.textbbox((0, 0), msg, font=font)
+            w, h = tb[2] - tb[0], tb[3] - tb[1]
         except Exception:
             w, h = len(msg) * 8, 16
         draw.text(((width - w) / 2, (height - h) / 2), msg, fill=(136, 136, 136), font=font)
@@ -174,9 +173,12 @@ def _render_preview(prompt_text, width, height):
         (234, 179, 8), (249, 115, 22), (236, 72, 153), (6, 182, 212),
     ]
 
+    # Pre-calculer les coordonnes de chaque bbox
+    bbox_coords = []
     for idx, el in enumerate(elements):
         bbox = el.get("bbox")
         if not bbox or not isinstance(bbox, list) or len(bbox) != 4:
+            bbox_coords.append(None)
             continue
         yMin, xMin, yMax, xMax = bbox
         x = int(xMin / 1000 * width)
@@ -184,43 +186,61 @@ def _render_preview(prompt_text, width, height):
         bw = int((xMax - xMin) / 1000 * width)
         bh = int((yMax - yMin) / 1000 * height)
         if bw < 4 or bh < 4:
+            bbox_coords.append(None)
             continue
+        bbox_coords.append((x, y, bw, bh, idx))
 
+    # PASSE 1 : fills (opaques, blendes avec le fond gris)
+    alpha_fill = 80  # 0-255
+    for coords in bbox_coords:
+        if coords is None:
+            continue
+        x, y, bw, bh, idx = coords
         color = colors[idx % len(colors)]
-        # Fill transparent (alpha=40) pour voir les bboxes en arriere-plan
-        fill_rgba = (color[0], color[1], color[2], 80)
-        draw_o.rectangle([x, y, x + bw, y + bh], outline=color + (255,), width=3, fill=fill_rgba)
+        # Blender la couleur avec le fond : fill = color * alpha + bg * (1-alpha)
+        fill = (
+            color[0] * alpha_fill // 255 + bg_color[0] * (255 - alpha_fill) // 255,
+            color[1] * alpha_fill // 255 + bg_color[1] * (255 - alpha_fill) // 255,
+            color[2] * alpha_fill // 255 + bg_color[2] * (255 - alpha_fill) // 255,
+        )
+        draw.rectangle([x, y, x + bw, y + bh], fill=fill)
+
+    # PASSE 2 : outlines + text (toujours par dessus)
+    for coords in bbox_coords:
+        if coords is None:
+            continue
+        x, y, bw, bh, idx = coords
+        color = colors[idx % len(colors)]
+        el = elements[idx]
+
+        draw.rectangle([x, y, x + bw, y + bh], outline=color, width=3)
 
         idx_label = f"{idx + 1:02d}"
         pill_pad = 6
         try:
-            pb = draw_o.textbbox((0, 0), idx_label, font=font_pill)
+            pb = draw.textbbox((0, 0), idx_label, font=font_pill)
             pw = pb[2] - pb[0] + pill_pad * 2
             ph = pb[3] - pb[1] + 4
         except Exception:
             pw, ph = 28, 22
         pw = max(pw, 28)
-        draw_o.rectangle([x, y, x + pw, y + ph], fill=color + (255,))
-        draw_o.text((x + pw / 2, y + ph / 2), idx_label, fill=(0, 0, 0), font=font_pill, anchor="mm")
+        draw.rectangle([x, y, x + pw, y + ph], fill=color)
+        draw.text((x + pw / 2, y + ph / 2), idx_label, fill=(0, 0, 0), font=font_pill, anchor="mm")
 
         text_y = y + ph + 6
         if el.get("type") == "text" and el.get("text"):
             txt = f'"{el["text"]}"'
-            draw_o.text((x + 6, text_y), txt, fill=color, font=font_pill)
+            draw.text((x + 6, text_y), txt, fill=color, font=font_pill)
             if el.get("desc"):
-                draw_o.text((x + 6, text_y + 22), el["desc"], fill=(255, 255, 255), font=font_desc)
+                draw.text((x + 6, text_y + 22), el["desc"], fill=(255, 255, 255), font=font_desc)
         elif el.get("desc"):
-            _wrap_text(draw_o, el["desc"], x + 6, text_y, bw - 12, font_desc, 18, 5)
+            _wrap_text(draw, el["desc"], x + 6, text_y, bw - 12, font_desc, 18, 5)
 
     if background:
         bg_h = max(40, height // 20)
-        # Bandeau BG semi-transparent pour rester lisible
-        bg_overlay = Image.new("RGBA", (width, bg_h), (0, 0, 0, 200))
-        overlay.paste(bg_overlay, (0, height - bg_h))
-        _wrap_text(draw_o, "BG: " + background, 6, height - bg_h + 4, width - 12, font_bg, 18, 3)
+        draw.rectangle([0, height - bg_h, width, height], fill=(0, 0, 0))
+        _wrap_text(draw, "BG: " + background, 6, height - bg_h + 4, width - 12, font_bg, 18, 3)
 
-    # Composite overlay transparent sur l'image de fond
-    img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
     return _to_comfy_image(img)
 
 
