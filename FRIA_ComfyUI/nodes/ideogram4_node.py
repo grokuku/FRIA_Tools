@@ -38,8 +38,8 @@ class FRIAIdeogram4Node:
             }
         }
 
-    RETURN_TYPES = ("STRING", "INT", "INT", "IMAGE")
-    RETURN_NAMES = ("prompt", "width", "height", "preview")
+    RETURN_TYPES = ("STRING", "INT", "INT", "IMAGE", "STRING")
+    RETURN_NAMES = ("prompt", "width", "height", "preview", "debug")
 
     def build_caption(self, seed=0, width=1024, height=1024,
                       description="", element_1="", element_2="",
@@ -95,9 +95,12 @@ class FRIAIdeogram4Node:
 
         preview_tensor = _render_preview(prompt, width, height)
 
+        # Recuperer le debug_md depuis la reponse API
+        debug_md = data.get('debug_md', '') if isinstance(data, dict) else ''
+
         return {
             "ui": {"prompt": [prompt]},
-            "result": (prompt, width, height, preview_tensor)
+            "result": (prompt, width, height, preview_tensor, debug_md)
         }
 
 

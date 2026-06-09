@@ -2177,12 +2177,100 @@ def convert_bboxes_to_normalized(json_text, width, height):
     return json_text
 
 
+def _build_debug_markdown(sections, conversion_debug, width, height):
+    """Assemble un markdown de debug a partir des sections collectees."""
+    lines = []
+    lines.append("# FR.IA Ideogram 4 — Debug")
+    lines.append("")
+    lines.append(f"**Image** : {width}x{height}")
+    lines.append("")
+
+    for sec in sections:
+        if 'title' in sec:
+            # Passe 1 : generation
+            lines.append(f"## {sec['title']}")
+            lines.append("")
+            lines.append(f"**Model** : `{sec.get('model', '?')}`  ")
+            lines.append(f"**Temperature** : {sec.get('temperature', '?')}  ")
+            lines.append(f"**Max tokens** : {sec.get('max_tokens', '?')}")
+            lines.append("")
+            lines.append("### System Prompt")
+            lines.append("```")
+            lines.append(sec.get('system_prompt', ''))
+            lines.append("```")
+            lines.append("")
+            lines.append("### User Prompt")
+            lines.append("```")
+            lines.append(sec.get('user_prompt', ''))
+            lines.append("```")
+            lines.append("")
+            if 'raw_output' in sec:
+                lines.append("### Sortie brute LLM")
+                lines.append("```")
+                lines.append(sec['raw_output'])
+                lines.append("```")
+                lines.append("")
+        elif 'pass' in sec:
+            # Passe de validation
+            lines.append(f"## Passe {sec['pass']} : Validation spatiale")
+            lines.append("")
+            for i, call in enumerate(sec.get('api_calls', [])):
+                lines.append(f"### Appel LLM {i+1}")
+                lines.append("")
+                lines.append(f"**Model** : `{call.get('model', '?')}`  ")
+                lines.append(f"**Temperature** : {call.get('temperature', '?')}")
+                lines.append("")
+                lines.append("#### System Prompt")
+                lines.append("```")
+                lines.append(call.get('system_prompt', ''))
+                lines.append("```")
+                lines.append("")
+                lines.append("#### User Prompt")
+                lines.append("```")
+                lines.append(call.get('user_prompt', ''))
+                lines.append("```")
+                lines.append("")
+                if 'raw_output' in call:
+                    lines.append("#### Sortie brute LLM")
+                    lines.append("```")
+                    lines.append(call['raw_output'])
+                    lines.append("```")
+                    lines.append("")
+                if 'error' in call:
+                    lines.append(f"**Erreur** : {call['error']}")
+                    lines.append("")
+                if 'status' in call:
+                    lines.append(f"**Statut** : {call['status']}")
+                    lines.append("")
+
+    if conversion_debug:
+        lines.append("## Conversion pixels \u2192 0-1000")
+        lines.append("")
+        lines.append(f"**Dimensions** : {conversion_debug['width']}x{conversion_debug['height']}")
+        lines.append("")
+        lines.append("### Avant conversion (pixels)")
+        lines.append("```")
+        lines.append(conversion_debug.get('before', ''))
+        lines.append("```")
+        lines.append("")
+        lines.append("### Apres conversion (0-1000 normalise)")
+        lines.append("```")
+        lines.append(conversion_debug.get('after', ''))
+        lines.append("```")
+        lines.append("")
+
+    return '\n'.join(lines)
+
+
 @app.route('/api/enhance', methods=['POST'])
 def enhance_prompt():
     guard = _login_required()
     if guard: return guard
     user_id = _get_current_user_id()
     data = request.get_json() or {}
+
+    # Debug : collecter les etapes pour le markdown de debug
+    debug_sections = []
 
     preset_id = data.get('preset_id')
     text = data.get('text', '').strip()
@@ -2465,10 +2553,22 @@ This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summari
             'frequency_penalty': 0.5,
             'repeat_penalty': 1.2,
         }
+        # Debug : enregistrer la passe 1
+        debug_sections.append({
+            'title': 'Passe 1 : Generation',
+            'model': model,
+            'system_prompt': system_prompt[:2000],
+            'user_prompt': merged_text[:2000],
+            'temperature': payload['temperature'],
+            'max_tokens': payload['max_tokens'],
+        })
         r = requests.post(f'{base_url}/chat/completions', headers=headers, json=payload, timeout=60)
         r.raise_for_status()
         result = r.json()
         output = result['choices'][0]['message']['content'].strip()
+        # Debug : sortie brute passe 1
+        if debug_sections:
+            debug_sections[-1]['raw_output'] = output[:3000]
         # Nettoyer les balises de code eventuelles
         if output.startswith('```'):
             lines = output.split('\n')
@@ -2507,10 +2607,11 @@ This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summari
 
     for pass_idx in range(validation_passes):
         try:
-            corrected = _validate_caption_pass(
+            corrected, val_debug = _validate_caption_pass(
                 output, merged_text, style_text, width, height,
                 api_key, base_url, model, pass_idx
             )
+            debug_sections.append(val_debug)
             if corrected:
                 output = corrected
         except Exception:
@@ -2518,10 +2619,18 @@ This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summari
             pass
 
     # Convertir les bboxes de pixels vers 0-1000 normalise (Ideogram 4)
+    conversion_debug = None
     if prompt_type == 'ideogram4' and width and height:
+        before_conversion = output[:500]
         output = convert_bboxes_to_normalized(output, width, height)
+        conversion_debug = {'before': before_conversion, 'after': output[:500], 'width': width, 'height': height}
 
-    return jsonify({'output': output, 'negative_prompt': negative_prompt, 'model_used': model})
+    # Assembler le markdown de debug (uniquement pour ideogram4)
+    debug_md = ''
+    if prompt_type == 'ideogram4' and debug_sections:
+        debug_md = _build_debug_markdown(debug_sections, conversion_debug, width, height)
+
+    return jsonify({'output': output, 'negative_prompt': negative_prompt, 'model_used': model, 'debug_md': debug_md})
 
 
 def _validate_caption_pass(current_output, original_input, style_text, width, height,
@@ -2531,9 +2640,10 @@ def _validate_caption_pass(current_output, original_input, style_text, width, he
     Le LLM recoit le JSON caption + l'input original, et son SEUL job
     est de placer les bboxes de maniere coherente avec la scene.
 
-    Retourne le JSON corrige, ou None si pas de correction necessaire.
+    Retourne (json_corrige, debug_dict) ou (None, debug_dict) si pas de correction.
     """
     import requests as _req
+    debug = {'pass': pass_idx + 1, 'api_calls': []}
     import re as _re
 
     # Tenter de parser le JSON
@@ -2605,13 +2715,22 @@ Output ONLY the corrected JSON. No code fences."""
         'frequency_penalty': 0.0,
         'repeat_penalty': 1.0,
     }
+    # Debug : enregistrer l'appel de validation
+    debug['api_calls'].append({
+        'system_prompt': payload['messages'][0]['content'],
+        'user_prompt': critique_prompt[:3000],
+        'temperature': payload['temperature'],
+        'model': model,
+    })
     try:
         r = _req.post(f'{base_url}/chat/completions', headers=headers, json=payload, timeout=60)
         r.raise_for_status()
         result = r.json()
         new_output = result['choices'][0]['message']['content'].strip()
-    except Exception:
-        return None
+        debug['api_calls'][-1]['raw_output'] = new_output[:3000]
+    except Exception as e:
+        debug['api_calls'][-1]['error'] = str(e)
+        return None, debug
 
     # Nettoyer les fences
     if new_output.startswith('```'):
@@ -2629,9 +2748,11 @@ Output ONLY the corrected JSON. No code fences."""
         if m2:
             s2 = m2.group(1)
         json.loads(s2)
-        return new_output
-    except Exception:
-        return None
+        debug['api_calls'][-1]['status'] = 'valid_json'
+        return new_output, debug
+    except Exception as e:
+        debug['api_calls'][-1]['status'] = f'invalid_json: {e}'
+        return None, debug
 @app.route('/api/generate', methods=['POST'])
 def generate_prompt():
     guard = _login_required()

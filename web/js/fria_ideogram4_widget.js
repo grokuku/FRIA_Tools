@@ -157,8 +157,24 @@
                     fontSize: "10px", color: "#888", textAlign: "center",
                     fontStyle: "italic", padding: "2px",
                 });
-                previewNote.textContent = "💡 Preview visuelle = sortie IMAGE du node";
+                previewNote.textContent = "💡 Preview = sortie IMAGE | Debug = sortie STRING du node";
                 container.appendChild(previewNote);
+
+                // ---- Debug bouton ----
+                const debugBtn = document.createElement("button");
+                debugBtn.textContent = "🔍 Voir debug LLM";
+                Object.assign(debugBtn.style, {
+                    width: "100%", padding: "4px", borderRadius: "4px",
+                    border: "1px solid #555", background: "#3a3a3e", color: "#ccc",
+                    fontSize: "10px", cursor: "pointer", marginTop: "4px",
+                });
+                debugBtn.onclick = () => {
+                    const md = node._lastDebugMd || "Aucun debug. Lance un Generate d'abord.";
+                    const w = window.open("", "FR.IA Debug", "width=800,height=600");
+                    w.document.write(`<html><head><title>FR.IA Debug</title><style>body{background:#1a1a1e;color:#ccc;font-family:monospace;font-size:12px;padding:16px;}pre{white-space:pre-wrap;background:#2a2a2e;padding:8px;border-radius:4px;}h1,h2,h3{color:#6366f1;}h2{border-bottom:1px solid #444;padding-bottom:4px;}code{background:#3a3a3e;padding:1px 4px;border-radius:2px;}</style></head><body><pre>${md.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre></body></html>`);
+                    w.document.close();
+                };
+                container.appendChild(debugBtn);
 
                 // ---- Integration DOM Widget ----
                 const domWidget = node.addDOMWidget("ideogram4_ui", "custom", container, {
@@ -268,6 +284,10 @@
                     try {
                         const data = await apiPost("enhance", payload);
                         resultTextarea.value = data.output || "";
+                        // Stocker le debug_md pour le bouton debug
+                        if (data.debug_md) {
+                            node._lastDebugMd = data.debug_md;
+                        }
                         saveApiConfig();
                     } catch (err) {
                         resultTextarea.value = "Erreur: " + err.message;
