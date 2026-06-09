@@ -103,3 +103,18 @@ FR.IA-keywords/
 - Texte custom ComfyUI = raw (verbatim, pas de recherche sémantique)
 - Update mechanism : git fetch + reset --hard + os.execv restart
 - Frontend index.html et beta.html doivent rester synchronisés
+
+## Ollama Cloud - instabilité observée
+- Ollama Cloud renvoie parfois des outputs vides OU manifestement tronqués (ex: 25 chars `masterpiece, best quality`)
+- Bug principalement visible sur le **premier call après période d'inactivité** (cold start)
+- **Important** : les `logging.warning(...)` introduisent un délai qui peut masquer des race conditions
+- Si bug réapparaît après retrait des logs : ajouter un `time.sleep(0.1)` au même endroit
+- Fix actuel : retry si `len(output) < 50`, jusqu'à 3 tentatives
+- Seuil 50 chars rejette les outputs manifestement cassés (vides OU `masterpiece, best quality`)
+- **Aucun filtre is_global dans le flow enhance** - c'est Ollama qui est instable, pas notre code
+
+## Debug logging infrastructure
+- Pattern `logging.warning(f"[enhance] ...")` pour tracer les requêtes/réponses
+- 3 logs en place : REQUEST (params reçus), preset utilisé, LLM response (output_len + preview)
+- Visible dans `server.log` (configuré par `run.sh`)
+- **ATTENTION** : les logs peuvent masquer des bugs par leur effet de timing
