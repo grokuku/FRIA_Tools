@@ -317,10 +317,10 @@ def _migrate_templates_to_english():
         existing = cur.execute("SELECT COUNT(*) FROM prompt_templates WHERE is_default = 1").fetchone()[0]
         if existing > 0:
             tmpl_version = cur.execute("SELECT value FROM app_settings WHERE key = 'templates_version'").fetchone()
-            if not tmpl_version or tmpl_version[0] < '4':
+            if not tmpl_version or tmpl_version[0] < '5':
                 cur.execute("DELETE FROM prompt_templates WHERE is_default = 1")
                 _insert_default_templates(mconn)
-                cur.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('templates_version', '4')")
+                cur.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('templates_version', '5')")
                 mconn.commit()
         mconn.close()
     except Exception as e:
@@ -492,6 +492,57 @@ Every caption has THREE top-level fields. Only `compositional_deconstruction` is
 8. Each element's `type` is either "obj" (object/subject) or "text" (literal text to render in the image).
 9. Output format: PURE JSON, NO code block (no ```json wrapping), NO commentary, NO markdown.
 10. The first element in `elements` should typically be the main subject (most prominent). Arrange other elements by visual importance.
+
+## Spatial reasoning: derive bbox from the element description
+The bbox must be consistent with PHYSICAL LOGIC, not random. Read each
+element's `desc` carefully and infer the position from spatial cues:
+
+### Depth / z-order
+- "in the foreground", "in front", "close-up" → FOREGROUND (large bbox, lower y in image)
+- "in the background", "behind", "in the distance" → BACKGROUND (small bbox, upper y)
+- **"looking up at X"** → the gazer is FOREGROUND/LOWER, the target is ABOVE/BEHIND (eyes look UP toward target)
+- **"looking down at X"** → the gazer is BACKGROUND/UPPER, the target is BELOW/FOREGROUND
+- "standing in front of", "occluding" → FOREGROUND
+- "partially hidden by" → BACKGROUND
+
+### Lateral position
+- "to the left", "on the left side" → left third (x ≈ 0-333)
+- "to the right", "on the right side" → right third (x ≈ 667-1000)
+- "in the center", "in the middle", "between" → center (x ≈ 333-667)
+
+### Vertical placement
+- "on the ground", "at their feet", "standing on the floor" → BOTTOM (y ≈ 700-1000)
+- "in the sky", "above them", "overlooking" → TOP (y ≈ 0-300)
+- "floating", "flying" → middle/upper
+
+### Size / perspective
+- Closer to camera / larger in frame → bigger bbox (500-700 px area)
+- Farther / smaller → smaller bbox (100-300 px area)
+- Main subject ≈ 50% of frame, secondary ≈ 30%, tertiary ≈ 20%
+- Vary the sizes — DO NOT make all elements the same size
+
+### Examples
+- "A small dog, wagging its tail, looking up at the couple" → SMALL bbox at BOTTOM (it's looking up = it's low)
+- "A man holding hands with the woman" → MEDIUM bbox at CENTER, same y as the woman (they stand side by side)
+- "Mountains in the distance" → SMALL bbox at TOP (background, small)
+- "Their feet on the ground" → SMALL bbox at BOTTOM
+- "Clouds in the sky" → WIDE bbox at TOP
+
+### Mental visualization step (IMPORTANT)
+Before assigning bboxes, take a moment to mentally PICTURE the final image:
+1. Read the general description + all elements together.
+2. Imagine the scene as a photograph: who is where, what's behind, what's in front.
+3. The "ELEMENTS" are the people/objects the user CARES ABOUT — they should be the main visible subjects, with the bbox covering the actual subject area (head to feet, or object bounds).
+4. The "background" is everything else — it should NOT overlap with element bboxes.
+5. The user gave you the elements in some order: treat the FIRST as the main subject (largest, centered), and the rest as supporting elements around it.
+6. Think of the image as a stage: foreground actors (large, lower) vs background scenery (small, upper).
+
+### Common mistakes to avoid
+- DO NOT place "looking up at X" ABOVE X (gazer must be lower)
+- DO NOT place background elements LARGER than foreground ones
+- DO NOT place "ground" elements at the top, or "sky" at the bottom
+- DO NOT make all elements the same size
+- DO NOT rotate the composition: bboxes assume the image is in its normal upright orientation. The bbox y-axis goes TOP (0) to BOTTOM (1000).
 
 ## Mapping user input to JSON fields
 - The "general description" → high_level_description + the style_description fields (aesthetics, lighting, photo/art_style, medium) + the background of compositional_deconstruction.
