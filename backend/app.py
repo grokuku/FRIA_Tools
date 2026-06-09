@@ -1823,9 +1823,24 @@ def single_preset(preset_id):
     else:
         enc = row['api_key_encrypted']  # garder l'ancienne
 
+    # Si on tente de passer en global (ou rester global), il faut etre admin
+    new_is_global = int(data.get('is_global', row['is_global']))
+    if new_is_global and not row['is_global']:
+        # Transition perso -> global : admin only
+        admin_guard = _admin_required()
+        if admin_guard:
+            conn.close()
+            return admin_guard
+    if new_is_global != int(row['is_global']):
+        # Changement d'etat is_global : admin only dans tous les cas
+        admin_guard = _admin_required()
+        if admin_guard:
+            conn.close()
+            return admin_guard
+
     cur.execute("""
         UPDATE ai_presets
-        SET name = ?, base_url = ?, api_key_encrypted = ?, model = ?, is_client_side = ?, updated_at = CURRENT_TIMESTAMP
+        SET name = ?, base_url = ?, api_key_encrypted = ?, model = ?, is_client_side = ?, is_global = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
     """, (
         data.get('name', row['name']),
@@ -1833,6 +1848,7 @@ def single_preset(preset_id):
         enc,
         data.get('model', row['model']),
         int(data.get('is_client_side', _row_get(row, 'is_client_side', 0))),
+        new_is_global,
         preset_id
     ))
     conn.commit()
@@ -1858,9 +1874,9 @@ def duplicate_preset(preset_id):
 
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO ai_presets (user_id, name, engine, base_url, api_key_encrypted, model, is_global)
-        VALUES (?, ? || ' (copie)', ?, ?, ?, ?, 0)
-    """, (user_id, row['name'], row['engine'], row['base_url'], row['api_key_encrypted'], row['model']))
+        INSERT INTO ai_presets (user_id, name, engine, base_url, api_key_encrypted, model, is_global, is_client_side)
+        VALUES (?, ? || ' (copie)', ?, ?, ?, ?, 0, ?)
+    """, (user_id, row['name'], row['engine'], row['base_url'], row['api_key_encrypted'], row['model'], _row_get(row, 'is_client_side', 0)))
     conn.commit()
     pid = cur.lastrowid
     conn.close()
