@@ -317,10 +317,10 @@ def _migrate_templates_to_english():
         existing = cur.execute("SELECT COUNT(*) FROM prompt_templates WHERE is_default = 1").fetchone()[0]
         if existing > 0:
             tmpl_version = cur.execute("SELECT value FROM app_settings WHERE key = 'templates_version'").fetchone()
-            if not tmpl_version or tmpl_version[0] < '7':
+            if not tmpl_version or tmpl_version[0] < '8':
                 cur.execute("DELETE FROM prompt_templates WHERE is_default = 1")
                 _insert_default_templates(mconn)
-                cur.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('templates_version', '7')")
+                cur.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('templates_version', '8')")
                 mconn.commit()
         mconn.close()
     except Exception as e:
@@ -447,17 +447,16 @@ Use EITHER "photo" OR "art_style", never both.
 In style_description: photo path = aesthetics, lighting, photo, medium, color_palette. Non-photo = aesthetics, lighting, medium, art_style, color_palette.
 Required: aesthetics, lighting, medium. color_palette is optional.
 
-doc_bboxes_rule (IMPORTANT): bbox format: [y_min, x_min, y_max, x_max] in 0-1000 coords, origin top-left. EVERY element MUST have a bbox. Elements MUST NOT overlap (unless physically together like holding hands). Main subject = largest bbox, centered.
+doc_bboxes_rule (IMPORTANT): bbox format: [y_min, x_min, y_max, x_max], coords 0-1000 = 0-100% of each dimension, origin top-left. A bbox SURROUNDS the subject tightly. For a standing person: y_span > x_span (tall narrow). For a lying/diving person: x_span > y_span (wide short). NEVER make a standing person's bbox wider than it is tall. Element LAYOUT depends on image aspect ratio: landscape = spread horizontally, portrait = stack vertically. EVERY element MUST have a bbox. Elements MUST NOT overlap (unless physically together like holding hands). Main subject = largest bbox, centered.
 
 color_palette: array of UPPERCASE #RRGGBB strings. Up to 16 in style, up to 5 per element.
 Element type: "obj" for subjects/objects, "text" for literal text rendered in image.
 background is REQUIRED in compositional_deconstruction.
-Aspect ratio from IMAGE DIMENSIONS: 1:1 square bboxes; 16:9 wider bboxes; 9:16 taller bboxes.
 
 ## Mapping user input to JSON
 - General description -> high_level_description + style_description + background
 - Each numbered element -> one entry in elements (type "obj", bbox from scene)
-- IMAGE DIMENSIONS -> aspect ratio hint for bbox proportions
+- IMAGE DIMENSIONS -> determines element layout: landscape = spread horizontally, portrait = stack vertically
 - STYLE block -> preserved verbatim in style_description
 
 ## Tips
@@ -2511,15 +2510,16 @@ USER SCENE: {original_input}
 ELEMENTS (each one is a separate subject that needs a bbox):
 {elements_text}
 
-IMAGE: {width}x{height} ({aspect})
+IMAGE: {width}x{height} (aspect ratio: {aspect})
 
 Your ONLY task: imagine a photograph of this scene, then assign each element a bounding box that matches WHERE that person/object would actually be in the photo.
 
-bbox format: [y_min, x_min, y_max, x_max], coords 0-1000, origin top-left.
+bbox format: [y_min, x_min, y_max, x_max], coords 0-1000 = 0-100% of each dimension, origin top-left.
 
 Rules:
 - Each element gets its own NON-OVERLAPPING zone
-- The bbox shape must match the subject: a standing person is tall and narrow, a diving person is wide and short, a bird in the sky is small and high up
+- A bbox SURROUNDS the subject: standing person = tall narrow (y_span > x_span), diving person = wide short (x_span > y_span). NEVER make a standing person's bbox wider than tall.
+- LAYOUT depends on aspect ratio: landscape ({aspect}) = spread elements side by side horizontally. Portrait = stack elements vertically with less horizontal room.
 - The first element is the main subject (largest, centered)
 - Never remove or add elements
 
