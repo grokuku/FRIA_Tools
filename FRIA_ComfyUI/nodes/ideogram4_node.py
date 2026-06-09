@@ -188,7 +188,7 @@ def _render_preview(prompt_text, width, height):
 
         color = colors[idx % len(colors)]
         # Fill transparent (alpha=40) pour voir les bboxes en arriere-plan
-        fill_rgba = (color[0], color[1], color[2], 40)
+        fill_rgba = (color[0], color[1], color[2], 80)
         draw_o.rectangle([x, y, x + bw, y + bh], outline=color + (255,), width=3, fill=fill_rgba)
 
         idx_label = f"{idx + 1:02d}"
@@ -201,23 +201,23 @@ def _render_preview(prompt_text, width, height):
             pw, ph = 28, 22
         pw = max(pw, 28)
         draw_o.rectangle([x, y, x + pw, y + ph], fill=color + (255,))
-        draw.text((x + pw / 2, y + ph / 2), idx_label, fill=(0, 0, 0), font=font_pill, anchor="mm")
+        draw_o.text((x + pw / 2, y + ph / 2), idx_label, fill=(0, 0, 0), font=font_pill, anchor="mm")
 
         text_y = y + ph + 6
         if el.get("type") == "text" and el.get("text"):
             txt = f'"{el["text"]}"'
-            draw.text((x + 6, text_y), txt, fill=color, font=font_pill)
+            draw_o.text((x + 6, text_y), txt, fill=color, font=font_pill)
             if el.get("desc"):
-                draw.text((x + 6, text_y + 22), el["desc"], fill=(255, 255, 255), font=font_desc)
+                draw_o.text((x + 6, text_y + 22), el["desc"], fill=(255, 255, 255), font=font_desc)
         elif el.get("desc"):
-            _wrap_text(draw, el["desc"], x + 6, text_y, bw - 12, font_desc, 18, 5)
+            _wrap_text(draw_o, el["desc"], x + 6, text_y, bw - 12, font_desc, 18, 5)
 
     if background:
         bg_h = max(40, height // 20)
         # Bandeau BG semi-transparent pour rester lisible
         bg_overlay = Image.new("RGBA", (width, bg_h), (0, 0, 0, 200))
         overlay.paste(bg_overlay, (0, height - bg_h))
-        _wrap_text(draw, "BG: " + background, 6, height - bg_h + 4, width - 12, font_bg, 18, 3)
+        _wrap_text(draw_o, "BG: " + background, 6, height - bg_h + 4, width - 12, font_bg, 18, 3)
 
     # Composite overlay transparent sur l'image de fond
     img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
