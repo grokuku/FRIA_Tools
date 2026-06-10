@@ -25,8 +25,10 @@ class FRIAEnhanceNode:
             "optional": {
                 # JSON sérialisé des éléments (connecté à la sortie elements_json du Elements Picker)
                 "elements": ("STRING", {"forceInput": True, "multiline": True, "default": "[]"}),
-                # JSON sérialisé par le JS : api_url + api_key
-                "_api_config": ("STRING", {"default": "{}", "multiline": True}),
+                # NB : _api_config n'est PAS déclaré ici volontairement.
+                # Il est créé dynamiquement par le JS via node.addWidget() pour éviter
+                # qu'une socket d'entrée visible soit créée côté ComfyUI (voir le
+                # commentaire correspondant dans fria_enhance_widget.js).
             }
         }
 

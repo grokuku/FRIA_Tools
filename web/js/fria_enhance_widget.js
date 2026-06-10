@@ -33,9 +33,21 @@
                 };
                 // base_prompt et special_instructions : widgets natifs ComfyUI (volontairement visibles)
                 // elements : forceInput:True dans INPUT_TYPES (déjà input socket, pas de widget à cacher)
-                ["prompt_type", "preset_id", "style_id", "_api_config"].forEach(
+                ["prompt_type", "preset_id", "style_id"].forEach(
                     n => hideWidget(node, n)
                 );
+
+                // ---- _api_config : créé dynamiquement, pas dans INPUT_TYPES ----
+                // Si on déclarait _api_config dans INPUT_TYPES, ComfyUI créerait une
+                // socket d'entrée visible sur le node (même en optional STRING, la
+                // socket est générée). Comme on veut QUE le widget (pour la sérialisation
+                // du workflow → Python) sans socket visible, on crée le widget à la main
+                // via addWidget() après l'init. Le widget est dans node.widgets, donc
+                // sérialisé et accessible par Python, mais aucune socket n'est créée.
+                if (!node.widgets.find(w => w.name === "_api_config")) {
+                    node.addWidget("STRING", "_api_config", "{}", () => {});
+                }
+                hideWidget(node, "_api_config");
 
                 // ---- Utilitaires ----
                 const getApiUrl = () => "https://kw.holaf.fr/api";
