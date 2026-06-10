@@ -16,17 +16,18 @@ class FRIAEnhanceNode:
         return {
             "required": {
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
-                "base_prompt": ("STRING", {"multiline": True, "default": ""}),
                 "prompt_type": (["sdxl", "sd15", "flux", "anima", "qwen", "liste"], {"default": "sdxl"}),
                 "preset_id": ("INT", {"default": 0, "min": 0}),
                 "style_id": ("INT", {"default": 0, "min": 0}),
-                "special_instructions": ("STRING", {"default": "", "multiline": True}),
             },
             "optional": {
                 # JSON sérialisé des éléments (connecté à la sortie elements_json du Elements Picker)
                 "elements": ("STRING", {"forceInput": True, "multiline": True, "default": "[]"}),
                 # JSON sérialisé par le JS : api_url + api_key
                 "_api_config": ("STRING", {"default": "{}", "multiline": True}),
+                # Widgets remplacés par le DOM — en optional pour éviter les sockets fantômes
+                "base_prompt": ("STRING", {"multiline": True, "default": ""}),
+                "special_instructions": ("STRING", {"default": "", "multiline": True}),
             }
         }
 
