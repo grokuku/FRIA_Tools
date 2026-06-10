@@ -31,6 +31,20 @@
                 };
                 hideWidget(node, "_api_config");
 
+                // ---- Supprimer la socket d'entrée de _api_config ----
+                // _api_config est un cache technique (JSON interne) qui n'a aucune
+                // raison d'être connecté à un autre node. Depuis ComfyUI v1.16,
+                // chaque widget STRING déclaré dans INPUT_TYPES génère une socket
+                // dans node.inputs[] ; on la retire pour qu'aucun câble ne puisse
+                // y être branché. Le widget reste sérialisé et Python le reçoit
+                // normalement via les arguments keyword.
+                {
+                    const slot = node.findInputSlot?.("_api_config");
+                    if (slot !== undefined && slot !== -1) {
+                        node.removeInput(slot);
+                    }
+                }
+
                 // ---- Utilitaires API ----
                 const getApiUrl = () => "https://kw.holaf.fr/api";
                 const getApiKey = () => {

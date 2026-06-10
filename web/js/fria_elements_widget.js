@@ -76,6 +76,20 @@ function hideWidget(node, name) {
                 hideWidget(node, "_elements_json");
                 hideWidget(node, "_api_config");
 
+                // ---- Supprimer les sockets d'entrée des widgets purement techniques ----
+                // _elements_json et _api_config sont des caches internes (JSON sérialisé
+                // par le JS pour passer des données à Python). Depuis ComfyUI v1.16,
+                // chaque widget STRING déclaré dans INPUT_TYPES génère une socket
+                // d'entrée dans node.inputs[]. On la supprime pour qu'aucun câble ne
+                // puisse y être branché — le widget reste sérialisé via widgets_values
+                // et Python le reçoit normalement comme argument keyword.
+                for (const inputName of ["_elements_json", "_api_config"]) {
+                    const slot = node.findInputSlot?.(inputName);
+                    if (slot !== undefined && slot !== -1) {
+                        node.removeInput(slot);
+                    }
+                }
+
                 // Le widget seed est géré nativement par ComfyUI.
 
                 // Stockage local des éléments
