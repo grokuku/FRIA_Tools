@@ -21,7 +21,7 @@
                 const r = onNodeCreated?.apply(this, arguments);
                 const node = this;
 
-                // ---- Cacher les widgets standards (remplacés par le DOM) ----
+                // ---- Cacher les widgets remplacés par le DOM ----
                 const hideWidget = (n, name) => {
                     const w = n.widgets?.find(x => x.name === name);
                     if (w) {
@@ -31,9 +31,9 @@
                         if (w.parentEl) w.parentEl.style.display = "none";
                     }
                 };
-                // elements a forceInput:True — pas besoin de hideWidget
-                ["base_prompt", "prompt_type", "preset_id", "style_id",
-                 "special_instructions", "_api_config"].forEach(
+                // base_prompt et special_instructions : widgets natifs ComfyUI (volontairement visibles)
+                // elements : forceInput:True dans INPUT_TYPES (déjà input socket, pas de widget à cacher)
+                ["prompt_type", "preset_id", "style_id", "_api_config"].forEach(
                     n => hideWidget(node, n)
                 );
 
@@ -62,17 +62,15 @@
                     return resp.json();
                 };
 
-                // ---- Sync widgets cachés ----
+                // ---- Sync widgets cachés (uniquement ceux remplacés par le DOM) ----
                 function syncEnhanceWidget() {
                     const set = (name, val) => {
                         const w = node.widgets?.find(x => x.name === name);
                         if (w) w.value = val;
                     };
-                    set("base_prompt", basePromptTextarea.value);
                     set("prompt_type", typeSelect.value);
                     set("preset_id", parseInt(presetSelect.value) || 0);
                     set("style_id", parseInt(styleSelect.value) || 0);
-                    set("special_instructions", specialTextarea.value);
                     const a = node.widgets?.find(x => x.name === "_api_config");
                     if (a) a.value = JSON.stringify({ api_url: getApiUrl(), api_key: getApiKey() });
                 }
@@ -125,20 +123,9 @@
                     return l;
                 }
 
-                // ---- 1. Base prompt (textarea fixe) ----
-                const basePromptTextarea = document.createElement("textarea");
-                Object.assign(basePromptTextarea.style, {
-                    width: "100%", height: "50px", minHeight: "50px", maxHeight: "50px",
-                    borderRadius: "4px", border: "1px solid #555",
-                    padding: "4px", background: "#1a1a1e", color: "#fff",
-                    fontSize: "11px", resize: "none", boxSizing: "border-box",
-                });
-                basePromptTextarea.placeholder = "Prompt de base...";
-                basePromptTextarea.onchange = basePromptTextarea.oninput = syncEnhanceWidget;
-                container.appendChild(mkLabel("Prompt de base"));
-                container.appendChild(basePromptTextarea);
-
-                // ---- 2. Grille 2x2 ----
+                // ---- 1. Grille 2x2 (Preset IA + Type, Style sur la 4ème case) ----
+                // NB : base_prompt et special_instructions sont des widgets natifs ComfyUI
+                // affichés au-dessus/au-dessous de ce DOM widget.
                 const grid = document.createElement("div");
                 Object.assign(grid.style, {
                     display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px",
@@ -215,19 +202,9 @@
 
                 container.appendChild(grid);
 
-                // ---- 3. Instructions spéciales (3 lignes) ----
-                const specialTextarea = document.createElement("textarea");
-                Object.assign(specialTextarea.style, {
-                    width: "100%", height: "50px", minHeight: "50px", maxHeight: "50px",
-                    borderRadius: "4px", border: "1px solid #555",
-                    padding: "4px", background: "#1a1a1e", color: "#fff",
-                    fontSize: "11px", resize: "none", boxSizing: "border-box",
-                });
-                specialTextarea.placeholder = "Instructions spéciales (optionnel)...";
-                specialTextarea.onchange = specialTextarea.oninput = syncEnhanceWidget;
-                container.appendChild(specialTextarea);
-
-                // ---- 4. Test enhance button ----
+                // ---- 3. Test enhance button ----
+                // NB : special_instructions est un widget natif ComfyUI (une seule ligne)
+                // affiché juste avant ce DOM widget.
                 const enhanceBtn = document.createElement("button");
                 enhanceBtn.textContent = "🔄  Test enhance";
                 Object.assign(enhanceBtn.style, {
@@ -241,8 +218,10 @@
                 enhanceBtn.onclick = async () => {
                     syncEnhanceWidget();
 
-                    const basePrompt = basePromptTextarea.value;
-                    const elemsW = node.widgets?.find(w => w.name === "elements");
+                    const get = (name) => node.widgets?.find(w => w.name === name);
+                    const basePrompt = get("base_prompt")?.value || "";
+                    const specialInstructions = get("special_instructions")?.value || "";
+                    const elemsW = get("elements");
                     let elems = [];
                     let elemsRaw = "";
                     try {
@@ -274,14 +253,13 @@
                     const payload = {
                         text: combinedText,
                         seed: (() => {
-                            const sw = node.widgets?.find(w => w.name === "seed");
-                            const s = sw ? parseInt(sw.value) || 0 : 0;
+                            const s = parseInt(get("seed")?.value) || 0;
                             return s > 0 ? s : null;
                         })(),
                         prompt_type: typeSelect.value,
                         preset_id: parseInt(presetSelect.value) || null,
                         style_id: parseInt(styleSelect.value) || null,
-                        special_instructions: specialTextarea.value,
+                        special_instructions: specialInstructions,
                     };
                     try {
                         // Endpoint retourne du ndjson (streaming keepalive)
@@ -350,8 +328,6 @@
                 function restoreFromWidgets(n) {
                     const read = (name) => n.widgets?.find(w => w.name === name);
                     try {
-                        const bp = read("base_prompt");
-                        if (bp && bp.value) basePromptTextarea.value = bp.value;
                         const t = read("prompt_type");
                         if (t && t.value) typeSelect.value = t.value;
                         const p = read("preset_id");
@@ -362,8 +338,6 @@
                         if (s && s.value > 0 && [...styleSelect.options].some(o => o.value === String(s.value))) {
                             styleSelect.value = String(s.value);
                         }
-                        const sp = read("special_instructions");
-                        if (sp && sp.value) specialTextarea.value = sp.value;
                         return true;
                     } catch { return false; }
                 }
