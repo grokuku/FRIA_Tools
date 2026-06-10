@@ -22,6 +22,12 @@
                 const node = this;
 
                 // ---- Cacher les widgets remplacés par le DOM ----
+                // base_prompt et special_instructions : widgets natifs ComfyUI volontairement visibles
+                // elements : forceInput:True dans INPUT_TYPES (déjà input socket, pas de widget à cacher)
+                // prompt_type, preset_id, style_id, _api_config : déclarés dans INPUT_TYPES
+                // (pour garantir leur sérialisation dans widgets_values), mais leur
+                // widget est caché (le DOM les pilote) et leur socket d'entrée est
+                // supprimée (voir removeInputSockets ci-dessous).
                 const hideWidget = (n, name) => {
                     const w = n.widgets?.find(x => x.name === name);
                     if (w) {
@@ -31,52 +37,24 @@
                         if (w.parentEl) w.parentEl.style.display = "none";
                     }
                 };
-                // base_prompt et special_instructions : widgets natifs ComfyUI (volontairement visibles)
-                // elements : forceInput:True dans INPUT_TYPES (déjà input socket, pas de widget à cacher)
-
-                // ---- Widgets créés dynamiquement (pas dans INPUT_TYPES) ----
-                // Pour les widgets qui pilotent le DOM (prompt_type, preset_id, style_id)
-                // et pour _api_config (cache technique), on les crée via addWidget()
-                // plutôt que via INPUT_TYPES. Cela évite que ComfyUI génère une socket
-                // d'entrée visible sur le node (les widgets déclarés dans INPUT_TYPES
-                // ont TOUS une socket coexistant avec le widget, depuis ComfyUI v1.16).
-                // Le widget reste dans node.widgets, donc sérialisé dans le workflow et
-                // accessible par Python comme argument keyword de enhance().
-
-                if (!node.widgets.find(w => w.name === "prompt_type")) {
-                    // COMBO : dropdown avec valeurs fixes (sdxl, sd15, flux, anima, qwen, liste)
-                    const w = node.addWidget("COMBO", "prompt_type", "sdxl", () => {}, {
-                        values: ["sdxl", "sd15", "flux", "anima", "qwen", "liste"],
-                    });
-                    if (w) w.serialize = true; // garantir la sérialisation
-                }
-
-                if (!node.widgets.find(w => w.name === "preset_id")) {
-                    node.addWidget("INT", "preset_id", 0, () => {}, { min: 0 });
-                }
-
-                if (!node.widgets.find(w => w.name === "style_id")) {
-                    node.addWidget("INT", "style_id", 0, () => {}, { min: 0 });
-                }
-
-                if (!node.widgets.find(w => w.name === "_api_config")) {
-                    node.addWidget("STRING", "_api_config", "{}", () => {});
-                }
 
                 // Cacher tous les widgets pilotés par le DOM
                 ["prompt_type", "preset_id", "style_id", "_api_config"].forEach(
                     n => hideWidget(node, n)
                 );
 
-                // ---- Supprimer les sockets d'entrée des widgets natifs visibles ----
-                // base_prompt et special_instructions sont des widgets natifs ComfyUI
-                // volontairement affichés, MAIS depuis ComfyUI v1.16 chaque widget a
-                // aussi une socket d'entrée dans node.inputs[]. Comme on ne veut pas
-                // que l'utilisateur puisse brancher un câble dessus (ces champs sont
-                // du texte pur, pas des entrées de flux), on supprime les sockets.
-                // Le widget reste intact dans node.widgets[], donc la valeur est
-                // toujours sérialisée et lue par Python.
-                for (const inputName of ["base_prompt", "special_instructions"]) {
+                // ---- Supprimer les sockets d'entrée non désirées ----
+                // Depuis ComfyUI v1.16, chaque widget STRING/COMBO/INT déclaré dans
+                // INPUT_TYPES génère automatiquement une socket d'entrée dans
+                // node.inputs[]. Comme on ne veut PAS que l'utilisateur puisse brancher
+                // un câble sur ces champs (texte, dropdowns, et cache interne), on
+                // supprime les sockets après création. Le widget reste intact dans
+                // node.widgets[], donc la valeur est toujours sérialisée et lue par Python.
+                for (const inputName of [
+                    "base_prompt", "special_instructions",
+                    "prompt_type", "preset_id", "style_id",
+                    "_api_config",
+                ]) {
                     const slot = node.findInputSlot?.(inputName);
                     if (slot !== undefined && slot !== -1) {
                         node.removeInput(slot);

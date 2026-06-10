@@ -17,16 +17,17 @@ class FRIAEnhanceNode:
             "required": {
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
                 "base_prompt": ("STRING", {"multiline": True, "default": ""}),
+                "prompt_type": (["sdxl", "sd15", "flux", "anima", "qwen", "liste"], {"default": "sdxl"}),
+                "preset_id": ("INT", {"default": 0, "min": 0}),
+                "style_id": ("INT", {"default": 0, "min": 0}),
                 "special_instructions": ("STRING", {"default": ""}),
+                # Cache technique (api_url + api_key), caché visuellement par le DOM widget.
+                # La socket d'entrée est supprimée côté JS via node.removeInput().
+                "_api_config": ("STRING", {"default": "{}", "multiline": True}),
             },
             "optional": {
                 # JSON sérialisé des éléments (connecté à la sortie elements_json du Elements Picker)
                 "elements": ("STRING", {"forceInput": True, "multiline": True, "default": "[]"}),
-                # NB : _api_config, prompt_type, preset_id, style_id ne sont PAS déclarés
-                # ici volontairement. Ils sont créés dynamiquement par le JS via
-                # node.addWidget() pour éviter que des sockets d'entrée visibles soient
-                # créées côté ComfyUI (voir les commentaires correspondants dans
-                # fria_enhance_widget.js).
             }
         }
 
