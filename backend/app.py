@@ -2416,19 +2416,38 @@ def enhance_prepare():
             if 'connect' in msg.lower() or 'refused' in msg.lower():
                 return jsonify({'error': f'Serveur LLM inaccessible : verifie l\'URL ({prepared["llm_config"]["base_url"]})'}), 502
             return jsonify({'error': f'Erreur LLM: {msg}'}), 502
-        result = _finish_enhance(user_id, prepared, llm_response)
-        result['status'] = 'done'
-        return jsonify(result)
+        result = _finish_enhance_pass1(user_id, prepared, llm_response)
+        # Passes de validation en interne (mode cloud)
+        if prepared['validation_passes'] > 0:
+            result['output'] = _run_validation_passes_internal(
+                prepared, result['output'], result['debug_sections']
+            )
+        final = _build_final_result(
+            result, prepared['prompt_type'], prepared['width'], prepared['height']
+        )
+        final['status'] = 'done'
+        return jsonify(final)
 
 
 @app.route('/api/enhance/finish', methods=['POST'])
 def enhance_finish():
     """
-    Etape 2 du flow /api/enhance en mode client-side.
-    Le client envoie {session_id, llm_response} (la reponse OpenAI brute
-    renvoyee par son serveur LLM local). Le backend retrouve la session,
-    fait le post-traitement (validation, conversion, debug) et retourne
-    le resultat final.
+    Etape 2 du flow /api/enhance en mode client-side (multi-passes).
+
+    Reçoit {session_id, llm_response, pass} :
+    - llm_response : la reponse OpenAI brute renvoyee par le serveur LLM du client
+    - pass : numero de passe qu'on vient de finir (1, 2 ou 3). Defaut : 1.
+
+    Pour le mode cloud (preset is_client_side=0) : fait TOUTES les passes en
+    interne et retourne directement le resultat final.
+
+    Pour le mode local (preset is_client_side=1) :
+    - pass=1 : post-traitement passe 1 + sauvegarde state
+      - si validation_passes <= 1 : retourne {status: done, ...}
+      - sinon : retourne {status: awaiting_validation, pass: 2, llm_request, llm_config}
+    - pass=2+ : parse la reponse, met a jour le state
+      - si c'etait la derniere passe : retourne {status: done, ...}
+      - sinon : retourne {status: awaiting_validation, pass: N+1, llm_request, llm_config}
     """
     guard = _login_required()
     if guard: return guard
@@ -2437,11 +2456,14 @@ def enhance_finish():
 
     session_id = data.get('session_id', '').strip()
     llm_response = data.get('llm_response')
+    pass_idx = int(data.get('pass', 1))  # 1, 2 ou 3
 
     if not session_id:
         return jsonify({'error': 'session_id requis'}), 400
     if not llm_response or not isinstance(llm_response, dict):
         return jsonify({'error': 'llm_response doit etre un objet JSON (reponse OpenAI brute)'}), 400
+    if pass_idx < 1 or pass_idx > 3:
+        return jsonify({'error': 'pass doit etre 1, 2 ou 3'}), 400
 
     try:
         prepared = _load_enhance_session(session_id, user_id)
@@ -2449,36 +2471,125 @@ def enhance_finish():
         return jsonify({'error': f'Session invalide : {e}'}), 404
 
     import logging
-    logging.warning(f"[enhance/finish] session={session_id} user={user_id} preset='{prepared.get('preset_name')}'")
+    logging.warning(f"[enhance/finish] session={session_id} user={user_id} preset='{prepared.get('preset_name')}' pass={pass_idx}")
 
-    try:
-        result = _finish_enhance(user_id, prepared, llm_response)
-    except Exception as e:
-        return jsonify({'error': f'Erreur post-traitement : {e}'}), 500
-
-    # Passes de validation (Ideogram 4) en mode local : le backend les fait
-    # en interne en appelant le LLM du preset (qui peut etre Ollama local du user).
-    # NOTE : a terme, on deleguera aussi ces passes au client. Pour l'instant,
-    # c'est le backend qui les orchestre apres que le client ait fait la passe 1.
-    if prepared['validation_passes'] > 0:
-        result['output'] = _run_validation_passes_internal(
-            prepared, result['output'], prepared['debug_sections']
-        )
-        # Reconstruire le debug_md avec les sections de validation
-        if prepared['prompt_type'] == 'ideogram4' and prepared['debug_sections']:
-            result['debug_md'] = _build_debug_markdown(
-                prepared['debug_sections'],
-                result.get('_conversion_debug'),
-                prepared['width'], prepared['height']
+    # ── Mode cloud : on fait tout en interne, comme /api/enhance ─────────
+    if not prepared.get('is_client_side'):
+        try:
+            pass1_result = _finish_enhance_pass1(user_id, prepared, llm_response)
+        except Exception as e:
+            return jsonify({'error': f'Erreur post-traitement : {e}'}), 500
+        # Passes de validation en interne
+        if prepared['validation_passes'] > 0:
+            pass1_result['output'] = _run_validation_passes_internal(
+                prepared, pass1_result['output'], pass1_result['debug_sections']
             )
-    result.pop('_conversion_debug', None)
+        result = _build_final_result(
+            pass1_result, prepared['prompt_type'], prepared['width'], prepared['height']
+        )
+        _delete_enhance_session(session_id)
+        result['status'] = 'done'
+        result['session_id'] = session_id
+        return jsonify(result)
 
-    # Nettoyer la session (succès)
-    _delete_enhance_session(session_id)
+    # ── Mode client-side (local) : multi-passes, state machine en BDD ──────
+    if pass_idx == 1:
+        # Premier appel : on vient de finir la passe 1
+        try:
+            pass1_result = _finish_enhance_pass1(user_id, prepared, llm_response)
+        except Exception as e:
+            return jsonify({'error': f'Erreur post-traitement passe 1 : {e}'}), 500
+        # Sauvegarder le state pour les passes suivantes
+        _update_enhance_session(session_id, user_id, {
+            'state': 'awaiting_validation',
+            'current_output': pass1_result['output'],
+            'pass_idx_done': 1,
+            'debug_sections': pass1_result['debug_sections'],
+            'conversion_debug': pass1_result['conversion_debug'],
+        })
+        # Si on n'a pas de passe 2, on a fini
+        if prepared['validation_passes'] <= 1:
+            _delete_enhance_session(session_id)
+            result = _build_final_result(
+                pass1_result, prepared['prompt_type'], prepared['width'], prepared['height']
+            )
+            result['status'] = 'done'
+            result['session_id'] = session_id
+            return jsonify(result)
+        # Sinon, préparer la passe 2 pour le client
+        return _prepare_next_validation_pass(session_id, user_id, prepared, next_pass_idx=2)
+    else:
+        # Appel N+1 (N >= 2) : on a fini la passe N, on attend la reponse
+        current_output = prepared.get('current_output', '')
+        debug_sections = list(prepared.get('debug_sections', []))
+        prev_pass_idx = pass_idx - 1  # la passe qu'on vient de finir
+        llm_request, val_debug = _prepare_validation_pass(
+            current_output, prepared['merged_text'], prepared['style_text'],
+            prepared['width'], prepared['height'],
+            prepared['llm_config']['model'], prev_pass_idx
+        )
+        # Parser la reponse
+        new_output, val_debug = _finish_validation_pass(llm_response, val_debug)
+        if new_output is not None:
+            current_output = new_output
+        debug_sections.append(val_debug)
+        # Si c'etait la derniere passe, retourner le resultat final
+        if pass_idx >= prepared['validation_passes']:
+            _delete_enhance_session(session_id)
+            pass1_result = {
+                'output': current_output,
+                'negative_prompt': prepared['negative_prompt'],
+                'model_used': prepared['model'],
+                'debug_sections': debug_sections,
+                'conversion_debug': prepared.get('conversion_debug'),
+            }
+            result = _build_final_result(
+                pass1_result, prepared['prompt_type'], prepared['width'], prepared['height']
+            )
+            result['status'] = 'done'
+            result['session_id'] = session_id
+            return jsonify(result)
+        # Sinon, préparer la passe suivante
+        _update_enhance_session(session_id, user_id, {
+            'state': 'awaiting_validation',
+            'current_output': current_output,
+            'pass_idx_done': pass_idx,
+            'debug_sections': debug_sections,
+        })
+        return _prepare_next_validation_pass(
+            session_id, user_id, prepared,
+            next_pass_idx=pass_idx + 1,
+            current_output=current_output
+        )
 
-    result['status'] = 'done'
-    result['session_id'] = session_id  # pour traçabilité
-    return jsonify(result)
+
+def _prepare_next_validation_pass(session_id, user_id, prepared, next_pass_idx, current_output=None):
+    """
+    Helper : prepare le payload LLM de la passe de validation suivante.
+    Sauvegarde le state et retourne la reponse awaiting_validation.
+    """
+    if current_output is None:
+        current_output = prepared.get('current_output', '')
+    llm_request, _ = _prepare_validation_pass(
+        current_output, prepared['merged_text'], prepared['style_text'],
+        prepared['width'], prepared['height'],
+        prepared['llm_config']['model'], next_pass_idx - 1
+    )
+    # Note : on NE sauve pas le llm_request en BDD (regenerable a partir de current_output)
+    return jsonify({
+        'status': 'awaiting_validation',
+        'session_id': session_id,
+        'pass': next_pass_idx,
+        'llm_request': llm_request,
+        'llm_config': prepared['llm_config'],
+        'debug_meta': {
+            'preset_name': prepared['preset_name'],
+            'is_client_side': True,
+            'validation_pass': next_pass_idx,
+            'validation_passes_total': prepared['validation_passes'],
+            'model': prepared['model'],
+        },
+    })
 
 
 def _do_enhance(user_id, data):
@@ -2497,22 +2608,17 @@ def _do_enhance(user_id, data):
         if 'connect' in msg.lower() or 'refused' in msg.lower():
             return jsonify({'error': f'Serveur LLM inaccessible : verifie l\'URL ({prepared["llm_config"]["base_url"]})'}), 502
         return jsonify({'error': f'Erreur LLM: {msg}'}), 502
-    result = _finish_enhance(user_id, prepared, llm_response)
-    # Passes de validation (Ideogram 4) en mode cloud : tout en interne
+    # Post-traitement passe 1 (toujours commun cloud/local)
+    pass1_result = _finish_enhance_pass1(user_id, prepared, llm_response)
+    # Passes de validation en mode cloud : le backend les fait toutes en interne
     if prepared['validation_passes'] > 0:
-        result['output'] = _run_validation_passes_internal(
-            prepared, result['output'], prepared['debug_sections']
+        pass1_result['output'] = _run_validation_passes_internal(
+            prepared, pass1_result['output'], pass1_result['debug_sections']
         )
-        # Reconstruire le debug_md avec les nouvelles sections de validation
-        if prepared['prompt_type'] == 'ideogram4' and prepared['debug_sections']:
-            result['debug_md'] = _build_debug_markdown(
-                prepared['debug_sections'],
-                result.get('_conversion_debug'),
-                prepared['width'], prepared['height']
-            )
-    # Retirer la cle technique du return
-    result.pop('_conversion_debug', None)
-    return result
+    # Assembler le resultat final
+    return jsonify(_build_final_result(
+        pass1_result, prepared['prompt_type'], prepared['width'], prepared['height']
+    ))
 
 
 # ── Sessions /api/enhance en mode client-side (LLM local) ──────────────
@@ -2583,6 +2689,41 @@ def _delete_enhance_session(session_id):
     try:
         conn.execute("DELETE FROM enhance_sessions WHERE id = ?", (session_id,))
         conn.commit()
+    finally:
+        conn.close()
+
+
+def _update_enhance_session(session_id, user_id, updates):
+    """
+    Met a jour le payload_json d'une session en fusionnant 'updates' dans le dict existant.
+    Utilise pour sauvegarder le state au fur et a mesure des passes de validation.
+    Leve ValueError si la session est introuvable ou expiree.
+    """
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT payload_json, expires_at FROM enhance_sessions WHERE id = ? AND user_id = ?",
+            (session_id, user_id)
+        ).fetchone()
+        if not row:
+            raise ValueError('Session inconnue ou expiree')
+        try:
+            expires = datetime.strptime(row['expires_at'], '%Y-%m-%d %H:%M:%S')
+            if datetime.utcnow() > expires:
+                conn.execute("DELETE FROM enhance_sessions WHERE id = ?", (session_id,))
+                conn.commit()
+                raise ValueError('Session expiree')
+        except ValueError:
+            raise
+        payload = json.loads(row['payload_json'])
+        payload.update(updates)  # fusion
+        # Update DB
+        conn.execute(
+            "UPDATE enhance_sessions SET payload_json = ?, state = ? WHERE id = ?",
+            (json.dumps(payload, ensure_ascii=False), updates.get('state', 'in_progress'), session_id)
+        )
+        conn.commit()
+        return payload
     finally:
         conn.close()
 
@@ -2957,14 +3098,29 @@ def _call_llm_internal(llm_request, llm_config):
     return result
 
 
-def _finish_enhance(user_id, prepared, llm_response):
+def _finish_enhance_pass1(user_id, prepared, llm_response):
     """
-    Post-traitement apres l'appel LLM : nettoyage output, sauvegarde BDD,
-    passes de validation, conversion bbox, debug_md.
-    Retourne un dict {output, negative_prompt, model_used, debug_md}.
+    Post-traitement apres l'appel LLM passe 1.
+    - Nettoyage output (code fences, [PRIORITE ...])
+    - Sauvegarde BDD (generated_prompts)
+    - Conversion bbox pixels -> 0-1000 (Ideogram 4)
+    - Construction du debug_md initial (passe 1 uniquement)
+
+    Les passes de validation sont orchestrées par l'appelant :
+    - _do_enhance (cloud) appelle _run_validation_passes_internal apres
+    - /api/enhance/finish (client-side) appelle _finish_validation_step en boucle
+
+    Retourne un dict contenant les donnees brutes :
+    {
+        'output': str,                       # sortie nettoyee + bbox converties
+        'negative_prompt': str,
+        'model_used': str,
+        'debug_sections': list,              # contient la passe 1
+        'conversion_debug': dict|None,       # pour reconstruire debug_md final
+    }
     """
     output = llm_response['choices'][0]['message']['content'].strip()
-    debug_sections = prepared['debug_sections']
+    debug_sections = list(prepared['debug_sections'])  # copie locale pour eviter de polluer prepared
 
     # Debug : sortie brute passe 1
     if debug_sections:
@@ -2991,7 +3147,6 @@ def _finish_enhance(user_id, prepared, llm_response):
     merged_text = prepared['merged_text']
     width = prepared['width']
     height = prepared['height']
-    style_text = prepared['style_text']
     model = prepared['model']
 
     # Sauvegarde du prompt genere
@@ -3007,15 +3162,6 @@ def _finish_enhance(user_id, prepared, llm_response):
     except Exception:
         pass  # non-bloquant
 
-    # NOTE : les passes de validation (Ideogram 4) sont orchestrées par
-    # l'appelant de _finish_enhance :
-    #   - _do_enhance (cloud) appelle _run_validation_passes_internal apres
-    #   - /api/enhance/finish (client-side) appelle _run_validation_passes_client
-    # Cela permet de décentraliser les passes de validation au client en mode local.
-    # Sauvegarde du resultat partiel avant les passes de validation.
-    # (Voir _run_validation_passes_internal plus bas)
-    pass
-
     # Convertir les bboxes de pixels vers 0-1000 normalise (Ideogram 4)
     conversion_debug = None
     if prompt_type == 'ideogram4' and width and height:
@@ -3023,19 +3169,32 @@ def _finish_enhance(user_id, prepared, llm_response):
         output = convert_bboxes_to_normalized(output, width, height)
         conversion_debug = {'before': before_conversion, 'after': output[:500], 'width': width, 'height': height}
 
-    # Assembler le markdown de debug (uniquement pour ideogram4)
-    debug_md = ''
-    if prompt_type == 'ideogram4' and debug_sections:
-        debug_md = _build_debug_markdown(debug_sections, conversion_debug, width, height)
-
     return {
         'output': output,
         'negative_prompt': prepared['negative_prompt'],
         'model_used': model,
+        'debug_sections': debug_sections,
+        'conversion_debug': conversion_debug,
+    }
+
+
+def _build_final_result(pass1_result, prompt_type, width, height):
+    """
+    Assemble le dict final a partir des resultats de _finish_enhance_pass1
+    et des sections de debug (qui peuvent inclure les passes de validation).
+    """
+    debug_sections = pass1_result['debug_sections']
+
+    # Reconstruire le debug_md avec toutes les sections
+    debug_md = ''
+    if prompt_type == 'ideogram4' and debug_sections:
+        debug_md = _build_debug_markdown(debug_sections, pass1_result.get('conversion_debug'), width, height)
+
+    return {
+        'output': pass1_result['output'],
+        'negative_prompt': pass1_result['negative_prompt'],
+        'model_used': pass1_result['model_used'],
         'debug_md': debug_md,
-        # Exposed pour permettre a l'appelant (cloud ou client) de reconstruire
-        # le debug_md apres les passes de validation (qui modifient debug_sections).
-        '_conversion_debug': conversion_debug,
     }
 
 
