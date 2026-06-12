@@ -299,6 +299,25 @@ def _init_db():
         )
     """)
 
+    # Sessions de /api/enhance en mode client-side (LLM local).
+    # Quand le frontend (ou un node ComfyUI) appelle /api/enhance avec un
+    # preset is_client_side=1, le backend prepare le payload LLM et le stocke
+    # ici, puis attend que le client rappelle /api/enhance/finish avec la
+    # reponse LLM. Les sessions expirent automatiquement apres 1h.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS enhance_sessions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            state TEXT NOT NULL DEFAULT 'prepared',
+            payload_json TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_enhance_sessions_user ON enhance_sessions(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_enhance_sessions_expires ON enhance_sessions(expires_at)")
+
     # Créer les templates par défaut si aucun n'existe
     existing = conn.execute("SELECT COUNT(*) FROM prompt_templates WHERE is_default = 1").fetchone()[0]
     if existing == 0:
@@ -2339,7 +2358,35 @@ def enhance_prompt():
 
 
 def _do_enhance(user_id, data):
-    """Logique metier de /api/enhance. Retourne un dict {output, negative_prompt, model_used, debug_md}."""
+    """Orchestrateur cloud: prepare + appel LLM interne + finish. Mode rétrocompatible."""
+    prepared = _prepare_enhance(user_id, data)
+    if isinstance(prepared, tuple):  # erreur
+        return prepared
+    try:
+        llm_response = _call_llm_internal(prepared['llm_request'], prepared['llm_config'])
+    except Exception as e:
+        msg = str(e)
+        import logging
+        logging.warning(f"[enhance] LLM EXCEPTION: {msg!r}")
+        if '429' in msg:
+            return jsonify({'error': 'Rate limit atteint sur le serveur LLM. Attends un peu et reessaye.'}), 429
+        if 'connect' in msg.lower() or 'refused' in msg.lower():
+            return jsonify({'error': f'Serveur LLM inaccessible : verifie l\'URL ({prepared["llm_config"]["base_url"]})'}), 502
+        return jsonify({'error': f'Erreur LLM: {msg}'}), 502
+    return _finish_enhance(user_id, prepared, llm_response)
+
+
+def _prepare_enhance(user_id, data):
+    """
+    Construit le payload LLM a partir des params de la requete.
+    Retourne un dict {session_id, llm_request, llm_config, debug_sections, ...}
+    ou un tuple (jsonify, status) en cas d'erreur.
+
+    Le payload est le format OpenAI standard envoye a /chat/completions.
+    Les metadata (preset, prompt_type, merged_text, etc.) sont stockees
+    dans le dict pour etre reutilisees par _finish_enhance.
+    """
+    import logging
     # Debug : collecter les etapes pour le markdown de debug
     debug_sections = []
 
@@ -2347,7 +2394,6 @@ def _do_enhance(user_id, data):
     text = data.get('text', '').strip()
     prompt_type = data.get('prompt_type', 'sdxl').strip()
     # Debug : tracer les params reçus
-    import logging
     logging.warning(f"[enhance] REQUEST user={user_id} preset_id={preset_id} prompt_type={prompt_type} text_len={len(text)}")
     # Format de sortie : si non fourni, déduit du type de prompt.
     # Par défaut tout est en 'text'. L'editeur de templates peut surcharger
@@ -2495,7 +2541,6 @@ def _do_enhance(user_id, data):
     model = preset['model']
     conn.close()
     # Debug temporaire : tracer le preset utilise
-    import logging
     logging.warning(f"[enhance] user={user_id} preset_id={preset['id']} name='{preset['name']}' is_global={preset['is_global']} model='{model}' base_url='{base_url}' api_key_len={len(api_key) if api_key else 0}")
 
     # Construire le prompt systeme
@@ -2609,75 +2654,129 @@ This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summari
 
     system_prompt = '\n\n'.join(system_parts)
 
-    # Post-nettoyage de la sortie : retirer les marqueurs [PRIORITE ...]
+    # Construire le payload LLM (format OpenAI standard pour /chat/completions)
+    llm_request = {
+        'model': model,
+        'messages': [
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': merged_text}
+        ],
+        'temperature': 0.3,
+        'max_tokens': 2000 if output_format == 'json' else 400,
+        'frequency_penalty': 0.5,
+        'repeat_penalty': 1.2,
+    }
+    llm_config = {
+        'base_url': base_url,
+        'api_key': api_key,
+        'model': model,
+    }
+    # Debug : enregistrer la passe 1
+    debug_sections.append({
+        'title': 'Passe 1 : Generation',
+        'model': model,
+        'system_prompt': system_prompt[:2000],
+        'user_prompt': merged_text[:2000],
+        'temperature': llm_request['temperature'],
+        'max_tokens': llm_request['max_tokens'],
+    })
+
+    # ── Auto-critique : passes de validation (Ideogram 4 uniquement) ────
+    # Pour les autres types, pas de bbox/structure a valider, on garde 0.
+    validation_passes = int(data.get('validation_passes', 1 if prompt_type == 'ideogram4' else 0))
+    validation_passes = max(0, min(validation_passes, 3))  # borne 0..3
+
+    return {
+        # Identifiant unique de cette session de generation.
+        # En mode local (client-side), le caller doit conserver ce session_id
+        # pour le rappeler dans /api/enhance/finish.
+        'session_id': None,  # pas de session persistante en mode cloud (un seul appel HTTP)
+        'llm_request': llm_request,
+        'llm_config': llm_config,
+        # Metadata necessaires a _finish_enhance (tout ce qui n'est pas dans le payload LLM)
+        'user_id': user_id,
+        'preset_id': preset['id'],
+        'prompt_type': prompt_type,
+        'output_format': output_format,
+        'width': width,
+        'height': height,
+        'style_text': style_text,
+        'style_id': data.get('style_id'),
+        'negative_prompt': negative_prompt,
+        'merged_text': merged_text,
+        'model': model,
+        'validation_passes': validation_passes,
+        'debug_sections': debug_sections,
+    }
+
+
+def _call_llm_internal(llm_request, llm_config):
+    """
+    Helper: fait l'appel LLM via requests (avec retry logic Ollama Cloud).
+    Leve une exception en cas d'erreur — l'appelant decide du code HTTP.
+    Retourne le dict de reponse OpenAI ({choices: [{message: {content: ...}}], ...}).
+    """
+    import requests
+    import logging
+    base_url = llm_config['base_url']
+    api_key = llm_config.get('api_key', '')
+    headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {api_key}'} if api_key else {'Content-Type': 'application/json'}
+    r = requests.post(f'{base_url}/chat/completions', headers=headers, json=llm_request, timeout=180)
+    r.raise_for_status()
+    result = r.json()
+    output = result['choices'][0]['message']['content'].strip()
+    # Retry si l'output est vide OU manifestement tronque (Ollama Cloud est instable)
+    for retry in range(3):
+        if len(output) >= 50:
+            break
+        if not output:
+            logging.warning(f"[enhance] LLM output vide, retry {retry+1}/3")
+        else:
+            logging.warning(f"[enhance] LLM output trop court (len={len(output)}), retry {retry+1}/3")
+        r = requests.post(f'{base_url}/chat/completions', headers=headers, json=llm_request, timeout=180)
+        r.raise_for_status()
+        result = r.json()
+        output = result['choices'][0]['message']['content'].strip()
+    logging.warning(f"[enhance] LLM response status=200 output_len={len(output)} output_preview={output[:100]!r}")
+    return result
+
+
+def _finish_enhance(user_id, prepared, llm_response):
+    """
+    Post-traitement apres l'appel LLM : nettoyage output, sauvegarde BDD,
+    passes de validation, conversion bbox, debug_md.
+    Retourne un dict {output, negative_prompt, model_used, debug_md}.
+    """
+    output = llm_response['choices'][0]['message']['content'].strip()
+    debug_sections = prepared['debug_sections']
+
+    # Debug : sortie brute passe 1
+    if debug_sections:
+        debug_sections[-1]['raw_output'] = output[:3000]
+
+    # Post-nettoyage de la sortie : retirer les balises de code et [PRIORITE ...]
     import re
     def clean_output(text):
         text = re.sub(r'\[PRIORITE\s+(HAUTE|MOYENNE|BASSE)\]', '', text, flags=re.IGNORECASE)
         return text.strip()
+    # Nettoyer les balises de code eventuelles
+    if output.startswith('```'):
+        lines = output.split('\n')
+        if lines[0].startswith('```'):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == '```':
+            lines = lines[:-1]
+        output = '\n'.join(lines).strip()
+    # Nettoyer les marqueurs [PRIORITE ...]
+    output = clean_output(output)
 
-    # Appel LLM
-    import requests
-    try:
-        headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {api_key}'} if api_key else {'Content-Type': 'application/json'}
-        payload = {
-            'model': model,
-            'messages': [
-                {'role': 'system', 'content': system_prompt},
-                {'role': 'user', 'content': merged_text}
-            ],
-            'temperature': 0.3,
-            'max_tokens': 2000 if output_format == 'json' else 400,
-            'frequency_penalty': 0.5,
-            'repeat_penalty': 1.2,
-        }
-        # Debug : enregistrer la passe 1
-        debug_sections.append({
-            'title': 'Passe 1 : Generation',
-            'model': model,
-            'system_prompt': system_prompt[:2000],
-            'user_prompt': merged_text[:2000],
-            'temperature': payload['temperature'],
-            'max_tokens': payload['max_tokens'],
-        })
-        r = requests.post(f'{base_url}/chat/completions', headers=headers, json=payload, timeout=180)
-        r.raise_for_status()
-        result = r.json()
-        output = result['choices'][0]['message']['content'].strip()
-        # Retry si l'output est vide OU manifestement tronque (Ollama Cloud est instable)
-        for retry in range(3):
-            if len(output) >= 50:
-                break
-            if not output:
-                logging.warning(f"[enhance] LLM output vide, retry {retry+1}/3")
-            else:
-                logging.warning(f"[enhance] LLM output trop court (len={len(output)}), retry {retry+1}/3")
-            r = requests.post(f'{base_url}/chat/completions', headers=headers, json=payload, timeout=180)
-            r.raise_for_status()
-            result = r.json()
-            output = result['choices'][0]['message']['content'].strip()
-        # Debug : log la reponse LLM avec sa longueur
-        logging.warning(f"[enhance] LLM response status=200 output_len={len(output)} output_preview={output[:100]!r}")
-        # Debug : sortie brute passe 1
-        if debug_sections:
-            debug_sections[-1]['raw_output'] = output[:3000]
-        # Nettoyer les balises de code eventuelles
-        if output.startswith('```'):
-            lines = output.split('\n')
-            if lines[0].startswith('```'):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == '```':
-                lines = lines[:-1]
-            output = '\n'.join(lines).strip()
-        # Nettoyer les marqueurs [PRIORITE ...]
-        output = clean_output(output)
-    except Exception as e:
-        msg = str(e)
-        logging.warning(f"[enhance] LLM EXCEPTION: {msg!r}")
-        if '429' in msg:
-            return jsonify({'error': 'Rate limit atteint sur le serveur LLM. Attends un peu et reessaye.'}), 429
-        if 'connect' in msg.lower() or 'refused' in msg.lower():
-            return jsonify({'error': f'Serveur LLM inaccessible : verifie l\'URL ({base_url})'}), 502
-        return jsonify({'error': f'Erreur LLM: {msg}'}), 502
+    # Metadata
+    prompt_type = prepared['prompt_type']
+    merged_text = prepared['merged_text']
+    width = prepared['width']
+    height = prepared['height']
+    style_text = prepared['style_text']
+    model = prepared['model']
 
     # Sauvegarde du prompt genere
     try:
@@ -2685,7 +2784,7 @@ This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summari
         conn2.execute(
             """INSERT INTO generated_prompts (user_id, preset_id, prompt_type, input_text, output_text, style_id, model_used)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (user_id, preset['id'] if preset else None, prompt_type, merged_text, output, data.get('style_id'), model)
+            (user_id, prepared['preset_id'], prompt_type, merged_text, output, prepared['style_id'], model)
         )
         conn2.commit()
         conn2.close()
@@ -2693,11 +2792,12 @@ This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summari
         pass  # non-bloquant
 
     # ── Auto-critique : passes de validation (Ideogram 4 uniquement) ────
-    # Pour les autres types, pas de bbox/structure a valider, on garde 0.
-    validation_passes = int(data.get('validation_passes', 1 if prompt_type == 'ideogram4' else 0))
-    validation_passes = max(0, min(validation_passes, 3))  # borne 0..3
-
-    for pass_idx in range(validation_passes):
+    # NOTE : pour l'instant, les passes de validation sont TOUJOURS faites
+    # par le backend (en interne). Une future evolution permettra de
+    # les delester au client en mode local (cf. ROADMAP).
+    api_key = prepared['llm_config']['api_key']
+    base_url = prepared['llm_config']['base_url']
+    for pass_idx in range(prepared['validation_passes']):
         try:
             corrected, val_debug = _validate_caption_pass(
                 output, merged_text, style_text, width, height,
@@ -2722,7 +2822,7 @@ This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summari
     if prompt_type == 'ideogram4' and debug_sections:
         debug_md = _build_debug_markdown(debug_sections, conversion_debug, width, height)
 
-    return {'output': output, 'negative_prompt': negative_prompt, 'model_used': model, 'debug_md': debug_md}
+    return {'output': output, 'negative_prompt': prepared['negative_prompt'], 'model_used': model, 'debug_md': debug_md}
 
 
 def _validate_caption_pass(current_output, original_input, style_text, width, height,
