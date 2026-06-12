@@ -2615,10 +2615,12 @@ def _do_enhance(user_id, data):
         pass1_result['output'] = _run_validation_passes_internal(
             prepared, pass1_result['output'], pass1_result['debug_sections']
         )
-    # Assembler le resultat final
-    return jsonify(_build_final_result(
+    # IMPORTANT : retourner un dict pur, pas jsonify(...).
+    # _do_enhance est appele dans un Thread separe, sans contexte Flask actif.
+    # C'est le generator de /api/enhance qui serialise en json.dumps(...).
+    return _build_final_result(
         pass1_result, prepared['prompt_type'], prepared['width'], prepared['height']
-    ))
+    )
 
 
 # ── Sessions /api/enhance en mode client-side (LLM local) ──────────────
