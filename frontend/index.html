@@ -2231,16 +2231,39 @@
     async function fetchModelsForForm() {
       var url = document.getElementById('preset-form-url').value.trim();
       var key = document.getElementById('preset-form-key').value.trim();
+      var isClient = document.getElementById('preset-form-client').checked;
       if (!url) { showModal('URL', 'Saisis l\'URL du serveur d\'abord', 'error'); return; }
 
       try {
-        var r = await fetch(API + '/presets/list-models', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ base_url: url, api_key: key })
-        });
-        if (!r.ok) throw await safeJson(r);
-        var models = await safeJson(r);
+        var models;
+        if (isClient) {
+          // ── Mode client-side coche : appel direct depuis le navigateur ──────────
+          // (necessite CORS active cote serveur LLM, defaut pour Ollama, LM Studio, etc.)
+          var headers = {'Content-Type': 'application/json'};
+          if (key) headers['Authorization'] = 'Bearer ' + key;
+          var r = await fetch(url.replace(/\/+$/, '') + '/models', { headers: headers });
+          if (!r.ok) {
+            var errText = await r.text().catch(function(){ return ''; });
+            throw { error: 'HTTP ' + r.status + (errText ? ': ' + errText.substring(0, 200) : ' — verifie que CORS est active sur le serveur LLM') };
+          }
+          var data = await r.json();
+          // Format OpenAI standard : {data: [{id, owned_by}, ...]}
+          // Certains serveurs (Ollama) utilisent {models: [{name, ...}]}
+          var raw = (data && data.data) || (data && data.models) || [];
+          models = raw.map(function(m) {
+            if (typeof m === 'string') return { id: m, owned_by: '' };
+            return { id: m.id || m.name || '', owned_by: m.owned_by || '' };
+          });
+        } else {
+          // ── Mode cloud : le backend fait l'appel ──────────
+          var r2 = await fetch(API + '/presets/list-models', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ base_url: url, api_key: key })
+          });
+          if (!r2.ok) throw await safeJson(r2);
+          models = await safeJson(r2);
+        }
         var dd = document.getElementById('preset-models-dropdown');
         dd.innerHTML = '';
         models.forEach(function(m) {
