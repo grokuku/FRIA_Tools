@@ -408,10 +408,15 @@ const _friaStyle = {
 
 async function _friaFetchApi(path, opts = {}) {
     const cfg = getConfig();
+    // baseUrl pointe vers le backend FR.IA (par defaut https://kw.holaf.fr)
+    // /api/* est prefixe automatiquement
     const baseUrl = (cfg.serverUrl || "https://kw.holaf.fr").replace(/\/+$/, "");
     const headers = { "Content-Type": "application/json" };
     if (cfg.apiKey) headers["Authorization"] = `Bearer ${cfg.apiKey}`;
-    const resp = await fetch(`${baseUrl}/${path.replace(/^\//, "")}`, {
+    // path peut deja commencer par /api/ (auquel cas on l'utilise tel quel) ou non
+    const cleanPath = path.replace(/^\/+/, "");
+    const finalPath = cleanPath.startsWith("api/") ? cleanPath : "api/" + cleanPath;
+    const resp = await fetch(`${baseUrl}/${finalPath}`, {
         ...opts,
         headers: { ...headers, ...(opts.headers || {}) },
         body: opts.body ? JSON.stringify(opts.body) : undefined,
