@@ -56,6 +56,8 @@ class FRIAIdeogram4Node:
         api_key = api_cfg.get("api_key", "")
         preset_id = api_cfg.get("preset_id") or None
         style_id = api_cfg.get("style_id") or None
+        is_client_side = int(api_cfg.get("is_client_side", 0)) == 1
+        preset_base_url = (api_cfg.get("preset_base_url") or "").rstrip("/")
 
         ep_elements = []
         for el in [element_1, element_2, element_3, element_4]:
@@ -77,51 +79,106 @@ class FRIAIdeogram4Node:
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
-        try:
-            import requests
-            # Streaming keepalive : on lit les chunks jusqu'au status='done'
-            # Le keepalive JSON toutes les 5s empeche le timeout sur cold start LLM
-            r = requests.post(f"{api_url}/enhance",
-                              json=payload, headers=headers, stream=True, timeout=(10, 180))
-            r.raise_for_status()
-            prompt = ""
-            debug_md = ""
-            for line in r.iter_lines():
-                if not line:
-                    continue
-                try:
-                    chunk = json.loads(line.decode('utf-8'))
-                except Exception:
-                    continue
-                status = chunk.get("status", "")
-                if status == "done":
-                    prompt = chunk.get("output", "")
-                    debug_md = chunk.get("debug_md", "")
-                    break
-                elif status == "error":
-                    prompt = f"Erreur API : {chunk.get('error', 'inconnue')[:200]}"
-                    break
-                # status == "pending" : on continue, le keepalive reset le timeout read
-        except ImportError:
-            prompt = "Erreur: module 'requests' manquant. pip install requests"
-        except Exception as e:
-            msg = str(e)
-            if "401" in msg:
-                prompt = "Erreur : cle API invalide ou manquante."
-            elif "429" in msg:
-                prompt = "Erreur : rate limit atteint. Attendez un instant."
-            else:
-                prompt = f"Erreur API : {msg}"
+        # ── Mode client-side (LLM local) : boucle multi-passes ──────────────
+        if is_client_side and preset_base_url:
+            try:
+                prompt, debug_md = self._build_caption_local_loop(
+                    api_url, api_key, preset_base_url, payload
+                )
+            except Exception as e:
+                prompt = f"Erreur API : {e}"
+                debug_md = ""
+        else:
+            # ── Mode cloud (defaut) : streaming vers /api/enhance ──────────
+            try:
+                import requests
+                # Streaming keepalive : on lit les chunks jusqu'au status='done'
+                # Le keepalive JSON toutes les 5s empeche le timeout sur cold start LLM
+                r = requests.post(f"{api_url}/enhance",
+                                  json=payload, headers=headers, stream=True, timeout=(10, 180))
+                r.raise_for_status()
+                prompt = ""
+                debug_md = ""
+                for line in r.iter_lines():
+                    if not line:
+                        continue
+                    try:
+                        chunk = json.loads(line.decode('utf-8'))
+                    except Exception:
+                        continue
+                    status = chunk.get("status", "")
+                    if status == "done":
+                        prompt = chunk.get("output", "")
+                        debug_md = chunk.get("debug_md", "")
+                        break
+                    elif status == "error":
+                        prompt = f"Erreur API : {chunk.get('error', 'inconnue')[:200]}"
+                        break
+                    # status == 'pending' : on continue, le keepalive reset le timeout read
+            except ImportError:
+                prompt = "Erreur: module 'requests' manquant. pip install requests"
+            except Exception as e:
+                msg = str(e)
+                if "401" in msg:
+                    prompt = "Erreur : cle API invalide ou manquante."
+                elif "429" in msg:
+                    prompt = "Erreur : rate limit atteint. Attendez un instant."
+                else:
+                    prompt = f"Erreur API : {msg}"
 
         preview_tensor = _render_preview(prompt, width, height)
-
-        # debug_md a deja ete lu dans la boucle streaming ci-dessus
-        # (initialise a '' avant la boucle, mis a jour quand status='done')
 
         return {
             "ui": {"prompt": [prompt]},
             "result": (prompt, width, height, preview_tensor, debug_md)
         }
+
+    def _build_caption_local_loop(self, api_url, api_key, preset_base_url, payload):
+        """
+        Boucle multi-passes en mode client-side (LLM local) pour Ideogram 4.
+        Meme logique que _enhance_local_loop mais adapte au format de retour Ideogram
+        (on retourne (prompt, debug_md) au lieu d'un dict).
+        """
+        import requests as _req
+        backend_headers = {"Content-Type": "application/json"}
+        if api_key:
+            backend_headers["Authorization"] = f"Bearer {api_key}"
+
+        # 1) prepare
+        r = _req.post(f"{api_url}/enhance/prepare", json=payload,
+                      headers=backend_headers, timeout=30)
+        r.raise_for_status()
+        prep = r.json()
+        session_id = prep.get("session_id")
+        llm_request = prep.get("llm_request")
+
+        # 2) Boucle multi-passes
+        pass_idx = 1
+        while True:
+            # 2a) Appel direct au LLM local
+            llm_url = preset_base_url + "/chat/completions"
+            llm_headers = {"Content-Type": "application/json"}
+            r = _req.post(llm_url, json=llm_request, headers=llm_headers, timeout=180)
+            r.raise_for_status()
+            llm_response = r.json()
+
+            # 2b) finish
+            r = _req.post(
+                f"{api_url}/enhance/finish",
+                json={"session_id": session_id, "llm_response": llm_response, "pass": pass_idx},
+                headers=backend_headers, timeout=60,
+            )
+            r.raise_for_status()
+            fin = r.json()
+
+            if fin.get("status") == "done":
+                return fin.get("output", ""), fin.get("debug_md", "")
+            if fin.get("status") == "awaiting_validation":
+                llm_request = fin.get("llm_request")
+                pass_idx = int(fin.get("pass", pass_idx + 1))
+                continue
+            # Statut inconnu
+            raise RuntimeError(f"Statut inattendu du backend: {fin.get('status')}")
 
 
 def _render_preview(prompt_text, width, height):
