@@ -4,6 +4,8 @@ import io
 import json
 import random
 import time
+import secrets
+from datetime import datetime, timedelta
 from threading import Thread
 from pathlib import Path
 
@@ -2357,6 +2359,111 @@ def enhance_prompt():
     return Response(generate(), mimetype='application/x-ndjson')
 
 
+@app.route('/api/enhance/prepare', methods=['POST'])
+def enhance_prepare():
+    """
+    Etape 1 du flow /api/enhance en mode decouple.
+    Construit le payload LLM et decide du routage :
+
+    - Si le preset a is_client_side=1 : stocke la session en BDD et retourne
+      {session_id, llm_request, llm_config, status: 'awaiting_llm'}.
+      Le client doit alors faire l'appel LLM lui-meme, puis rappeler
+      /api/enhance/finish avec {session_id, llm_response}.
+
+    - Sinon : fait l'appel LLM en interne (comme /api/enhance), appelle
+      _finish_enhance, et retourne directement le resultat final.
+      (Pas de streaming : pour le streaming cloud, utiliser /api/enhance.)
+    """
+    guard = _login_required()
+    if guard: return guard
+    user_id = _get_current_user_id()
+    data = request.get_json() or {}
+
+    prepared = _prepare_enhance(user_id, data)
+    if isinstance(prepared, tuple):  # erreur (jsonify, status)
+        return prepared
+
+    if prepared['is_client_side']:
+        # ── Mode client-side : le client fait l'appel LLM ──────────
+        session_id = _save_enhance_session(user_id, prepared)
+
+        import logging
+        logging.warning(f"[enhance/prepare] session={session_id} user={user_id} preset='{prepared['preset_name']}' is_client_side=1 -> awaiting_llm")
+
+        return jsonify({
+            'status': 'awaiting_llm',
+            'session_id': session_id,
+            'llm_request': prepared['llm_request'],
+            'llm_config': prepared['llm_config'],
+            'debug_meta': {
+                'preset_id': prepared['preset_id'],
+                'preset_name': prepared['preset_name'],
+                'is_client_side': True,
+                'validation_passes': prepared['validation_passes'],
+                'model': prepared['model'],
+            },
+        })
+    else:
+        # ── Mode cloud : on fait l'appel LLM en interne puis finish ──
+        try:
+            llm_response = _call_llm_internal(prepared['llm_request'], prepared['llm_config'])
+        except Exception as e:
+            msg = str(e)
+            import logging
+            logging.warning(f"[enhance/prepare] LLM EXCEPTION: {msg!r}")
+            if '429' in msg:
+                return jsonify({'error': 'Rate limit atteint sur le serveur LLM. Attends un peu et reessaye.'}), 429
+            if 'connect' in msg.lower() or 'refused' in msg.lower():
+                return jsonify({'error': f'Serveur LLM inaccessible : verifie l\'URL ({prepared["llm_config"]["base_url"]})'}), 502
+            return jsonify({'error': f'Erreur LLM: {msg}'}), 502
+        result = _finish_enhance(user_id, prepared, llm_response)
+        result['status'] = 'done'
+        return jsonify(result)
+
+
+@app.route('/api/enhance/finish', methods=['POST'])
+def enhance_finish():
+    """
+    Etape 2 du flow /api/enhance en mode client-side.
+    Le client envoie {session_id, llm_response} (la reponse OpenAI brute
+    renvoyee par son serveur LLM local). Le backend retrouve la session,
+    fait le post-traitement (validation, conversion, debug) et retourne
+    le resultat final.
+    """
+    guard = _login_required()
+    if guard: return guard
+    user_id = _get_current_user_id()
+    data = request.get_json() or {}
+
+    session_id = data.get('session_id', '').strip()
+    llm_response = data.get('llm_response')
+
+    if not session_id:
+        return jsonify({'error': 'session_id requis'}), 400
+    if not llm_response or not isinstance(llm_response, dict):
+        return jsonify({'error': 'llm_response doit etre un objet JSON (reponse OpenAI brute)'}), 400
+
+    try:
+        prepared = _load_enhance_session(session_id, user_id)
+    except ValueError as e:
+        return jsonify({'error': f'Session invalide : {e}'}), 404
+
+    import logging
+    logging.warning(f"[enhance/finish] session={session_id} user={user_id} preset='{prepared.get('preset_name')}'")
+
+    try:
+        result = _finish_enhance(user_id, prepared, llm_response)
+    except Exception as e:
+        return jsonify({'error': f'Erreur post-traitement : {e}'}), 500
+
+    # Nettoyer la session (succès)
+    _delete_enhance_session(session_id)
+
+    result['status'] = 'done'
+    result['session_id'] = session_id  # pour traçabilité
+    return jsonify(result)
+
+
 def _do_enhance(user_id, data):
     """Orchestrateur cloud: prepare + appel LLM interne + finish. Mode rétrocompatible."""
     prepared = _prepare_enhance(user_id, data)
@@ -2374,6 +2481,78 @@ def _do_enhance(user_id, data):
             return jsonify({'error': f'Serveur LLM inaccessible : verifie l\'URL ({prepared["llm_config"]["base_url"]})'}), 502
         return jsonify({'error': f'Erreur LLM: {msg}'}), 502
     return _finish_enhance(user_id, prepared, llm_response)
+
+
+# ── Sessions /api/enhance en mode client-side (LLM local) ──────────────
+# En mode local, le frontend (ou un node ComfyUI) fait 2 requêtes HTTP :
+#   1. POST /api/enhance/prepare   → le backend construit le payload LLM
+#                                    et le stocke dans enhance_sessions
+#   2. POST /api/enhance/finish    → le client envoie la reponse LLM,
+#                                    le backend fait le post-traitement
+# Les sessions expirent automatiquement apres 1h.
+
+ENHANCE_SESSION_TTL = 3600  # 1 heure
+
+
+def _save_enhance_session(user_id, prepared):
+    """
+    Persiste le contexte de generation (payload + metadata) en BDD pour
+    permettre au client de le rappeler dans /api/enhance/finish.
+    Retourne le session_id.
+    """
+    session_id = secrets.token_urlsafe(24)
+    # Stocker le session_id DANS le payload aussi (pour qu'il survive au aller-retour BDD)
+    prepared = dict(prepared)
+    prepared['session_id'] = session_id
+    expires_at = (datetime.utcnow() + timedelta(seconds=ENHANCE_SESSION_TTL)).strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO enhance_sessions (id, user_id, expires_at, state, payload_json) VALUES (?, ?, ?, 'prepared', ?)",
+            (session_id, user_id, expires_at, json.dumps(prepared, ensure_ascii=False))
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return session_id
+
+
+def _load_enhance_session(session_id, user_id):
+    """
+    Recupere le contexte de generation depuis la BDD.
+    Verifie que la session appartient bien a user_id et n'a pas expire.
+    Retourne le dict 'prepared' ou leve une ValueError si invalide.
+    """
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT payload_json, expires_at, state FROM enhance_sessions WHERE id = ? AND user_id = ?",
+            (session_id, user_id)
+        ).fetchone()
+        if not row:
+            raise ValueError('Session inconnue ou expiree')
+        # Verifier expiration
+        try:
+            expires = datetime.strptime(row['expires_at'], '%Y-%m-%d %H:%M:%S')
+            if datetime.utcnow() > expires:
+                conn.execute("DELETE FROM enhance_sessions WHERE id = ?", (session_id,))
+                conn.commit()
+                raise ValueError('Session expiree')
+        except ValueError:
+            raise  # propager notre propre erreur
+        return json.loads(row['payload_json'])
+    finally:
+        conn.close()
+
+
+def _delete_enhance_session(session_id):
+    """Supprime une session apres utilisation (cleanup)."""
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM enhance_sessions WHERE id = ?", (session_id,))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _prepare_enhance(user_id, data):
@@ -2696,6 +2875,11 @@ This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summari
         # Metadata necessaires a _finish_enhance (tout ce qui n'est pas dans le payload LLM)
         'user_id': user_id,
         'preset_id': preset['id'],
+        'preset_name': preset['name'],
+        'is_global': preset['is_global'],
+        # Indique si le preset est marque client-side (= appel LLM deleste au client).
+        # Utilise par /api/enhance/prepare pour decider du routage.
+        'is_client_side': bool(_row_get(preset, 'is_client_side', 0)),
         'prompt_type': prompt_type,
         'output_format': output_format,
         'width': width,
