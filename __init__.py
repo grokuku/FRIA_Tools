@@ -101,6 +101,12 @@ _diag_mod = _load_module(
     "FRIADiagnosticNode"
 )
 
+# Charger le module terminal (utilise par la route WebSocket ci-dessous)
+_terminal_mod = _load_module(
+    os.path.join(_base, "FRIA_ComfyUI", "terminal.py"),
+    "FRIATerminal"
+)
+
 # Charger le module update_manager (utilise par les routes HTTP ci-dessous)
 _update_manager_mod = _load_module(
     os.path.join(_base, "FRIA_ComfyUI", "update_manager.py"),
@@ -145,6 +151,16 @@ if _diag_mod and hasattr(_diag_mod, "FRIADiagnosticNode"):
     cls = _diag_mod.FRIADiagnosticNode
     NODE_CLASS_MAPPINGS["FRIADiagnosticNode"] = cls
     NODE_DISPLAY_NAME_MAPPINGS["FRIADiagnosticNode"] = "FR.IA Diagnostic"
+
+# Charger la node Terminal (import dynamique, comme les autres nodes)
+_terminal_node_mod = _load_module(
+    os.path.join(_nodes_dir, "terminal_node.py"),
+    "FRIATerminalNode"
+)
+if _terminal_node_mod and hasattr(_terminal_node_mod, "FRIATerminalNode"):
+    cls = _terminal_node_mod.FRIATerminalNode
+    NODE_CLASS_MAPPINGS["FRIATerminalNode"] = cls
+    NODE_DISPLAY_NAME_MAPPINGS["FRIATerminalNode"] = "FR.IA Terminal"
 
 # ── Routes HTTP (update + restart) ──────────────────────────────────
 # Ces routes sont appelees par le menu ComfyUI (fria_menu.js) pour
@@ -263,6 +279,19 @@ if _routes is not None and _update_manager_mod is not None:
 
     print("[FR.IA] Update routes registered: POST /fr_ia/update, /fr_ia/restart")
     print("[FR.IA] Credentials routes registered: GET/POST /fr_ia/credentials")
+
+    # ── Route WebSocket Terminal (PAS DE MOT DE PASSE) ──────────────
+    # Le widget FR.IA Terminal (fria_terminal_widget.js) ouvre un
+    # WebSocket sur /fr_ia/terminal pour piloter un PTY distant.
+    # Cette route est sans authentification : elle donne un shell à
+    # quiconque peut atteindre le serveur ComfyUI. À n'utiliser que
+    # sur localhost ou derrière un reverse proxy authentifié.
+    if _terminal_mod and hasattr(_terminal_mod, "websocket_handler"):
+        _routes.add_get(
+            "/fr_ia/terminal",
+            _terminal_mod.websocket_handler,
+        )
+        print("[FR.IA] Terminal WebSocket route registered: GET /fr_ia/terminal (NO PASSWORD)")
 else:
     # Si les routes ne sont pas enregistrees, on ne fait rien de plus
     # (l'item "Update" du menu ne fonctionnera pas, mais l'extension

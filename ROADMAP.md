@@ -38,6 +38,13 @@
 2. Redémarrer le serveur → `_init_db()` applique les migrations
 3. Vérifier la console navigateur pour les éventuelles erreurs résiduelles
 
+### ✅ Résolu cette session — ajout de la node FR.IA Terminal
+- **Concept** : node ComfyUI `FRIATerminalNode` (catégorie `FR.IA`) qui ouvre un terminal xterm dans un DOM widget. Adaptée depuis CUI-Holaf-Utils/holaf_terminal.py (Holaf, 2025).
+- **Pas de mot de passe** : la route WebSocket `/fr_ia/terminal` est ouverte à quiconque peut atteindre le serveur. Usage local uniquement, bandeau d'avertissement visible dans l'UI.
+- **Évite les conflits avec CUI-Holaf-Utils** : préfixe `/fr_ia/terminal` (vs `/holaf/terminal`), nom de node `FRIATerminalNode` (vs `HolafTerminal`/panel Holaf), widget JS `fria_terminal_widget.js` dans `web/js/`. Les deux extensions peuvent être installées en parallèle.
+- **xterm partagé** : le widget FR.IA charge `web/js/xterm.js` (copie locale) mais réutilise `window.Terminal`/`window.FitAddon` si Holaf les a déjà chargés (économie de bande passante + même version).
+- **Fichiers** : `FRIA_ComfyUI/terminal.py` (backend PTY), `FRIA_ComfyUI/nodes/terminal_node.py` (node ComfyUI vide), `web/js/fria_terminal_widget.js` (widget DOM), `web/js/xterm.js` + `xterm-addon-fit.js` (bundles UMD copiés).
+
 ### ✅ Résolu cette session (migration serveur cloud + Discord OAuth)
 - **Contexte** : déplacement du serveur backend de `kw.holaf.fr` vers une machine cloud.
 - **Discord OAuth — placeholder `votre_client_id_ici` dans l'URL** : le `.env` sur le cloud était absent ou incomplet, `DISCORD_CLIENT_ID` non défini. Fix : créer le `.env` avec les 4 variables (CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, GUILD_ID optionnel).
