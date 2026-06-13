@@ -19,27 +19,30 @@
                 const r = onNodeCreated?.apply(this, arguments);
                 const node = this;
 
-                // ---- Masquer _api_config ----
+                // ---- Helper : cacher un widget natif ----
                 const hideWidget = (n, name) => {
                     const w = n.widgets?.find(x => x.name === name);
                     if (w) {
                         w.hidden = true;
                         w.computeSize = () => [0, -4];
+                        if (w.inputEl) w.inputEl.style.display = "none";
+                        if (w.parentEl) w.parentEl.style.display = "none";
                         return w;
                     }
                     return null;
                 };
-                hideWidget(node, "_api_config");
 
-                // ---- Supprimer la socket d'entrée de _api_config ----
-                // _api_config est un cache technique (JSON interne) qui n'a aucune
-                // raison d'être connecté à un autre node. Depuis ComfyUI v1.16,
-                // chaque widget STRING déclaré dans INPUT_TYPES génère une socket
-                // dans node.inputs[] ; on la retire pour qu'aucun câble ne puisse
-                // y être branché. Le widget reste sérialisé et Python le reçoit
-                // normalement via les arguments keyword.
-                {
-                    const slot = node.findInputSlot?.("_api_config");
+                // ---- Masquer les widgets natifs pilotés par le DOM ----
+                // preset_id et style_id sont des widgets INT natifs que le DOM
+                // pilote via leur .value. On les cache visuellement et on
+                // supprime leur socket d'entrée pour qu'ils n'apparaissent
+                // pas dans l'UI.
+                hideWidget(node, "preset_id");
+                hideWidget(node, "style_id");
+
+                // ---- Supprimer les sockets d'entrée ----
+                for (const inputName of ["preset_id", "style_id"]) {
+                    const slot = node.findInputSlot?.(inputName);
                     if (slot !== undefined && slot !== -1) {
                         node.removeInput(slot);
                     }

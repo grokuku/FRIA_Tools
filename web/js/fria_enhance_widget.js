@@ -222,12 +222,37 @@
 
                 container.appendChild(grid);
 
+                // ---- Bouton Test Enhance ----
+                const enhanceBtn = document.createElement("button");
+                enhanceBtn.textContent = "🔄  Test enhance";
+                Object.assign(enhanceBtn.style, {
+                    width: "100%", padding: "6px", borderRadius: "4px",
+                    border: "none", background: "#6366f1", color: "white",
+                    fontSize: "11px", fontWeight: "600", cursor: "pointer",
+                });
+                enhanceBtn.onmouseenter = () => enhanceBtn.style.background = "#5558e8";
+                enhanceBtn.onmouseleave = () => enhanceBtn.style.background = "#6366f1";
+                container.appendChild(enhanceBtn);
+
+                // ---- Textarea résultat ----
+                const resultTextarea = document.createElement("textarea");
+                Object.assign(resultTextarea.style, {
+                    width: "100%",
+                    height: "120px", minHeight: "80px", maxHeight: "260px",
+                    borderRadius: "4px", border: "1px solid #555",
+                    padding: "4px", background: "#1a1a1e", color: "#fff",
+                    fontSize: "11px", resize: "vertical", boxSizing: "border-box",
+                });
+                resultTextarea.placeholder = "Résultat de l'enhance...";
+                resultTextarea.readOnly = true;
+                container.appendChild(resultTextarea);
+
                 // ---- Ajout au node ----
                 const widget = node.addDOMWidget("FRIA_Enhance", "div", container, {
                     serialize: false,
                     hideOnZoom: false,
                 });
-                widget.computeSize = () => [node.size[0] - 20, 105];
+                widget.computeSize = () => [node.size[0] - 20, 240];
 
                 // ---- Initialisation ----
                 populateSelect(presetSelect, "presets", "name", "id", "-- Preset IA --").then(() => {
@@ -244,11 +269,100 @@
                     });
                 });
 
+                // ---- Onclick Test Enhance ----
+                // Appelle /api/enhance en streaming (ndjson keepalive) et
+                // affiche le prompt final + negative_prompt dans la textarea.
+                enhanceBtn.onclick = async () => {
+                    const get = (name) => node.widgets?.find(w => w.name === name);
+                    const basePrompt = (get("base_prompt")?.value || "").trim();
+                    const specialInstructions = (get("special_instructions")?.value || "").trim();
+                    const seedW = get("seed")?.value;
+                    const elementsRaw = get("elements")?.value || "[]";
+
+                    // Parser elements (tableau direct ou objet _elements_json)
+                    let elements = [];
+                    try {
+                        const parsed = JSON.parse(elementsRaw);
+                        if (Array.isArray(parsed)) elements = parsed;
+                        else if (parsed?.elements) elements = parsed.elements;
+                    } catch {
+                        // Texte brut : on enverra comme tel via le payload brut
+                    }
+
+                    const payload = {
+                        text: basePrompt,
+                        seed: seedW > 0 ? seedW : null,
+                        prompt_type: typeSelect.value,
+                        preset_id: parseInt(presetSelect.value) || null,
+                        style_id: parseInt(styleSelect.value) || null,
+                        special_instructions: specialInstructions,
+                    };
+                    // elements en texte brut si pas du JSON structuré
+                    if (elements.length > 0) {
+                        payload.ep_elements = elements;
+                    } else if (elementsRaw.trim() && elementsRaw !== "[]") {
+                        // texte brut : on le concatenre avec base_prompt
+                        payload.text = (basePrompt + "\n\n" + elementsRaw).trim();
+                    }
+
+                    if (!payload.text && (!payload.ep_elements || payload.ep_elements.length === 0)) {
+                        resultTextarea.value = "Saisis au moins le prompt de base ou des éléments.";
+                        return;
+                    }
+
+                    resultTextarea.value = "Enhancement en cours...";
+                    try {
+                        const resp = await fetch(`${getApiUrl()}/enhance`, {
+                            method: "POST", headers: apiHeaders(), body: JSON.stringify(payload),
+                        });
+                        if (!resp.ok) {
+                            const t = await resp.text().catch(() => "");
+                            throw new Error(`HTTP ${resp.status}: ${t.substring(0, 200)}`);
+                        }
+                        const text = await resp.text();
+                        let output = "";
+                        let neg = "";
+                        for (const line of text.split("\n")) {
+                            if (!line.trim()) continue;
+                            try {
+                                const chunk = JSON.parse(line);
+                                if (chunk.status === "done") {
+                                    output = chunk.output || "";
+                                    neg = chunk.negative_prompt || "";
+                                } else if (chunk.status === "error") {
+                                    throw new Error(chunk.error || "Erreur inconnue");
+                                }
+                            } catch (e) {
+                                if (e instanceof SyntaxError) continue;
+                                throw e;
+                            }
+                        }
+                        const sep = neg ? "\n\n--- Negative prompt ---\n" + neg : "";
+                        resultTextarea.value = output + sep;
+                        syncNativeWidgets();
+                    } catch (err) {
+                        resultTextarea.value = "Erreur: " + err.message;
+                    }
+                };
+
+                // ---- onExecuted : recupere le resultat du Run ComfyUI ----
+                const origExec = node.onExecuted;
+                node.onExecuted = function (output) {
+                    if (origExec) origExec.call(this, output);
+                    const arr = output?.prompt;
+                    if (Array.isArray(arr) && arr.length > 0) {
+                        const neg = output?.negative_prompt;
+                        const out = String(arr[0]);
+                        const sep = Array.isArray(neg) && neg[0] ? "\n\n--- Negative prompt ---\n" + neg[0] : "";
+                        resultTextarea.value = out + sep;
+                    }
+                };
+
                 // ---- Resize ----
                 const onResize = node.onResize;
                 node.onResize = function (size) {
                     const r = onResize?.apply(this, arguments);
-                    widget.computeSize = () => [size[0] - 20, 105];
+                    widget.computeSize = () => [size[0] - 20, 240];
                     return r;
                 };
 
