@@ -7,14 +7,14 @@
  *   - L'utilisateur branche son propre node LLM (LM Studio, Ollama, etc.)
  *
  * DOM widget simplifié :
- *   - 1 selecteur de Style (visuel, pratique) qui set le widget natif style_id
+ *   - Grille 2 colonnes : Type (gauche) + Style (droite)
  *   - 1 bouton "↻" pour rafraichir la liste des styles
  *   - Pas de bouton "Test enhance", pas de textarea, pas de dropdown "Preset IA"
  *
  * Les widgets natifs ComfyUI (seed, base_prompt, special_instructions,
- * prompt_type, style_id, elements) sont restaurés automatiquement par
- * ComfyUI au rechargement de la page. Le DOM widget pilote juste
- * style_id (et le dropdown Prompt Type reste natif COMBO).
+ * elements) sont restaurés automatiquement par ComfyUI au rechargement
+ * de la page. Les widgets prompt_type et style_id sont natifs mais caches
+ * (le DOM les pilote via leur .value).
  *
  * api_key et server_url sont lus depuis ComfyUI/user/default/fria_credentials.json
  * (helper Python _credentials). Plus de widget STRING _api_config.
@@ -33,22 +33,29 @@
                 const r = onNodeCreated?.apply(this, arguments);
                 const node = this;
 
-                // ---- Cacher le widget natif style_id (piloté par le DOM) ----
-                const styleWidget = node.widgets?.find(x => x.name === "style_id");
-                if (styleWidget) {
-                    styleWidget.hidden = true;
-                    styleWidget.computeSize = () => [0, -4];
-                    if (styleWidget.inputEl) styleWidget.inputEl.style.display = "none";
-                    if (styleWidget.parentEl) styleWidget.parentEl.style.display = "none";
-                }
+                // ---- Cacher les widgets natifs pilotés par le DOM ----
+                const hideWidget = (n, name) => {
+                    const w = n.widgets?.find(x => x.name === name);
+                    if (w) {
+                        w.hidden = true;
+                        w.computeSize = () => [0, -4];
+                        if (w.inputEl) w.inputEl.style.display = "none";
+                        if (w.parentEl) w.parentEl.style.display = "none";
+                    }
+                };
+                ["prompt_type", "style_id"].forEach(n => hideWidget(node, n));
 
-                // ---- Supprimer la socket d'entrée de style_id ----
-                {
-                    const slot = node.findInputSlot?.("style_id");
+                // ---- Supprimer les sockets d'entrée ----
+                for (const inputName of ["prompt_type", "style_id"]) {
+                    const slot = node.findInputSlot?.(inputName);
                     if (slot !== undefined && slot !== -1) {
                         node.removeInput(slot);
                     }
                 }
+
+                // Refs vers les widgets natifs (utiles pour le sync)
+                const promptTypeWidget = node.widgets?.find(x => x.name === "prompt_type");
+                const styleWidget = node.widgets?.find(x => x.name === "style_id");
 
                 // ---- Cache de rafraîchissement ----
                 const _cache = (window.__FRIA_cache = window.__FRIA_cache || { styles: 0 });
@@ -80,22 +87,25 @@
                     return resp.json().catch(() => []);
                 };
 
-                function syncStyleWidget() {
-                    if (styleWidget) {
-                        styleWidget.value = parseInt(styleSelect.value) || 0;
-                    }
+                function syncNativeWidgets() {
+                    if (promptTypeWidget) promptTypeWidget.value = typeSelect.value;
+                    if (styleWidget) styleWidget.value = parseInt(styleSelect.value) || 0;
                 }
 
-                // Restaurer la selection du style depuis le widget natif style_id
-                // (restaure par ComfyUI au rechargement de la page)
-                function restoreFromNativeWidget() {
-                    if (!styleWidget) return false;
-                    const sid = parseInt(styleWidget.value) || 0;
-                    if (sid > 0 && [...styleSelect.options].some(o => o.value === String(sid))) {
-                        styleSelect.value = String(sid);
-                        return true;
+                // Restaurer la selection des dropdowns depuis les widgets natifs
+                // (restaures par ComfyUI au rechargement de la page)
+                function restoreFromNativeWidgets() {
+                    if (promptTypeWidget && promptTypeWidget.value) {
+                        if ([...typeSelect.options].some(o => o.value === promptTypeWidget.value)) {
+                            typeSelect.value = promptTypeWidget.value;
+                        }
                     }
-                    return false;
+                    if (styleWidget) {
+                        const sid = parseInt(styleWidget.value) || 0;
+                        if (sid > 0 && [...styleSelect.options].some(o => o.value === String(sid))) {
+                            styleSelect.value = String(sid);
+                        }
+                    }
                 }
 
                 async function populateStyleSelect() {
@@ -140,19 +150,42 @@
                     return l;
                 };
 
-                // ---- Ligne : sélecteur de style ----
-                const styleRow = document.createElement("div");
-                Object.assign(styleRow.style, { display: "flex", gap: "4px", alignItems: "center" });
+                // ---- Grille 2 colonnes (Type + Style) ----
+                const grid = document.createElement("div");
+                Object.assign(grid.style, {
+                    display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px",
+                });
 
-                const styleSelect = document.createElement("select");
-                Object.assign(styleSelect.style, {
+                const selectStyle = {
                     width: "100%", padding: "3px 6px", borderRadius: "4px",
                     border: "1px solid #555", background: "#3a3a3e",
-                    color: "#ccc", fontSize: "11px", cursor: "pointer", flex: "1",
-                });
-                styleSelect.onchange = syncStyleWidget;
-                styleSelect.addEventListener("mousedown", refreshStylesIfStale);
+                    color: "#ccc", fontSize: "11px", cursor: "pointer",
+                };
 
+                // Type (gauche) — valeurs fixes comme sur le site
+                const typeDiv = document.createElement("div");
+                const typeSelect = document.createElement("select");
+                Object.assign(typeSelect.style, selectStyle);
+                ["SDXL", "SD1.5", "Flux", "Anima", "Qwen", "Liste"].forEach(v => {
+                    const o = document.createElement("option");
+                    o.value = v.toLowerCase(); o.textContent = v;
+                    typeSelect.appendChild(o);
+                });
+                typeSelect.value = "sdxl";
+                typeSelect.onchange = syncNativeWidgets;
+                typeDiv.appendChild(mkLabel("Type"));
+                typeDiv.appendChild(typeSelect);
+                grid.appendChild(typeDiv);
+
+                // Style (droite) — peuplé depuis /api/styles
+                const styleDiv = document.createElement("div");
+                const styleRow = document.createElement("div");
+                Object.assign(styleRow.style, { display: "flex", gap: "4px", alignItems: "center" });
+                const styleSelect = document.createElement("select");
+                Object.assign(styleSelect.style, selectStyle);
+                styleSelect.style.flex = "1";
+                styleSelect.onchange = syncNativeWidgets;
+                styleSelect.addEventListener("mousedown", refreshStylesIfStale);
                 const styleRefreshBtn = document.createElement("button");
                 styleRefreshBtn.textContent = "↻";
                 Object.assign(styleRefreshBtn.style, {
@@ -162,11 +195,13 @@
                 });
                 styleRefreshBtn.title = "Rafraîchir la liste des styles";
                 styleRefreshBtn.onclick = () => { _cache.styles = 0; refreshStylesIfStale(); };
-
-                container.appendChild(mkLabel("Style"));
+                styleDiv.appendChild(mkLabel("Style"));
                 styleRow.appendChild(styleSelect);
                 styleRow.appendChild(styleRefreshBtn);
-                container.appendChild(styleRow);
+                styleDiv.appendChild(styleRow);
+                grid.appendChild(styleDiv);
+
+                container.appendChild(grid);
 
                 // Mini-explication
                 const help = document.createElement("div");
@@ -179,16 +214,16 @@
                     serialize: false,
                     hideOnZoom: false,
                 });
-                widget.computeSize = () => [node.size[0] - 20, 105];
+                widget.computeSize = () => [node.size[0] - 20, 110];
 
                 // ---- Initialisation ----
                 populateStyleSelect().then(() => {
-                    restoreFromNativeWidget();
-                    syncStyleWidget();
+                    restoreFromNativeWidgets();
+                    syncNativeWidgets();
                     // Retry si les options n'étaient pas encore chargées
                     let ra = 0;
                     function delayedRestore() {
-                        if (restoreFromNativeWidget()) return;
+                        restoreFromNativeWidgets();
                         if (++ra < 20) setTimeout(delayedRestore, 300);
                     }
                     setTimeout(delayedRestore, 100);
@@ -198,7 +233,7 @@
                 const onResize = node.onResize;
                 node.onResize = function (size) {
                     const r = onResize?.apply(this, arguments);
-                    widget.computeSize = () => [size[0] - 20, 105];
+                    widget.computeSize = () => [size[0] - 20, 110];
                     return r;
                 };
 
