@@ -89,6 +89,10 @@ class FRIAIdeogramPrepNode:
             "ep_elements": ep_elements,
             "style_id": style_id if style_id > 0 else None,
             "special_instructions": special_instructions,
+            # api_url/api_key sont passes au backend pour que la Parse node
+            # puisse rappeler /api/ideogram/parse sur la meme URL.
+            "api_url": api_url,
+            "api_key": api_key,
         }
 
         headers = {"Content-Type": "application/json"}

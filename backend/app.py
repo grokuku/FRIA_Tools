@@ -3686,11 +3686,13 @@ def ideogram_prep():
 
     # Context : tout ce qu'il faut pour construire le prompt de validation
     # en passe 2. width/height sont pris depuis le payload (pas depuis
-    # l'image, on est decouple de ComfyUI). api_url/api_key sont passes
-    # pour que la Parse node puisse rappeler /api/ideogram/parse.
+    # l'image, on est decouple de ComfyUI). api_url/api_key sont envoyes
+    # par la node Prep dans le payload pour que la Parse node puisse
+    # rappeler /api/ideogram/parse sans avoir a les re-lire depuis
+    # localStorage.
     context = json.dumps({
-        'api_url': api_url,
-        'api_key': api_key,
+        'api_url': data.get('api_url', 'https://kw.holaf.fr/api'),
+        'api_key': data.get('api_key', ''),
         'original_input': prepared.get('merged_text', ''),
         'width': int(data.get('width') or 0),
         'height': int(data.get('height') or 0),
