@@ -23,11 +23,49 @@ if _base not in sys.path:
     sys.path.insert(0, _base)
 
 def _load_module(filepath, name):
-    """Charge un fichier Python comme module par son chemin absolu."""
-    spec = importlib.util.spec_from_file_location(name, filepath)
+    """Charge un fichier Python comme module par son chemin absolu.
+
+    Important : on declare les packages parents `FRIA_ComfyUI` et
+    `FRIA_ComfyUI.nodes` dans sys.modules AVANT d'executer le module,
+    et on utilise un nom complet (`FRIA_ComfyUI.nodes.<name>`) avec
+    `__package__` set. Cela permet aux `from . import X` dans les
+    modules charges de fonctionner. Sinon : ImportError "attempted
+    relative import with no known parent package".
+    """
+    # Declarer FRIA_ComfyUI (grand-parent) dans sys.modules
+    grandparent_name = "FRIA_ComfyUI"
+    if grandparent_name not in sys.modules:
+        grandparent_dir = os.path.dirname(_nodes_dir)
+        gp_spec = importlib.util.spec_from_file_location(
+            grandparent_name,
+            os.path.join(grandparent_dir, "__init__.py"),
+            submodule_search_locations=[grandparent_dir],
+        )
+        if gp_spec is not None:
+            gp_mod = importlib.util.module_from_spec(gp_spec)
+            sys.modules[grandparent_name] = gp_mod
+
+    # Declarer FRIA_ComfyUI.nodes (parent) dans sys.modules
+    parent_name = f"{grandparent_name}.nodes"
+    if parent_name not in sys.modules:
+        p_spec = importlib.util.spec_from_file_location(
+            parent_name,
+            os.path.join(_nodes_dir, "__init__.py"),
+            submodule_search_locations=[_nodes_dir],
+        )
+        if p_spec is not None:
+            p_mod = importlib.util.module_from_spec(p_spec)
+            sys.modules[parent_name] = p_mod
+
+    # Charger le module avec son nom complet pour que les relative imports
+    # (`from . import _credentials`) fonctionnent.
+    full_name = f"{parent_name}.{name}"
+    spec = importlib.util.spec_from_file_location(full_name, filepath)
     if spec is None or spec.loader is None:
         return None
     mod = importlib.util.module_from_spec(spec)
+    mod.__package__ = parent_name  # requis pour les relative imports
+    sys.modules[full_name] = mod
     spec.loader.exec_module(mod)
     return mod
 
