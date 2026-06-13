@@ -188,12 +188,13 @@ if _routes is not None and _update_manager_mod is not None:
 
     @_routes.get("/fr_ia/credentials")
     async def _fr_ia_get_credentials_route(request):
+        import os as _os  # import local pour eviter les problemes de scope
         try:
             # Charger _credentials par chemin absolu (comme les nodes)
             # pour eviter les problemes de relative import dans le contexte
             # des routes ComfyUI.
             _load_module(
-                os.path.join(_nodes_dir, "_credentials.py"),
+                _os.path.join(_nodes_dir, "_credentials.py"),
                 "_credentials",
             )
             import FRIA_ComfyUI.nodes._credentials as _creds_mod
@@ -203,7 +204,7 @@ if _routes is not None and _update_manager_mod is not None:
                 "api_key": creds.get("api_key", ""),
                 "server_url": creds.get("server_url", "https://kw.holaf.fr"),
                 "path": _creds_mod.get_credentials_path(),
-                "exists": os.path.isfile(_creds_mod.get_credentials_path()),
+                "exists": _os.path.isfile(_creds_mod.get_credentials_path()),
             })
         except Exception as e:
             return _aio_web.json_response({
@@ -213,10 +214,13 @@ if _routes is not None and _update_manager_mod is not None:
 
     @_routes.post("/fr_ia/credentials")
     async def _fr_ia_save_credentials_route(request):
+        import os as _os  # import local pour eviter les problemes de scope
+        import json as _json
+        from datetime import datetime as _dt
         try:
             # Charger _credentials par chemin absolu (cf. GET route)
             _load_module(
-                os.path.join(_nodes_dir, "_credentials.py"),
+                _os.path.join(_nodes_dir, "_credentials.py"),
                 "_credentials",
             )
             import FRIA_ComfyUI.nodes._credentials as _creds_mod
@@ -224,24 +228,22 @@ if _routes is not None and _update_manager_mod is not None:
             api_key = (data.get("api_key") or "").strip()
             server_url = (data.get("server_url") or "https://kw.holaf.fr").strip()
 
-            import os, json
-            from datetime import datetime
             creds_path = _creds_mod.get_credentials_path()
-            os.makedirs(os.path.dirname(creds_path), exist_ok=True)
+            _os.makedirs(_os.path.dirname(creds_path), exist_ok=True)
 
             # Permissions restrictives (Linux)
-            if os.name != 'nt':
-                old_umask = os.umask(0o077)
+            if _os.name != 'nt':
+                old_umask = _os.umask(0o077)
             try:
                 with open(creds_path, "w", encoding="utf-8") as f:
-                    json.dump({
+                    _json.dump({
                         "api_key": api_key,
                         "server_url": server_url,
-                        "updated_at": datetime.utcnow().isoformat() + "Z",
+                        "updated_at": _dt.utcnow().isoformat() + "Z",
                     }, f, indent=2)
             finally:
-                if os.name != 'nt':
-                    os.umask(old_umask)
+                if _os.name != 'nt':
+                    _os.umask(old_umask)
 
             # Invalider le cache pour que les nodes lisent la nouvelle valeur
             _creds_mod.invalidate_cache()
