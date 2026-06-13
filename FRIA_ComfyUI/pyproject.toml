@@ -16,6 +16,7 @@ Repository = "https://github.com/grokuku/FRIA_Tools"
 nodes = [
     "nodes.elements_node.FRIAElementsNode",
     "nodes.enhance_node.FRIAEnhanceNode",
+    "nodes.prep_node.FRIAPromptPrepNode",
 ]
 
 [tool.comfyui.registry]

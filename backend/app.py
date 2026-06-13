@@ -2436,6 +2436,67 @@ def enhance_prepare():
         return jsonify(final)
 
 
+@app.route('/api/enhance/prompts', methods=['POST'])
+def enhance_prompts():
+    """
+    Variante legerement decouplee de /api/enhance/prepare pour le node ComfyUI
+    FR.IA Prompt Prep.
+
+    Fait le meme travail de preparation (merge texte, fetch preset, build system
+    prompt depuis template) mais NE FAIT PAS d'appel LLM et NE CREE PAS de
+    session. Retourne directement les 3 chaines pretes a etre injectees dans
+    n'importe quel node LLM compatible OpenAI :
+
+        {
+          "llm_prompt":     "...",  # le prompt utilisateur fusionne
+          "system_prompt":  "...",  # le prompt systeme (template + examples + rules)
+          "neg_prompt":     "...",  # le negative prompt (depuis le style selectionne)
+          "model":          "...",  # le modele configure dans le preset
+          "validation_passes": 0,   # le Prep ne gere pas les passes de validation
+        }
+
+    Le client ComfyUI prend ces 3 chaines et les branche sur n'importe quel
+    node LLM (LM Studio, Ollama, llama.cpp, etc.). L'utilisateur a ainsi le
+    controle total sur la VRAM et le moteur d'inference.
+    """
+    guard = _login_required()
+    if guard: return guard
+    user_id = _get_current_user_id()
+    data = request.get_json() or {}
+
+    prepared = _prepare_enhance(user_id, data)
+    if isinstance(prepared, tuple):  # erreur (jsonify, status)
+        return prepared
+
+    # Extraire system + user depuis llm_request['messages']
+    messages = prepared.get('llm_request', {}).get('messages', [])
+    system_prompt = ''
+    llm_prompt = ''
+    for m in messages:
+        if m.get('role') == 'system':
+            system_prompt = m.get('content', '')
+        elif m.get('role') == 'user':
+            llm_prompt = m.get('content', '')
+
+    neg_prompt = prepared.get('negative_prompt') or ''
+
+    import logging
+    logging.warning(
+        f"[enhance/prompts] user={user_id} preset='{prepared['preset_name']}' "
+        f"model='{prepared['model']}' sys_len={len(system_prompt)} "
+        f"user_len={len(llm_prompt)} neg_len={len(neg_prompt)}"
+    )
+
+    return jsonify({
+        'llm_prompt': llm_prompt,
+        'system_prompt': system_prompt,
+        'neg_prompt': neg_prompt,
+        'model': prepared['model'],
+        'validation_passes': 0,  # le Prep ne gere pas les passes de validation
+        'preset_name': prepared['preset_name'],
+    })
+
+
 @app.route('/api/enhance/finish', methods=['POST'])
 def enhance_finish():
     """

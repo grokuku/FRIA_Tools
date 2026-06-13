@@ -38,6 +38,21 @@
 2. Redémarrer le serveur → `_init_db()` applique les migrations
 3. Vérifier la console navigateur pour les éventuelles erreurs résiduelles
 
+### ✅ Résolu cette session (migration serveur cloud + Discord OAuth)
+- **Contexte** : déplacement du serveur backend de `kw.holaf.fr` vers une machine cloud.
+- **Discord OAuth — placeholder `votre_client_id_ici` dans l'URL** : le `.env` sur le cloud était absent ou incomplet, `DISCORD_CLIENT_ID` non défini. Fix : créer le `.env` avec les 4 variables (CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, GUILD_ID optionnel).
+- **Discord OAuth — `mismatching_state: CSRF Warning! State not equal in request and response`** : `SECRET_KEY` non défini dans `.env` → `app.py` tombe sur `os.urandom(24).hex()` qui régénère un secret différent à chaque redémarrage, invalidant le `state` posé en session au moment du callback. Fix : ajouter `SECRET_KEY=<token_hex(32)>` dans `.env`, secret fixe et persistant.
+- **Discord OAuth — `redirect_uri OAuth2 non valide`** : URL du `.env` pas alignée avec celle déclarée sur https://discord.com/developers/applications (discord compare strictement protocole + domaine + chemin + port). Fix : ajouter `DISCORD_REDIRECT_URI=https://<nouveau-domaine>/api/auth/discord/callback` dans `.env` et la même URL dans les Redirects Discord. **Note pour plus tard** : si reverse-proxy HTTPS devant Flask, ajouter `from werkzeug.middleware.proxy_fix import ProxyFix; app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)` pour que `request.url_root` reflète bien le HTTPS.
+- **Widgets ComfyUI — styles/presets KO après migration** : `fria_ideogram4_widget.js`, `fria_enhance_widget.js`, `fria_elements_widget.js` avaient `getApiUrl = () => "https://kw.holaf.fr/api"` en dur. Le node Python envoyait ses requêtes vers l'ancien serveur, le DOM widget chargeait les presets/styles depuis le mauvais backend. Fix : `getApiUrl()` lit maintenant `localStorage.FRIA_config.serverUrl` (configuré via menu FR.IA → Compte) avec fallback kw.holaf.fr, cohérent avec `fria_menu.js` qui lisait déjà la config. Commit `249218e` — `feat(widgets): make API URL configurable via localStorage`.
+
+### 📋 Checklist migration serveur cloud (à suivre la prochaine fois)
+1. Copier `.env` complet sur le nouveau serveur (CLIENT_ID, CLIENT_SECRET, REDIRECT_URI aligné avec Discord, SECRET_KEY fixe, GUILD_ID optionnel)
+2. Vérifier alignement exact `DISCORD_REDIRECT_URI` ↔ Redirects sur Discord Dev Portal
+3. Si reverse-proxy HTTPS : ajouter `ProxyFix` (sinon `request.url_root` = `http://...` au lieu de `https://...`)
+4. Pull du repo + restart extension ComfyUI → `web/js/*` rechargés
+5. Côté user dans ComfyUI : menu **FR.IA → Compte** → mettre la nouvelle `URL du serveur` (sans `/api` final, ajouté auto) + clé API + vider cache navigateur (`Ctrl+Shift+R`)
+6. Tester login Discord + génération d'un node Ideogram4 (vérifier que presets/styles viennent du bon backend)
+
 ---
 
 ## 🧠 Elements Picker (panneau droit haut)
