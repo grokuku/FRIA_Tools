@@ -463,6 +463,32 @@
     }
 
     // === Layout panneaux redimensionnables ===
+    function makeColResizable(dividerId, leftId, rightId, minPct) {
+      var divider = document.getElementById(dividerId);
+      var left = document.getElementById(leftId);
+      if (!divider || !left) return;
+      minPct = minPct || 20;
+
+      divider.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        var startX = e.clientX;
+        var startW = left.offsetWidth;
+        var parentW = left.parentElement.offsetWidth;
+
+        function onMove(ev) {
+          var dx = ev.clientX - startX;
+          var pct = Math.max(minPct, Math.min(80, (startW + dx) / parentW * 100));
+          left.style.width = pct + '%';
+        }
+        function onUp() {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    }
+
     function initResizablePanels() {
       var dividerV = document.getElementById('divider-v');
       var dividerH = document.getElementById('divider-h');
@@ -750,6 +776,8 @@
       makeModalDraggable('members-modal-header', 'members-modal');
       makeModalResizable('usettings-modal', { minW: 480, minH: 400 });
       initResizablePanels();
+      makeColResizable('styles-divider', 'styles-left', 'styles-right', 25);
+      makeColResizable('templates-divider', 'templates-left', 'templates-right', 25);
     });
     // === Import / Export ===
     function openImport() {
