@@ -8,6 +8,33 @@ Au "Test generation", JS appelle l'API pour un aperçu instantané.
 """
 
 import json
+import random
+
+
+def _hash32(s):
+    """FNV-1a 32-bit hash, identique a la fonction hash32() du widget JS."""
+    h = 0x811c9dc5
+    for ch in s:
+        h ^= ord(ch)
+        h = (h * 0x01000193) & 0xffffffff
+    return h
+
+
+def _pick_alternative(raw_text, seed, element_index):
+    """Si raw_text contient des alternatives separees par '::', en choisit une.
+
+    Deterministe par seed pour garantir la reproductibilite du workflow.
+    Si seed == 0, choix aleatoire non-deterministe.
+    """
+    if not raw_text:
+        return ""
+    alts = [part.strip() for part in raw_text.split("::") if part.strip()]
+    if len(alts) < 2:
+        return raw_text
+    if seed <= 0:
+        return random.choice(alts)
+    h = _hash32(f"{seed}|{element_index}|{raw_text}")
+    return alts[h % len(alts)]
 
 
 class FRIAElementsNode:
@@ -50,6 +77,11 @@ class FRIAElementsNode:
 
         # Filtrer les entrees marquees visible=False (masquees depuis l'UI)
         elements = [el for el in elements if el.get("visible") is not False]
+
+        # Resoudre les alternatives "::" dans les textes raw/texte (deterministe)
+        for i, el in enumerate(elements):
+            if el.get("type") in ("raw", "text"):
+                el["text"] = _pick_alternative(el.get("text", ""), seed, i)
 
         # Vérifier qu'il y a du contenu à générer
         if not elements and random_count <= 0:
