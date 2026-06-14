@@ -277,7 +277,6 @@ function hideWidget(node, name) {
                             });
                             textInput.oninput = () => {
                                 item.text = textInput.value;
-                                renderChipsBelow(row, textInput.value);
                                 syncElementsWidget();
                             };
                             row.appendChild(textInput);
@@ -315,13 +314,6 @@ function hideWidget(node, name) {
                         };
                         row.appendChild(del);
                         listEl.appendChild(row);
-
-                        // Restaurer les chips d'alternatives (::) si l'element
-                        // est un texte et contient des alternatives. renderChipsBelow
-                        // verifie elle-meme si le contenu le justifie.
-                        if (item.type === "text" && item.text) {
-                            renderChipsBelow(row, item.text);
-                        }
                     });
                 }
 
@@ -353,10 +345,7 @@ function hideWidget(node, name) {
                     });
                     document.body.appendChild(ghost);
 
-                    // Extraire la ligne reelle et ses chips du DOM.
-                    const chipsRow = row.nextElementSibling?.classList?.contains("fria-chips-row")
-                        ? row.nextElementSibling
-                        : null;
+                    // Extraire la ligne reelle du DOM.
 
                     // Placeholder en cadre pointille bleu, hauteur reduite (moitie
                     // d'une ligne), pour bien marquer l'emplacement de drop.
@@ -373,7 +362,6 @@ function hideWidget(node, name) {
 
                     listEl.insertBefore(placeholder, row.nextSibling);
                     row.remove();
-                    if (chipsRow) chipsRow.remove();
 
                     // Activer les transitions sur toutes les lignes restantes.
                     listEl.querySelectorAll(".fria-element-row").forEach(r => {
@@ -388,7 +376,7 @@ function hideWidget(node, name) {
                         currentIdx: startIdx,
                         ghost,
                         row,
-                        draggedEls: { row, chips: chipsRow },
+                        draggedEls: { row },
                         offsetY: e.clientY - rect.top,
                     };
 
@@ -511,64 +499,17 @@ function hideWidget(node, name) {
                         r.style.transform = "";
                     });
 
-                    // Replacer la ligne reelle + ses chips a la position du placeholder
+                    // Replacer la ligne reelle a la position du placeholder
                     if (placeholder) {
-                        draggedEls.chips?.style?.removeProperty("display");
                         listEl.insertBefore(draggedEls.row, placeholder);
-                        if (draggedEls.chips) {
-                            listEl.insertBefore(draggedEls.chips, placeholder);
-                        }
                         placeholder.remove();
                     } else {
-                        draggedEls.chips?.style?.removeProperty("display");
                         listEl.appendChild(draggedEls.row);
-                        if (draggedEls.chips) listEl.appendChild(draggedEls.chips);
                     }
                     dragState = null;
                     syncElementsWidget();
                 }
 
-                // Affiche des chips sous l'input texte quand celui-ci contient
-                // des alternatives separees par "::". Chaque chip est une
-                // alternative. On passe l'index de l'alternative selectionnee
-                // par le seed (ou -1 si pas encore tiree / seed nul).
-                function renderChipsBelow(row, rawText) {
-                    // Supprimer l'ancien conteneur de chips s'il existe
-                    const oldChips = row.parentElement?.querySelector(":scope > .fria-chips-row");
-                    if (oldChips) oldChips.remove();
-
-                    if (!rawText) return;
-                    const alts = rawText.split("::").map(s => s.trim()).filter(Boolean);
-                    if (alts.length < 2) return;
-
-                    // Inserer juste apres la row courante
-                    const chipsRow = document.createElement("div");
-                    chipsRow.className = "fria-chips-row";
-                    Object.assign(chipsRow.style, {
-                        display: "flex", flexWrap: "wrap", gap: "3px",
-                        marginLeft: "28px", marginBottom: "4px",
-                    });
-                    alts.forEach((alt, i) => {
-                        const chip = document.createElement("span");
-                        chip.textContent = alt;
-                        Object.assign(chip.style, {
-                            fontSize: "9px", padding: "1px 6px", borderRadius: "8px",
-                            background: "#3a3a4e", color: "#ccc",
-                            border: "1px solid #555",
-                        });
-                        chip.title = `Alternative ${i + 1}/${alts.length}`;
-                        chipsRow.appendChild(chip);
-                    });
-                    const hint = document.createElement("span");
-                    hint.textContent = `🎲 ${alts.length} alternatives`;
-                    Object.assign(hint.style, {
-                        fontSize: "9px", color: "#888", marginLeft: "4px", alignSelf: "center",
-                    });
-                    chipsRow.appendChild(hint);
-
-                    // Inserer apres la row (le conteneur parent est listEl)
-                    row.parentElement?.insertBefore(chipsRow, row.nextSibling);
-                }
 
                 // ---- Add saved filter ----
                 addFilterBtn.onclick = async () => {
