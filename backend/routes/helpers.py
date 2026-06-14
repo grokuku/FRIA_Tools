@@ -258,7 +258,7 @@ def _init_db():
     # Migration : reassigner les templates orphelins a holaf_le_nain
     admin = conn.execute("SELECT id FROM users WHERE username = ?", ("holaf_le_nain",)).fetchone()
     if admin:
-        conn.execute("UPDATE prompt_templates SET user_id = ? WHERE user_id IS NULL", (admin["id"],))
+        conn.execute("UPDATE prompt_templates SET user_id = ? WHERE user_id IS NULL", (admin[0],))
 
     # Migration : filter_type pour les filtres composés (union)
     cols_filters = [r[1] for r in conn.execute("PRAGMA table_info(saved_filters)").fetchall()]
