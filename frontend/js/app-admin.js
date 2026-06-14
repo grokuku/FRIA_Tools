@@ -30,25 +30,23 @@
       try {
         var res = await fetch(API + '/prompts/templates');
         var list = await safeJson(res);
-        if (!Array.isArray(list)) return;
+        if (!Array.isArray(list) || list.length === 0) return;
         var sel = document.getElementById('enhance-type');
         if (!sel) return;
-        // Recuperer les types existants (hardcodes)
-        var existing = {};
-        for (var i = 0; i < sel.options.length; i++) {
-          if (sel.options[i].value) existing[sel.options[i].value] = true;
-        }
-        // Ajouter les nouveaux types venant des templates
+        // Sauvegarder la valeur actuelle
+        var currentVal = sel.value;
+        // Remplacer toutes les options par les templates
+        sel.innerHTML = '<option value="">-- Template --</option>';
+        var found = false;
         list.forEach(function(t) {
-          var pt = t.prompt_type;
-          if (pt && !existing[pt]) {
-            var opt = document.createElement('option');
-            opt.value = pt;
-            opt.textContent = t.name || pt.toUpperCase();
-            sel.appendChild(opt);
-            existing[pt] = true;
-          }
+          var opt = document.createElement('option');
+          opt.value = t.prompt_type;
+          opt.textContent = t.name || t.prompt_type.toUpperCase();
+          sel.appendChild(opt);
+          if (t.prompt_type === currentVal) found = true;
         });
+        // Restaurer la selection si possible, sinon garder la premiere
+        if (found) sel.value = currentVal;
       } catch {}
     }
 

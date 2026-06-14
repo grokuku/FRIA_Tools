@@ -162,20 +162,38 @@
                     color: "#ccc", fontSize: "11px", cursor: "pointer",
                 };
 
-                // Type (gauche) — valeurs fixes comme sur le site
+                // Type (gauche) — peuplé depuis /api/prompts/templates
                 const typeDiv = document.createElement("div");
                 const typeSelect = document.createElement("select");
                 Object.assign(typeSelect.style, selectStyle);
-                ["SDXL", "SD1.5", "Flux", "Anima", "Qwen", "Liste"].forEach(v => {
-                    const o = document.createElement("option");
-                    o.value = v.toLowerCase(); o.textContent = v;
-                    typeSelect.appendChild(o);
-                });
-                typeSelect.value = "sdxl";
                 typeSelect.onchange = syncNativeWidgets;
-                typeDiv.appendChild(mkLabel("Type"));
+                typeDiv.appendChild(mkLabel("Template"));
                 typeDiv.appendChild(typeSelect);
                 grid.appendChild(typeDiv);
+
+                async function loadPrepTemplates() {
+                    typeSelect.innerHTML = '<option value="">-- Chargement --</option>';
+                    try {
+                        const apiUrl = getApiUrl();
+                        const resp = await fetch(apiUrl + '/prompts/templates', { headers: apiHeaders() });
+                        const list = resp.ok ? await resp.json() : [];
+                        if (!Array.isArray(list) || list.length === 0) return;
+                        typeSelect.innerHTML = '';
+                        list.forEach(t => {
+                            const o = document.createElement("option");
+                            o.value = t.prompt_type;
+                            o.textContent = t.name || t.prompt_type;
+                            typeSelect.appendChild(o);
+                        });
+                        // Restaurer depuis le widget natif
+                        const pw = node.widgets?.find(x => x.name === "prompt_type");
+                        if (pw && pw.value && [...typeSelect.options].some(o => o.value === pw.value)) {
+                            typeSelect.value = pw.value;
+                        } else {
+                            typeSelect.value = typeSelect.options[0]?.value || "sdxl";
+                        }
+                    } catch {}
+                }
 
                 // Style (droite) — peuplé depuis /api/styles
                 const styleDiv = document.createElement("div");
@@ -217,6 +235,7 @@
                 widget.computeSize = () => [node.size[0] - 20, 110];
 
                 // ---- Initialisation ----
+                loadPrepTemplates();
                 populateStyleSelect().then(() => {
                     restoreFromNativeWidgets();
                     syncNativeWidgets();

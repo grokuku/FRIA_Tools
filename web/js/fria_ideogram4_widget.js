@@ -155,6 +155,30 @@
                 psRow.appendChild(styleDiv);
                 container.appendChild(psRow);
 
+                // ---- Template ----
+                const templateDiv = document.createElement("div");
+                const templateSelect = document.createElement("select");
+                Object.assign(templateSelect.style, { width: "100%", padding: "3px 6px", borderRadius: "4px", border: "1px solid #555", background: "#3a3a3e", color: "#ccc", fontSize: "11px", cursor: "pointer" });
+                templateDiv.appendChild(mkLabel("Template"));
+                templateDiv.appendChild(templateSelect);
+                container.appendChild(templateDiv);
+
+                async function loadTemplates() {
+                    templateSelect.innerHTML = '<option value="ideogram4">Ideogram 4</option>';
+                    try {
+                        const items = await apiGet("prompts/templates");
+                        if (Array.isArray(items)) {
+                            templateSelect.innerHTML = '';
+                            items.forEach(t => {
+                                const o = document.createElement("option");
+                                o.value = t.prompt_type;
+                                o.textContent = t.name || t.prompt_type;
+                                templateSelect.appendChild(o);
+                            });
+                        }
+                    } catch {}
+                }
+
                 // ---- Generate ----
                 const generateBtn = document.createElement("button");
                 generateBtn.textContent = "🔄  Generate Ideogram 4 caption";
@@ -277,6 +301,7 @@
                     .then(() => restoreFromWidgets(node));
                 populateSelect(styleSelect, "styles", "-- Style --")
                     .then(() => restoreFromWidgets(node));
+                loadTemplates();
 
                 syncNativeWidgets();
 
@@ -297,7 +322,7 @@
                     const payload = {
                         text: description,
                         seed: seedW > 0 ? seedW : null,
-                        prompt_type: "ideogram4",
+                        prompt_type: templateSelect.value || "ideogram4",
                         width: widthW || 1024,
                         height: heightW || 1024,
                         ep_elements: elTexts.map(t => ({ type: "text", text: t })),

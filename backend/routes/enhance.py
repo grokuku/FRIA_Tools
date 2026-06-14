@@ -867,16 +867,10 @@ def _prepare_enhance(user_id, data):
     conn = get_db()
     try:
         cur = conn.execute(
-            "SELECT system_prompt, examples FROM prompt_templates WHERE user_id = ? AND prompt_type = ? AND output_format = ?",
-            (user_id, prompt_type, output_format)
+            "SELECT system_prompt, examples FROM prompt_templates WHERE prompt_type = ? AND output_format = ? AND (is_public = 1 OR is_default = 1 OR user_id = ?) ORDER BY is_default DESC LIMIT 1",
+            (prompt_type, output_format, user_id)
         )
         tmpl = cur.fetchone()
-        if not tmpl:
-            cur = conn.execute(
-                "SELECT system_prompt, examples FROM prompt_templates WHERE user_id IS NULL AND prompt_type = ? AND output_format = ? AND is_default = 1",
-                (prompt_type, output_format)
-            )
-            tmpl = cur.fetchone()
         if tmpl:
             template_system_prompt = tmpl['system_prompt']
             try:
@@ -897,40 +891,40 @@ You MUST preserve the following style in the output prompt, verbatim and unmodif
 
 This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summarize it.""")
 
-    # 2) System prompt du template en BDD (le coeur de l'instruction)
-    # Si le template existe en BDD, on l'utilise ENTIEREMENT — il contient
-    # deja la doc du format, les exemples, les regles. Sinon on retombe
-    # sur le system prompt generique ci-dessous.
+    # 2) INSTRUCTIONS — system_prompt du template (doc, schema, tips, output format)
+    # Les exemples et les regles obligatoires sont geres separement ci-dessous.
     if template_system_prompt and template_system_prompt.strip():
         system_parts.append(template_system_prompt.strip())
     else:
-        # Fallback : system prompt generique (pour les types sans template en BDD)
-        system_parts.append("""You are an expert image prompt engineer. Your task is to rewrite and optimize the user's input into a high-quality image generation prompt.""")
-
-        # Format demande (type-agnostic)
+        # Fallback generique pour les types sans template
+        system_parts.append("You are an expert image prompt engineer. Your task is to rewrite and optimize the user's input into a high-quality image generation prompt.")
         format_instr = type_formats.get(prompt_type, type_formats['sdxl'])
         system_parts.append(f"Expected output style: {format_instr}")
-
-        # Exemples (inspiration, pas copie)
-        if template_examples:
-            ex_list = '\n'.join(f'- {ex}' for ex in template_examples)
-            system_parts.append(f"""Study these example prompts to understand the expected structure and quality level — use them for inspiration, do NOT copy them verbatim:
-{ex_list}""")
-        elif examples_text.strip():
-            system_parts.append(f"""Study these example prompts for reference:
-{examples_text}""")
-
-        # Regles
         system_parts.append("""Rules:
 - Preserve the user's main intent and keywords; do not discard specific requests
 - Remove duplicate concepts
 - Organize by importance (most important first)
 - Output ONLY the final prompt text — no markers, no tags like [PRIORITE HAUTE], no meta-commentary""")
-
-        # Format de sortie
         system_parts.append(format_rules.get(output_format, "Output ONLY the final prompt."))
 
-    # 3) Instructions speciales (toujours en dernier)
+    # 3) EXAMPLES — injectes depuis le champ examples du template
+    if template_examples:
+        ex_list = '\n'.join(f'- {ex}' for ex in template_examples)
+        system_parts.append(f"""## Examples
+Here are well-structured examples for reference — study them but do NOT copy verbatim:
+{ex_list}""")
+
+    # 4) MANDATORY RULES — regles obligatoires, non visibles dans l'UI
+    system_parts.append("""Mandatory rules:
+- The assigned STYLE must be preserved exactly as-is
+- In case of conflict, prioritize: base prompt > elements > random
+- Remove duplicates
+- Organize by importance
+- DO NOT REPEAT the same tags/concepts
+- OUTPUT ONLY the prompt, nothing else: no explanations, no comments, no introductory sentences
+- The prompt must be ready to use in an image generator""")
+
+    # 5) Instructions speciales (toujours en dernier)
     if special_instructions:
         system_parts.append(f"Additional instructions: {special_instructions}")
 

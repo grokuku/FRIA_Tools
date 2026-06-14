@@ -143,18 +143,30 @@
                     color: "#ccc", fontSize: "11px", cursor: "pointer",
                 };
 
-                // Type (gauche) — fixé à Ideogram 4
+                // Type (gauche) — peuplé depuis les templates
                 const typeDiv = document.createElement("div");
                 const typeSelect = document.createElement("select");
                 Object.assign(typeSelect.style, selectStyle);
-                const o = document.createElement("option");
-                o.value = "ideogram4";
-                o.textContent = "Ideogram 4";
-                typeSelect.appendChild(o);
-                typeSelect.disabled = true;
-                typeDiv.appendChild(mkLabel("Type"));
+                typeDiv.appendChild(mkLabel("Template"));
                 typeDiv.appendChild(typeSelect);
                 grid.appendChild(typeDiv);
+
+                async function loadIdeogramPrepTemplates() {
+                    typeSelect.innerHTML = '<option value="ideogram4">Ideogram 4</option>';
+                    try {
+                        const apiUrl = getApiUrl();
+                        const resp = await fetch(apiUrl + '/prompts/templates', { headers: apiHeaders() });
+                        const list = resp.ok ? await resp.json() : [];
+                        if (!Array.isArray(list)) return;
+                        typeSelect.innerHTML = '';
+                        list.forEach(t => {
+                            const o = document.createElement("option");
+                            o.value = t.prompt_type;
+                            o.textContent = t.name || t.prompt_type;
+                            typeSelect.appendChild(o);
+                        });
+                    } catch {}
+                }
 
                 // Style (droite)
                 const styleDiv = document.createElement("div");
@@ -196,6 +208,7 @@
                 widget.computeSize = () => [node.size[0] - 20, 105];
 
                 // ---- Initialisation ----
+                loadIdeogramPrepTemplates();
                 populateStyleSelect().then(() => {
                     restoreFromNativeWidget();
                     syncStyleWidget();

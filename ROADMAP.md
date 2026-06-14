@@ -1,6 +1,47 @@
-# Roadmap — Elements Picker & Prompt Generator/Enhancer
+# Roadmap — FR.IA Helper
 
 > Fichier vivant pour noter les idées, fonctionnalités et réflexions.
+
+## 🚀 Session en cours (14/06/2026)
+
+### ✅ Refactoring massif — découpage du code
+- **`frontend/index.html`** : 3917 → 757 lignes. CSS extrait → `css/app.css` (469 lignes). JS extrait → `js/app.js` (2691 lignes).
+- **`frontend/js/app.js`** : 2691 lignes découpées en 4 modules : `app-core.js` (317), `app-keywords.js` (415), `app-filters.js` (1134), `app-admin.js` (826).
+- **`backend/app.py`** : 3871 → 61 lignes. Routes découpées en 14 modules dans `backend/routes/`.
+- **`backend/extensions.py`** : création app Flask + constantes partagées (22 lignes).
+- **`backend/context.py`** : imports partagés pour les modules routes (43 lignes).
+- **`frontend/beta.html`** supprimé — plus de synchro à maintenir.
+- Bugs d'imports résolus : `_login_required` via `from context import *` + `__all__`, `helpers.py` imports manquants, `from routes.helpers import *` n'importe pas les underscore.
+
+### ✅ Interface — onglets + relooking
+- **Header renommé** : "FR-I.A Helper" avec 4 onglets : Prompt Helper, Style, Template, Keywords Manager.
+- **Boutons filtres** (Charger/Save As/Gérer) : toolbar colorée (indigo/emerald/violet) avec badge, déplacée dans un encadré à droite sous la recherche sémantique.
+- **Paramètres** allégée : Provider LLM + Compte (styles et templates déplacés vers onglets dédiés).
+
+### ✅ Onglet Styles — interface deux colonnes
+- **Colonne gauche** : liste des styles (nom, auteur, 🌐/🔒), clic = édition, boutons 📋 Cloner / 🗑 Supprimer.
+- **Colonne droite** : édition plein écran, textareas ×3 hauteur + resize vertical + persistance hauteurs.
+- **Bouton Export** ajouté (📥 format texte).
+- Admin peut éditer/supprimer les styles sans propriétaire. Non-admin peut cloner les styles publics.
+
+### ✅ Onglet Templates — refonte complète
+- **Colonne gauche** : liste normalisée comme les styles (nom, auteur, 🌐/🔒, 📋 Cloner, 🗑 Supprimer).
+- **Colonne droite** : nom full width, Instructions + Exemples en deux sous-colonnes.
+- **Le nom du template = son `prompt_type`** (ex: créer "patate" → apparaît comme type "patate" dans ComfyUI).
+- **Dropdown `enhance-type` dynamique** : peuplé depuis les templates disponibles.
+- **Suppression du dropdown type** (SDXL/Flux/etc.) de l'éditeur — redondant avec la liste.
+- **Format (text/md/json) + Public** descendus au-dessus du bouton Sauvegarder.
+- **Bouton + Nouveau template retiré** (les templates sont prédéfinis, modifiables par admin).
+- **Admin** peut éditer/supprimer tous les templates. Propriété par utilisateur.
+- **DB templates** : ajout colonnes `name`, `is_public`. Templates orphelins corrigés. Migration `_migrate_templates_to_english` désactivée (n'écrase plus). `INSERT OR REPLACE` + `timeout=10` sur connexion SQLite.
+- **Fallback auteur `'Admin'` retiré** → pas d'utilisateur Admin fictif.
+
+### ⚠️ À faire — validation format LLM
+- Après génération, vérifier que la sortie respecte le format défini par le template (texte brut / markdown / JSON).
+- Pour le JSON (Ideogram 4) : auto-fix si malformed (strip ```json```, retry).
+- Pour le markdown : wrapper en code block si nécessaire.
+- Impacte les nodes ComfyUI (Ideogram 4 Builder) + le backend `/api/enhance`.
+- Template `output_format` doit être utilisé pour le check.
 
 ## 🚀 État actuel (fin de session)
 
