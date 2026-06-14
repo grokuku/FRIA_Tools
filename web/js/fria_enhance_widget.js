@@ -26,6 +26,7 @@
             nodeType.prototype.onNodeCreated = function () {
                 const r = onNodeCreated?.apply(this, arguments);
                 const node = this;
+                let _friaRestored = false;
 
                 // ---- Cacher les widgets natifs pilotés par le DOM ----
                 const hideWidget = (n, name) => {
@@ -74,9 +75,12 @@
 
                 // ---- Sync des widgets natifs ----
                 function syncNativeWidgets() {
+                    if (!_friaRestored) return;
                     const set = (name, val) => {
                         const w = node.widgets?.find(x => x.name === name);
-                        if (w) w.value = val;
+                        if (!w) return;
+                        w.value = val;
+                        if (w.callback) w.callback(val);
                     };
                     set("prompt_type", templateSelect.value);
                     set("preset_id", parseInt(presetSelect.value) || 0);
@@ -85,20 +89,26 @@
 
                 // ---- Restauration depuis widgets natifs (au rechargement) ----
                 function restoreFromNativeWidgets() {
+                    let restored = false;
                     const ptw = node.widgets?.find(x => x.name === "prompt_type");
                     const pw = node.widgets?.find(x => x.name === "preset_id");
                     const sw = node.widgets?.find(x => x.name === "style_id");
                     if (ptw && ptw.value) {
                         if ([...templateSelect.options].some(o => o.value === ptw.value)) {
                             templateSelect.value = ptw.value;
+                            restored = true;
                         }
                     }
                     if (pw && pw.value > 0 && [...presetSelect.options].some(o => o.value === String(pw.value))) {
                         presetSelect.value = String(pw.value);
+                        restored = true;
                     }
                     if (sw && sw.value > 0 && [...styleSelect.options].some(o => o.value === String(sw.value))) {
                         styleSelect.value = String(sw.value);
+                        restored = true;
                     }
+                    _friaRestored = true;
+                    return restored;
                 }
 
                 // ---- Cache de rafraîchissement ----
@@ -120,12 +130,12 @@
                     } catch {}
                 }
 
-                async function refreshIfStale(select, apiPath, cacheKey) {
+                async function refreshIfStale(select, apiPath, cacheKey, valKey) {
                     const now = Date.now();
                     if (now - (_cache[cacheKey] || 0) < CACHE_TTL) return;
                     _cache[cacheKey] = now;
                     const oldVal = select.value;
-                    await populateSelect(select, apiPath, "name", "id", select.options[0]?.textContent || "--");
+                    await populateSelect(select, apiPath, "name", valKey || "id", select.options[0]?.textContent || "--");
                     if ([...select.options].some(o => o.value === oldVal)) select.value = oldVal;
                 }
 
@@ -145,11 +155,6 @@
                     return l;
                 };
 
-                // ---- Grille 2x2 (Preset + Type, Style sur la 4eme case) ----
-                const grid = document.createElement("div");
-                Object.assign(grid.style, {
-                    display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px",
-                });
                 const selectStyle = {
                     width: "100%", padding: "3px 6px", borderRadius: "4px",
                     border: "1px solid #555", background: "#3a3a3e",
@@ -164,7 +169,7 @@
                 const templateSelect = document.createElement("select");
                 Object.assign(templateSelect.style, selectStyle);
                 templateSelect.onchange = syncNativeWidgets;
-                templateSelect.addEventListener("mousedown", () => refreshIfStale(templateSelect, "prompts/templates", "tmpl"));
+                templateSelect.addEventListener("mousedown", () => refreshIfStale(templateSelect, "prompts/templates", "tmpl", "prompt_type"));
                 templateDiv.appendChild(mkLabel("Template"));
                 templateDiv.appendChild(templateSelect);
                 tsRow.appendChild(templateDiv);
@@ -242,10 +247,6 @@
                 }
                 // mousedown already set above on templateSelect
 
-                container.appendChild(grid);
-
-                container.appendChild(grid);
-
                 // ---- Bouton Test Enhance ----
                 const enhanceBtn = document.createElement("button");
                 enhanceBtn.textContent = "🔄  Test enhance";
@@ -280,6 +281,7 @@
 
                 // ---- Initialisation ----
                 loadEnhanceTemplates().then(() => {
+                    restoreFromNativeWidgets();
                     syncNativeWidgets();
                 });
                 populateSelect(presetSelect, "presets", "name", "id", "-- Preset IA --").then(() => {

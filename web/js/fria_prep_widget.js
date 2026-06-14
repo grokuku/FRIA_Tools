@@ -32,6 +32,7 @@
             nodeType.prototype.onNodeCreated = function () {
                 const r = onNodeCreated?.apply(this, arguments);
                 const node = this;
+                let _friaRestored = false;
 
                 // ---- Cacher les widgets natifs pilotes par le DOM ----
                 // On utilise UNIQUEMENT w.hidden = true (pas de computeSize negatif
@@ -89,24 +90,36 @@
                 };
 
                 function syncNativeWidgets() {
-                    if (promptTypeWidget) promptTypeWidget.value = typeSelect.value;
-                    if (styleWidget) styleWidget.value = parseInt(styleSelect.value) || 0;
+                    if (!_friaRestored) return;
+                    if (promptTypeWidget) {
+                        promptTypeWidget.value = typeSelect.value;
+                        if (promptTypeWidget.callback) promptTypeWidget.callback(typeSelect.value);
+                    }
+                    if (styleWidget) {
+                        styleWidget.value = parseInt(styleSelect.value) || 0;
+                        if (styleWidget.callback) styleWidget.callback(parseInt(styleSelect.value) || 0);
+                    }
                 }
 
                 // Restaurer la selection des dropdowns depuis les widgets natifs
                 // (restaures par ComfyUI au rechargement de la page)
                 function restoreFromNativeWidgets() {
+                    let restored = false;
                     if (promptTypeWidget && promptTypeWidget.value) {
                         if ([...typeSelect.options].some(o => o.value === promptTypeWidget.value)) {
                             typeSelect.value = promptTypeWidget.value;
+                            restored = true;
                         }
                     }
                     if (styleWidget) {
                         const sid = parseInt(styleWidget.value) || 0;
                         if (sid > 0 && [...styleSelect.options].some(o => o.value === String(sid))) {
                             styleSelect.value = String(sid);
+                            restored = true;
                         }
                     }
+                    _friaRestored = true;
+                    return restored;
                 }
 
                 async function populateStyleSelect() {

@@ -26,6 +26,7 @@
             nodeType.prototype.onNodeCreated = function () {
                 const r = onNodeCreated?.apply(this, arguments);
                 const node = this;
+                let _friaRestored = false;
 
                 // ---- Cacher les widgets natifs pilotes par le DOM ----
                 // On utilise UNIQUEMENT w.hidden = true (pas de computeSize negatif
@@ -81,11 +82,14 @@
                 };
 
                 function syncStyleWidget() {
+                    if (!_friaRestored) return;
                     if (styleWidget) {
                         styleWidget.value = parseInt(styleSelect.value) || 0;
+                        if (styleWidget.callback) styleWidget.callback(parseInt(styleSelect.value) || 0);
                     }
                     if (promptTypeWidget) {
                         promptTypeWidget.value = typeSelect.value;
+                        if (promptTypeWidget.callback) promptTypeWidget.callback(typeSelect.value);
                     }
                 }
 
@@ -98,12 +102,13 @@
                             restored = true;
                         }
                     }
-                    if (promptTypeWidget && promptTypeWidget.value > 0) {
+                    if (promptTypeWidget && promptTypeWidget.value) {
                         if ([...typeSelect.options].some(o => o.value === String(promptTypeWidget.value))) {
                             typeSelect.value = String(promptTypeWidget.value);
                             restored = true;
                         }
                     }
+                    _friaRestored = true;
                     return restored;
                 }
 

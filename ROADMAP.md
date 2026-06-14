@@ -43,6 +43,35 @@
 - Impacte les nodes ComfyUI (Ideogram 4 Builder) + le backend `/api/enhance`.
 - Template `output_format` doit être utilisé pour le check.
 
+### ✅ Templates — dropdown dynamique dans les nodes ComfyUI
+- **Dropdown Template** ajouté dans les 4 nodes ComfyUI (Enhancer, Prep, Ideogram Builder, Ideogram Prep).
+- **Chargement lazy** : templates fetchés depuis `/api/prompts/templates` au `mousedown`.
+- **Widget natif** : `prompt_type` (STRING) piloté par le dropdown DOM (caché).
+- **Backend** :
+  - Résolution template par `prompt_type` uniquement (filtre `output_format` retiré).
+  - `prompt_type_id` accepté en fallback (résolution INT → string via BDD).
+  - Plus de branches hardcodées `ideogram4` dans `_prepare_enhance`.
+  - Erreur 400 explicite si template non trouvé (plus de fallback SDXL).
+  - `max_tokens` retiré du payload LLM.
+  - Fallback générique supprimé.
+- **Frontend** : dropdown `enhance-type` peuplé dynamiquement (remplace la liste hardcodée SDXL/Flux/etc).
+
+### 🔴 BUG EN COURS — Dropdown Template non synchronisé avec le widget natif
+- **Symptôme** : Après sélection d'un template dans le dropdown DOM d'une node ComfyUI, le backend reçoit `prompt_type='sdxl'` (premier template de la liste) au lieu du template choisi. F5 = retour à SDXL.
+- **Cause racine suspectée** : Le widget natif `prompt_type` (STRING, caché) n'est pas synchronisé avec le dropdown DOM, ou la valeur est écrasée par un restore/reload.
+- **Indice** : Logs backend montrent `prompt_type='sdxl'` quelle que soit la sélection. Le dropdown DOM affiche la valeur choisie.
+- **Périmètre** : Les 4 nodes ComfyUI. Le frontend web (`index.html`) n'est PAS affecté.
+- **Déjà fait** :
+  - `prompt_type_id` (INT) → `prompt_type` (STRING)
+  - Retrait de `computeSize = () => [0, -4]` dans `hideWidget`
+  - Retrait de `syncNativeWidgets()` dans `loadTemplates()`
+  - Ajout de `loadedGraphNode` + retry
+  - Suppression des `parseInt(typeSelect.value)` qui convertissaient en 0
+  - Suppression des branches hardcodées `ideogram4` dans le backend
+  - Requête template sans filtre `output_format`
+  - Backend : erreur 400 explicite si template non trouvé
+- **Prochaine étape** : Supprimer `__pycache__` ComfyUI, vérifier que le log Python `[FR.IA Ideogram Prep PYTHON]` apparaît. Si problème persiste, bypasser le widget natif via `node._friaState` (persistance custom).
+
 ## 🚀 État actuel (fin de session)
 
 **Contexte** : Serveur `kw.holaf.fr` (backend Flask + Discord OAuth). Le projet utilise **2 instances Ollama distinctes** + DeepSeek — voir section [Architecture Ollama](#-architecture-ollama--split-llm--embeddings) plus bas.

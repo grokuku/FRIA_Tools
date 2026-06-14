@@ -18,6 +18,7 @@
             nodeType.prototype.onNodeCreated = function () {
                 const r = onNodeCreated?.apply(this, arguments);
                 const node = this;
+                let _friaRestored = false;
 
                 // ---- Helper : cacher un widget natif ----
                 const hideWidget = (n, name) => {
@@ -267,9 +268,12 @@
                 // STRING _api_config qui n'existe plus (api_key/url sont dans le
                 // fichier de credentials, lus cote Python).
                 function syncNativeWidgets() {
+                    if (!_friaRestored) return;
                     const set = (name, val) => {
                         const w = node.widgets?.find(x => x.name === name);
-                        if (w) w.value = val;
+                        if (!w) return;
+                        w.value = val;
+                        if (w.callback) w.callback(val);
                     };
                     set("preset_id", parseInt(presetSelect.value) || 0);
                     set("style_id", parseInt(styleSelect.value) || 0);
@@ -300,11 +304,12 @@
                             styleSelect.value = String(sw.value);
                             restored = true;
                         }
-                        if (tw && tw.value > 0 && [...templateSelect.options].some(o => o.value === String(tw.value))) {
+                        if (tw && tw.value && [...templateSelect.options].some(o => o.value === String(tw.value))) {
                             templateSelect.value = String(tw.value);
                             restored = true;
                         }
                     } catch {}
+                    _friaRestored = true;
                     return restored;
                 }
                 node._friaRestore = function () {
