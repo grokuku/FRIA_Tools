@@ -86,12 +86,12 @@
 
                 // ---- Restauration depuis widgets natifs (au rechargement) ----
                 function restoreFromNativeWidgets() {
-                    const ptw = node.widgets?.find(x => x.name === "prompt_type_id");
+                    const ptw = node.widgets?.find(x => x.name === "prompt_type");
                     const pw = node.widgets?.find(x => x.name === "preset_id");
                     const sw = node.widgets?.find(x => x.name === "style_id");
-                    if (ptw && ptw.value > 0) {
-                        if ([...templateSelect.options].some(o => o.value === String(ptw.value))) {
-                            templateSelect.value = String(ptw.value);
+                    if (ptw && ptw.value) {
+                        if ([...templateSelect.options].some(o => o.value === ptw.value)) {
+                            templateSelect.value = ptw.value;
                         }
                     }
                     if (pw && pw.value > 0 && [...presetSelect.options].some(o => o.value === String(pw.value))) {
@@ -230,7 +230,7 @@
                         templateSelect.innerHTML = '';
                         items.forEach(t => {
                             const o = document.createElement("option");
-                            o.value = String(t.id);
+                            o.value = t.prompt_type;
                             o.textContent = t.name || t.prompt_type;
                             templateSelect.appendChild(o);
                         });
@@ -320,7 +320,7 @@
                     const payload = {
                         text: basePrompt,
                         seed: seedW > 0 ? seedW : null,
-                        prompt_type_id: parseInt(templateSelect.value) || 0,
+                        prompt_type: templateSelect.value,
                         preset_id: parseInt(presetSelect.value) || null,
                         style_id: parseInt(styleSelect.value) || null,
                         special_instructions: specialInstructions,

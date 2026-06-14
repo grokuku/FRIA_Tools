@@ -180,7 +180,7 @@
                         typeSelect.innerHTML = '';
                         list.forEach(t => {
                             const o = document.createElement("option");
-                    o.value = String(t.id);
+                    o.value = t.prompt_type;
                                 o.textContent = t.name || t.prompt_type;
                                 o.dataset.promptType = t.prompt_type;
                             typeSelect.appendChild(o);

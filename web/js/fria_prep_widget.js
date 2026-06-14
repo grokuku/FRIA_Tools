@@ -43,10 +43,10 @@
                         if (w.parentEl) w.parentEl.style.display = "none";
                     }
                 };
-                ["prompt_type_id", "style_id"].forEach(n => hideWidget(node, n));
+                ["prompt_type", "style_id"].forEach(n => hideWidget(node, n));
 
                 // ---- Supprimer les sockets d'entrée ----
-                for (const inputName of ["prompt_type_id", "style_id"]) {
+                for (const inputName of ["prompt_type", "style_id"]) {
                     const slot = node.findInputSlot?.(inputName);
                     if (slot !== undefined && slot !== -1) {
                         node.removeInput(slot);
@@ -54,7 +54,7 @@
                 }
 
                 // Refs vers les widgets natifs (utiles pour le sync)
-                const promptTypeWidget = node.widgets?.find(x => x.name === "prompt_type_id");
+                const promptTypeWidget = node.widgets?.find(x => x.name === "prompt_type");
                 const styleWidget = node.widgets?.find(x => x.name === "style_id");
 
                 // ---- Cache de rafraîchissement ----
@@ -88,17 +88,16 @@
                 };
 
                 function syncNativeWidgets() {
-                    if (promptTypeWidget) promptTypeWidget.value = parseInt(typeSelect.value) || 0;
+                    if (promptTypeWidget) promptTypeWidget.value = typeSelect.value;
                     if (styleWidget) styleWidget.value = parseInt(styleSelect.value) || 0;
                 }
 
                 // Restaurer la selection des dropdowns depuis les widgets natifs
                 // (restaures par ComfyUI au rechargement de la page)
                 function restoreFromNativeWidgets() {
-                    if (promptTypeWidget && promptTypeWidget.value > 0) {
-                        const tid = parseInt(promptTypeWidget.value) || 0;
-                        if (tid > 0 && [...typeSelect.options].some(o => o.value === String(tid))) {
-                            typeSelect.value = String(tid);
+                    if (promptTypeWidget && promptTypeWidget.value) {
+                        if ([...typeSelect.options].some(o => o.value === promptTypeWidget.value)) {
+                            typeSelect.value = promptTypeWidget.value;
                         }
                     }
                     if (styleWidget) {
@@ -174,14 +173,14 @@
                 grid.appendChild(typeDiv);
 
                 async function populateSelect(select, apiPath) {
-                    select.innerHTML = `<option value="0">-- Chargement --</option>`;
+                    select.innerHTML = `<option value="">-- Chargement --</option>`;
                     try {
                         const items = await apiGet(apiPath);
                         if (Array.isArray(items) && items.length > 0) {
                             select.innerHTML = '';
                             items.forEach(item => {
                                 const o = document.createElement("option");
-                                o.value = String(item.id);
+                                o.value = item.prompt_type;
                                 o.textContent = item.name || item.prompt_type;
                                 select.appendChild(o);
                             });
@@ -194,7 +193,7 @@
                     _cache[cacheKey] = now;
                     const oldVal = select.value;
                     await populateSelect(select, apiPath);
-                    if (oldVal !== "0" && [...select.options].some(o => o.value === oldVal)) select.value = oldVal;
+                    if (oldVal !== "" && [...select.options].some(o => o.value === oldVal)) select.value = oldVal;
                 }
 
                 // Style (droite) — peuplé depuis /api/styles

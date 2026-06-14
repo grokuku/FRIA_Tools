@@ -47,7 +47,7 @@ class FRIAPromptPrepNode:
             "required": {
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
                 "base_prompt": ("STRING", {"multiline": True, "default": ""}),
-                "prompt_type_id": ("INT", {"default": 0, "min": 0}),
+                "prompt_type": ("STRING", {"default": "sdxl"}),
                 "style_id": ("INT", {"default": 0, "min": 0}),
                 "special_instructions": ("STRING", {"default": ""}),
             },
@@ -60,7 +60,7 @@ class FRIAPromptPrepNode:
     RETURN_TYPES = ("STRING", "STRING", "STRING")
     RETURN_NAMES = ("llm_prompt", "system_prompt", "neg_prompt")
 
-    def prepare(self, seed=0, base_prompt="", prompt_type_id=0,
+    def prepare(self, seed=0, base_prompt="", prompt_type="sdxl",
                 style_id=0, special_instructions="", elements="[]"):
         # api_key et api_url lus depuis le fichier de credentials
         api_url = _credentials.get_api_url()
@@ -100,8 +100,7 @@ class FRIAPromptPrepNode:
         payload = {
             "text": combined_text,
             "seed": seed if seed > 0 else None,
-            "prompt_type_id": prompt_type_id if prompt_type_id > 0 else None,
-            "prompt_type": "sdxl",  # sera ecrase par le backend si prompt_type_id fourni
+            "prompt_type": prompt_type,
             "style_id": style_id if style_id > 0 else None,
             "special_instructions": special_instructions,
         }

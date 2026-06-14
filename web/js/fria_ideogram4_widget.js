@@ -173,7 +173,7 @@
                             templateSelect.innerHTML = '';
                             items.forEach(t => {
                                 const o = document.createElement("option");
-                                o.value = String(t.id);
+                                o.value = t.prompt_type;
                                 o.textContent = t.name || t.prompt_type;
                                 templateSelect.appendChild(o);
                             });
@@ -343,8 +343,7 @@
                     const payload = {
                         text: description,
                         seed: seedW > 0 ? seedW : null,
-                        prompt_type_id: parseInt(templateSelect.value) || 0,
-                        prompt_type: "ideogram4",  // sera resolu par le backend
+                        prompt_type: templateSelect.value,
                         width: widthW || 1024,
                         height: heightW || 1024,
                         ep_elements: elTexts.map(t => ({ type: "text", text: t })),
