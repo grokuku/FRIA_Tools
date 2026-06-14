@@ -233,6 +233,10 @@ function hideWidget(node, name) {
                         grip.onpointerdown = (e) => startDrag(e, idx, row);
 
                         // Icône œil (visible / masqué)
+                        // On utilise mousedown/pointerdown au lieu de click, car
+                        // certains contextes (DOM widget ComfyUI, LiteGraph canvas)
+                        // peuvent consommer le mousedown et empecher la synthese
+                        // du click.
                         const eyeBtn = document.createElement("button");
                         eyeBtn.type = "button";
                         eyeBtn.textContent = isHidden ? "🙈" : "👁";
@@ -243,13 +247,17 @@ function hideWidget(node, name) {
                             pointerEvents: "all",
                         });
                         eyeBtn.title = isHidden ? "Activier cette entrée" : "Masquer cette entrée";
-                        eyeBtn.addEventListener("click", (e) => {
+                        const eyeHandler = (e) => {
                             e.stopPropagation();
                             e.preventDefault();
-                            item.visible = !isHidden;
+                            item.visible = !(item.visible === false);
                             renderList();
                             syncElementsWidget();
-                        });
+                        };
+                        eyeBtn.addEventListener("mousedown", eyeHandler);
+                        eyeBtn.addEventListener("pointerdown", eyeHandler);
+                        // click en fallback (certains setups le laissent passer)
+                        eyeBtn.addEventListener("click", eyeHandler);
 
                         row.appendChild(grip);
                         row.appendChild(eyeBtn);
@@ -346,12 +354,13 @@ function hideWidget(node, name) {
                         ? row.nextElementSibling
                         : null;
 
-                    // Placeholder en cadre pointille bleu, hauteur d'une ligne,
-                    // pour bien marquer l'emplacement de drop.
+                    // Placeholder en cadre pointille bleu, hauteur reduite (moitie
+                    // d'une ligne), pour bien marquer l'emplacement de drop.
+                    const rowHeight = row.getBoundingClientRect().height;
                     const placeholder = document.createElement("div");
                     placeholder.className = "fria-drag-placeholder";
                     Object.assign(placeholder.style, {
-                        height: `${row.getBoundingClientRect().height}px`,
+                        height: `${rowHeight / 2}px`,
                         border: "2px dashed #60a5fa", borderRadius: "4px",
                         background: "rgba(96,165,250,0.10)",
                         marginBottom: "2px", pointerEvents: "none",
@@ -387,11 +396,21 @@ function hideWidget(node, name) {
                     } catch (_) {}
                 }
 
+                // Drapeau anti-clignotement : pendant qu'une animation FLIP est
+                // en cours, les getBoundingClientRect() des lignes renvoient des
+                // positions intermediaires, ce qui peut faire osciller le calcul
+                // de targetIdx. On bloque la detection jusqu'a la fin de la
+                // transition.
+                let isAnimating = false;
+
                 function onPointerMove(e) {
                     if (!dragState) return;
                     e.preventDefault();
                     const { ghost, offsetY } = dragState;
                     ghost.style.top = `${e.clientY - offsetY}px`;
+
+                    // Pendant l'animation, ne pas recalculer la position cible.
+                    if (isAnimating) return;
 
                     const rows = Array.from(listEl.querySelectorAll(".fria-element-row"));
                     let targetIdx = rows.length;
@@ -416,6 +435,7 @@ function hideWidget(node, name) {
                 // Deplace le placeholder dans le DOM en animant les autres lignes
                 // via la technique FLIP (First/Last/Invert/Play).
                 function flipMovePlaceholder(targetIdx, placeholder) {
+                    isAnimating = true;
                     const rows = Array.from(listEl.querySelectorAll(".fria-element-row"));
 
                     // 1. First : positions avant le deplacement.
@@ -446,6 +466,21 @@ function hideWidget(node, name) {
                         r.style.transition = "transform 0.15s ease-out";
                         r.style.transform = "";
                     });
+
+                    // Liberer le drapeau quand la transition est terminee.
+                    // On ecoute la derniere ligne (forcement animee) ; fallback
+                    // timeout au cas ou transitionend ne fire pas.
+                    let released = false;
+                    const release = () => {
+                        if (released) return;
+                        released = true;
+                        isAnimating = false;
+                    };
+                    const lastRow = rows[rows.length - 1];
+                    if (lastRow) {
+                        lastRow.addEventListener("transitionend", release, { once: true });
+                    }
+                    setTimeout(release, 180);
                 }
 
                 function onPointerUp(e) {
