@@ -244,9 +244,14 @@ function hideWidget(node, name) {
                             background: "none", border: "none", color: "#ccc",
                             cursor: "pointer", fontSize: "12px", padding: "0 2px", flexShrink: "0",
                         });
-                        eyeBtn.title = isHidden ? "Activier cette entrée" : "Masquer cette entrée";
+                        eyeBtn.title = isHidden ? "Activer cette entrée" : "Masquer cette entrée";
                         eyeBtn.onclick = () => {
-                            item.visible = !(item.visible === false);
+                            // Toggle : visible (true ou undefined) → false, false → true
+                            if (item.visible === false) {
+                                item.visible = true;
+                            } else {
+                                item.visible = false;
+                            }
                             renderList();
                             syncElementsWidget();
                         };
