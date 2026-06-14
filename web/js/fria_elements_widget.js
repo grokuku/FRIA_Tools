@@ -233,31 +233,23 @@ function hideWidget(node, name) {
                         grip.onpointerdown = (e) => startDrag(e, idx, row);
 
                         // Icône œil (visible / masqué)
-                        // On utilise mousedown/pointerdown au lieu de click, car
-                        // certains contextes (DOM widget ComfyUI, LiteGraph canvas)
-                        // peuvent consommer le mousedown et empecher la synthese
-                        // du click.
+                        // Meme pattern que la croix de suppression (del.onclick) :
+                        // un simple <button> avec onclick direct. Les tentatives
+                        // avec mousedown/pointerdown empechaient le click de se
+                        // synthetiser correctement dans le DOM widget ComfyUI.
                         const eyeBtn = document.createElement("button");
                         eyeBtn.type = "button";
                         eyeBtn.textContent = isHidden ? "🙈" : "👁";
                         Object.assign(eyeBtn.style, {
-                            cursor: "pointer", fontSize: "12px", flexShrink: "0",
-                            userSelect: "none", marginRight: "2px",
-                            background: "none", border: "none", padding: "0", color: "#ccc",
-                            pointerEvents: "all",
+                            background: "none", border: "none", color: "#ccc",
+                            cursor: "pointer", fontSize: "12px", padding: "0 2px", flexShrink: "0",
                         });
                         eyeBtn.title = isHidden ? "Activier cette entrée" : "Masquer cette entrée";
-                        const eyeHandler = (e) => {
-                            e.stopPropagation();
-                            e.preventDefault();
+                        eyeBtn.onclick = () => {
                             item.visible = !(item.visible === false);
                             renderList();
                             syncElementsWidget();
                         };
-                        eyeBtn.addEventListener("mousedown", eyeHandler);
-                        eyeBtn.addEventListener("pointerdown", eyeHandler);
-                        // click en fallback (certains setups le laissent passer)
-                        eyeBtn.addEventListener("click", eyeHandler);
 
                         row.appendChild(grip);
                         row.appendChild(eyeBtn);
