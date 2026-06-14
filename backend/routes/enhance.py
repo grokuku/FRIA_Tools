@@ -782,37 +782,31 @@ def _prepare_enhance(user_id, data):
     # Pour Ideogram 4 on structure l'entree en sections nommees
     # (description generale + 4 elements + dimensions) au lieu du
     # format avec priorites [PRIORITE ...] qui n'a pas de sens ici.
-    if prompt_type == 'ideogram4':
-        parts = []
-        if text:
-            parts.append("GENERAL DESCRIPTION (scene, style, lighting, mood):\n" + text)
-        # Les elements EP de type "text" sont les sujets principaux
-        named_elems = [e.get('text', '').strip() for e in ep_elements
-                       if e.get('type') == 'text' and e.get('text', '').strip()]
-        if named_elems:
-            parts.append("ELEMENTS TO PLACE IN THE SCENE:")
-            for i, desc in enumerate(named_elems, 1):
-                parts.append(f"  {i}. {desc}")
-        if width and height:
-            from math import gcd
-            g = gcd(width, height)
-            parts.append(f"IMAGE DIMENSIONS: {width}x{height} pixels (aspect ratio: {width//g}:{height//g})")
-        if style_text:
-            parts.append("STYLE (must be preserved verbatim):\n" + style_text)
-        if special_instructions:
-            parts.append("ADDITIONAL INSTRUCTIONS:\n" + special_instructions)
-        merged_text = '\n\n'.join(parts)
-    else:
-        # Fusionner avec priorites (autres types)
-        merged_parts = []
-        if text:
-            merged_parts.append(f"[PRIORITE HAUTE] {text}")
-        if ep_text:
-            merged_parts.append(f"[PRIORITE MOYENNE] {ep_text}")
-        if rand_text:
-            merged_parts.append(f"[PRIORITE BASSE] {rand_text}")
-        merged_text = '\n'.join(merged_parts)
-
+    # ── Construction de l'entree utilisateur (genérique) ──────────
+    # Le template BDD definit le format exact (sections, priorites, etc.)
+    # via son system_prompt. On envoie le contenu brut a structurer.
+    merged_parts = []
+    if text:
+        merged_parts.append(text)
+    if ep_text:
+        merged_parts.append(ep_text)
+    if rand_text:
+        merged_parts.append(rand_text)
+    if style_text:
+        merged_parts.append("STYLE (must be preserved verbatim):\n" + style_text)
+    if special_instructions:
+        merged_parts.append("ADDITIONAL INSTRUCTIONS:\n" + special_instructions)
+    if width and height:
+        from math import gcd
+        g = gcd(width, height)
+        merged_parts.append(f"IMAGE DIMENSIONS: {width}x{height} pixels (aspect ratio: {width//g}:{height//g})")
+    # Les elements EP de type "text" sont les sujets principaux
+    named_elems = [e.get('text', '').strip() for e in ep_elements
+                   if e.get('type') == 'text' and e.get('text', '').strip()]
+    if named_elems:
+        elems_str = '\n'.join(f"  {i+1}. {desc}" for i, desc in enumerate(named_elems))
+        merged_parts.append(f"ELEMENTS TO PLACE IN THE SCENE:\n{elems_str}")
+    merged_text = '\n\n'.join(merged_parts)
     if not merged_text.strip():
         return jsonify({'error': 'Aucun contenu a generer'}), 400
 
@@ -846,7 +840,6 @@ def _prepare_enhance(user_id, data):
         'flux': 'Prompt Flux, description longue et naturelle en anglais.',
         'anima': 'Prompt Anime/Manga, tags Danbooru avec suffixes specifiques (pixel art, lineart, flat color, etc.).',
         'qwen': 'Prompt Qwen, format optimise pour modele Qwen2-VL / image generation.',
-        'ideogram4': 'JSON Ideogram 4 : caption structuree avec high_level_description, style_description (aesthetics, lighting, photo/art_style, medium, color_palette optionnel) et compositional_deconstruction (background + elements avec bbox obligatoire en coordonnees pixels). Format JSON strict, ordre des cles preserve.',
     }
 
     format_instruction = type_formats.get(prompt_type, type_formats['sdxl'])
@@ -972,7 +965,7 @@ Here are well-structured examples for reference — study them but do NOT copy v
 
     # ── Auto-critique : passes de validation (Ideogram 4 uniquement) ────
     # Pour les autres types, pas de bbox/structure a valider, on garde 0.
-    validation_passes = int(data.get('validation_passes', 1 if prompt_type == 'ideogram4' else 0))
+    validation_passes = int(data.get('validation_passes', 0))
     validation_passes = max(0, min(validation_passes, 3))  # borne 0..3
 
     return {
@@ -1099,12 +1092,9 @@ def _finish_enhance_pass1(user_id, prepared, llm_response):
     except Exception:
         pass  # non-bloquant
 
-    # Convertir les bboxes de pixels vers 0-1000 normalise (Ideogram 4)
+    # Le template BDD peut demander une conversion bbox via son system_prompt.
+    # On la desactive ici — le LLM sort directement du 0-1000 si le template le demande.
     conversion_debug = None
-    if prompt_type == 'ideogram4' and width and height:
-        before_conversion = output[:500]
-        output = convert_bboxes_to_normalized(output, width, height)
-        conversion_debug = {'before': before_conversion, 'after': output[:500], 'width': width, 'height': height}
 
     return {
         'output': output,
@@ -1122,9 +1112,9 @@ def _build_final_result(pass1_result, prompt_type, width, height):
     """
     debug_sections = pass1_result['debug_sections']
 
-    # Reconstruire le debug_md avec toutes les sections
+    # Reconstruire le debug_md pour tous les templates (plus de filtrage ideogram)
     debug_md = ''
-    if prompt_type == 'ideogram4' and debug_sections:
+    if debug_sections:
         debug_md = _build_debug_markdown(debug_sections, pass1_result.get('conversion_debug'), width, height)
 
     return {

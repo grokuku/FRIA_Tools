@@ -37,7 +37,6 @@ _DEFAULT_FORMAT_BY_TYPE = {
     'anima': 'text',
     'qwen':  'text',
     'liste': 'text',
-    'ideogram4': 'json',  # structured JSON caption
 }
 
 def _default_format_for_type(prompt_type):

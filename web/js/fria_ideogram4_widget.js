@@ -173,7 +173,7 @@
                             templateSelect.innerHTML = '';
                             items.forEach(t => {
                                 const o = document.createElement("option");
-                                o.value = t.prompt_type;
+                                o.value = String(t.id);
                                 o.textContent = t.name || t.prompt_type;
                                 templateSelect.appendChild(o);
                             });
