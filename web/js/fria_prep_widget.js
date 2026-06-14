@@ -269,8 +269,15 @@
                     return r;
                 };
 
+                node._friaRestore = restoreFromNativeWidgets.bind(null, node);
                 return r;
             };
+        },
+
+        async loadedGraphNode(node) {
+            if (node._friaRestore) {
+                setTimeout(() => node._friaRestore(), 0);
+            }
         },
     });
 })();
