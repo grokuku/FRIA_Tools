@@ -1,6 +1,6 @@
 """Routes helpers for FR.IA backend."""
 
-from context import *
+from extensions import app, oauth, DB_PATH, MD_PATH, BASE_DIR
 
 
 # ── helpers ──────────────────────────────────────────────────────────
