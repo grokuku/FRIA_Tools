@@ -240,10 +240,6 @@ function hideWidget(node, name) {
                             userSelect: "none", marginRight: "2px",
                         });
                         eyeBtn.title = isHidden ? "Activier cette entrée" : "Masquer cette entrée";
-                        eyeBtn.onpointerdown = (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                        };
                         eyeBtn.onclick = (e) => {
                             e.stopPropagation();
                             item.visible = !isHidden;
@@ -346,12 +342,13 @@ function hideWidget(node, name) {
                         ? row.nextElementSibling
                         : null;
 
-                    // Placeholder en cadre pointille bleu, hauteur d'une ligne,
-                    // pour bien marquer l'emplacement de drop.
+                    // Placeholder en cadre pointille bleu, hauteur reduite (moitie
+                    // d'une ligne), pour bien marquer l'emplacement de drop.
+                    const rowHeight = row.getBoundingClientRect().height;
                     const placeholder = document.createElement("div");
                     placeholder.className = "fria-drag-placeholder";
                     Object.assign(placeholder.style, {
-                        height: `${row.getBoundingClientRect().height}px`,
+                        height: `${rowHeight / 2}px`,
                         border: "2px dashed #60a5fa", borderRadius: "4px",
                         background: "rgba(96,165,250,0.10)",
                         marginBottom: "2px", pointerEvents: "none",
