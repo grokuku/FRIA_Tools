@@ -469,18 +469,34 @@
                     return true;
                 });
 
-                // Resize on window resize
-                window.addEventListener("resize", () => this._fit());
+        // Resize on container resize (window, drag, fullscreen, etc.)
+        // ResizeObserver fire à chaque changement de taille du xtermContainer,
+        // que ce soit par resize de la fenêtre, par drag/redim du panel, ou
+        // par fullscreen toggle. On debounce légèrement pour éviter les
+        // appels en rafale pendant un drag rapide.
+        if (window.ResizeObserver && this.xtermContainer) {
+            let fitRaf = null;
+            this._resizeObserver = new ResizeObserver(() => {
+                if (fitRaf) return;
+                fitRaf = requestAnimationFrame(() => {
+                    fitRaf = null;
+                    this._fit();
+                });
+            });
+            this._resizeObserver.observe(this.xtermContainer);
+        } else {
+            // Fallback : window resize seulement
+            window.addEventListener("resize", () => this._fit());
+        }
 
-                // Open WebSocket
-                this._openSocket();
+        // Open WebSocket
+        this._openSocket();
             } else if (!this.isConnected) {
                 this._openSocket();
             } else {
                 setTimeout(() => this._fit(), 30);
             }
         },
-
         _openSocket() {
             if (this.socket && this.socket.readyState === WebSocket.OPEN) return;
             this._setStatus("Connecting...", false);

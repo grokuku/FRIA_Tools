@@ -47,11 +47,6 @@ def is_running_in_conda():
     return conda_prefix and sys.executable.startswith(os.path.normpath(conda_prefix))
 
 
-def is_running_in_venv():
-    venv_path = os.environ.get('VIRTUAL_ENV')
-    return venv_path and sys.executable.startswith(os.path.normpath(venv_path))
-
-
 # Default shell if no config is provided
 DEFAULT_SHELL = os.environ.get('SHELL', '/bin/bash') if not IS_WINDOWS else 'cmd.exe'
 
@@ -84,11 +79,16 @@ async def websocket_handler(request: web.Request):
             else:
                 cmd_string = f'eval "$(conda shell.bash hook)" && conda activate "{conda_prefix}" && exec {user_shell}'
                 shell_cmd_list = ['/bin/bash', '-c', cmd_string]
-        elif is_running_in_venv():
-            print(f"🔵 [FR.IA-Terminal] Running in a Venv environment: {os.environ.get('VIRTUAL_ENV')}")
-            shell_cmd_list = shlex.split(user_shell)
         else:
-            print(f"🔵 [FR.IA-Terminal] Not in venv/conda. Using default shell for Python at: {sys.executable}")
+            # Cas general (venv, system python, etc.) : on se contente de
+            # lancer le shell par defaut. Le PATH est herite du process
+            # parent (ComfyUI), donc si l'utilisateur a lance ComfyUI
+            # depuis un shell ou le venv/conda est active, `python` et
+            # `pip` pointent vers le bon environnement. Le prompt du
+            # shell n'affichera pas "(venv)" mais c'est un compromis
+            # acceptable (coherent avec le comportement Holaf).
+            print(f"🔵 [FR.IA-Terminal] Spawning shell: {user_shell} "
+                  f"(VIRTUAL_ENV={os.environ.get('VIRTUAL_ENV', '<none>')})")
             shell_cmd_list = shlex.split(user_shell)
             # Cleanse Conda vars if present but not active, to avoid issues
             if 'CONDA_PREFIX' in current_env:

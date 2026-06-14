@@ -45,6 +45,10 @@
 - **Singleton** : un seul panel existe, exposé sur `window.friaTerminal` (callback menu via `window.friaTerminal.toggle()`).
 - **Pas de conflit avec CUI-Holaf-Utils** : préfixe `/fr_ia/terminal` (vs `/holaf/terminal`), nom global `friaTerminal` (vs `holafTerminal`). xterm.js + xterm-addon-fit.js sont copiés dans `web/js/` mais réutilisent `window.Terminal`/`window.FitAddon` si Holaf les a déjà chargés.
 - **Pas de node ComfyUI** : choix utilisateur de ne pas avoir de node draggable — uniquement un panel via le menu.
+- **Compatibilité OS** : Linux/macOS utilisent `pty`+`termios` (stdlib). Windows requiert `pip install pywinpty` dans l'env Python de ComfyUI (sinon le backend log un message critique et ferme le WebSocket).
+- **Environnements virtuels** : si ComfyUI tourne dans un venv/conda, le PATH est hérité du process parent dans le shell fils, donc `python`/`pip` pointent bien vers le bon env. Le prompt du shell n'affiche pas `(venv)` car aucun `activate` n'est exécuté dans le fils (choix cohérent avec Holaf, le user active le venv avant de lancer ComfyUI).
+- **Cleanup branche venv morte** : `is_running_in_venv()` et la branche `elif` associée ont été supprimées du code copié de Holaf (détectaient l'env mais ne faisaient rien d'utile). Logique unifiée dans la branche `else` qui logge `$VIRTUAL_ENV` pour debug.
+- **Fix route WebSocket** : la 1ère tentative utilisait `_routes.add_get()` qui n'existe pas sur aiohttp `RouteTableDef`. Fix : `@_routes.get("/fr_ia/terminal")` en décorateur (aiohttp détecte l'upgrade WebSocket automatiquement, cf. pattern Holaf).
 - **Fichiers** : `FRIA_ComfyUI/terminal.py` (backend PTY), `web/js/fria_terminal_widget.js` (panel singleton + persistance), `web/js/xterm.js` + `xterm-addon-fit.js` (bundles UMD copiés).
 
 ### ✅ Résolu cette session (migration serveur cloud + Discord OAuth)
