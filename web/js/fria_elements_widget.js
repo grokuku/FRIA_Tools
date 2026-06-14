@@ -284,7 +284,8 @@ function hideWidget(node, name) {
                 // ---- Drag & drop reorder (pointer events) ----
                 // Le handle ⠿ de chaque ligne declenche un drag fluide :
                 // - clone fantome qui suit le curseur
-                // - indicateur bleu de drop
+                // - les elements de la liste se reordonnent en temps reel autour
+                //   d'un placeholder de la taille de la ligne deplacee
                 // - reordonnancement deterministe de node._friaElements
                 let dragState = null;
 
@@ -305,11 +306,25 @@ function hideWidget(node, name) {
                     });
                     document.body.appendChild(ghost);
 
-                    // Masquer les chips pendant le drag (ils sont rattaches a la
-                    // ligne statique et ne suivent pas le fantome).
-                    listEl.querySelectorAll(".fria-chips-row").forEach(c => c.style.display = "none");
+                    // Extraire la ligne reelle et ses chips du DOM et les garder
+                    // dans dragState. Un placeholder prend leur place : les autres
+                    // lignes glissent naturellement autour de lui.
+                    const chipsRow = row.nextElementSibling?.classList?.contains("fria-chips-row")
+                        ? row.nextElementSibling
+                        : null;
+                    const placeholder = document.createElement("div");
+                    placeholder.className = "fria-drag-placeholder";
+                    Object.assign(placeholder.style, {
+                        border: "2px dashed #60a5fa", borderRadius: "4px",
+                        background: "rgba(96,165,250,0.08)", marginBottom: "2px",
+                        pointerEvents: "none",
+                    });
+                    placeholder.style.height = `${row.getBoundingClientRect().height}px`;
 
-                    row.style.opacity = "0.35";
+                    listEl.insertBefore(placeholder, row.nextSibling);
+                    row.remove();
+                    if (chipsRow) chipsRow.remove();
+
                     const gripInGhost = ghost.querySelector("span");
                     if (gripInGhost) gripInGhost.style.color = "#fff";
 
@@ -318,6 +333,7 @@ function hideWidget(node, name) {
                         currentIdx: startIdx,
                         ghost,
                         row,
+                        draggedEls: { row, chips: chipsRow },
                         offsetY: e.clientY - rect.top,
                     };
 
@@ -332,10 +348,12 @@ function hideWidget(node, name) {
                 function onPointerMove(e) {
                     if (!dragState) return;
                     e.preventDefault();
-                    const { ghost, offsetY } = dragState;
+                    const { ghost, offsetY, draggedEls } = dragState;
                     ghost.style.top = `${e.clientY - offsetY}px`;
 
-                    // Trouver l'index cible en comparant le curseur au milieu de chaque ligne
+                    // Calculer l'index cible en comparant le curseur au milieu de chaque
+                    // ligne *visible* (sans compter le placeholder).
+                    const placeholder = listEl.querySelector(".fria-drag-placeholder");
                     const rows = Array.from(listEl.querySelectorAll(".fria-element-row"));
                     let targetIdx = rows.length;
                     for (let i = 0; i < rows.length; i++) {
@@ -349,26 +367,17 @@ function hideWidget(node, name) {
 
                     if (targetIdx !== dragState.currentIdx) {
                         dragState.currentIdx = targetIdx;
-                        showDropIndicator(targetIdx);
+                        movePlaceholder(targetIdx, placeholder);
                     }
                 }
 
-                function showDropIndicator(targetIdx) {
-                    const old = listEl.querySelector(".fria-drop-indicator");
-                    if (old) old.remove();
-
+                function movePlaceholder(targetIdx, placeholder) {
+                    if (!placeholder) return;
                     const rows = Array.from(listEl.querySelectorAll(".fria-element-row"));
-                    const indicator = document.createElement("div");
-                    indicator.className = "fria-drop-indicator";
-                    Object.assign(indicator.style, {
-                        height: "2px", background: "#60a5fa", borderRadius: "1px",
-                        margin: "2px 0", pointerEvents: "none",
-                    });
-
                     if (targetIdx >= rows.length) {
-                        listEl.appendChild(indicator);
+                        listEl.appendChild(placeholder);
                     } else {
-                        listEl.insertBefore(indicator, rows[targetIdx]);
+                        listEl.insertBefore(placeholder, rows[targetIdx]);
                     }
                 }
 
@@ -378,26 +387,33 @@ function hideWidget(node, name) {
                     document.removeEventListener("pointerup", onPointerUp);
                     document.removeEventListener("pointercancel", onPointerUp);
 
-                    const { startIdx, currentIdx, ghost, row } = dragState;
+                    const { startIdx, currentIdx, ghost, row, draggedEls } = dragState;
                     ghost.remove();
-                    const indicator = listEl.querySelector(".fria-drop-indicator");
-                    if (indicator) indicator.remove();
-
-                    // Restaurer la visibilite des chips
-                    listEl.querySelectorAll(".fria-chips-row").forEach(c => c.style.display = "");
+                    const placeholder = listEl.querySelector(".fria-drag-placeholder");
 
                     const items = node._friaElements || [];
                     if (currentIdx !== startIdx && currentIdx >= 0 && currentIdx <= items.length) {
                         let insertIdx = currentIdx;
-                        // L'element est toujours present a startIdx pendant le drag ;
-                        // s'il descend, l'insertion doit compenser la suppression.
                         if (currentIdx > startIdx) insertIdx--;
                         const [moved] = items.splice(startIdx, 1);
                         items.splice(insertIdx, 0, moved);
                     }
-                    row.style.opacity = "";
+
+                    // Replacer la ligne reelle + ses chips a la position du placeholder
+                    if (placeholder) {
+                        // Remettre les chips visibles avant reinsertion
+                        draggedEls.chips?.style?.removeProperty("display");
+                        listEl.insertBefore(draggedEls.row, placeholder);
+                        if (draggedEls.chips) {
+                            listEl.insertBefore(draggedEls.chips, placeholder);
+                        }
+                        placeholder.remove();
+                    } else {
+                        draggedEls.chips?.style?.removeProperty("display");
+                        listEl.appendChild(draggedEls.row);
+                        if (draggedEls.chips) listEl.appendChild(draggedEls.chips);
+                    }
                     dragState = null;
-                    renderList();
                     syncElementsWidget();
                 }
 
