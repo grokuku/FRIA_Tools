@@ -913,16 +913,7 @@ This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summari
     if template_system_prompt and template_system_prompt.strip():
         system_parts.append(template_system_prompt.strip())
     else:
-        # Fallback generique pour les types sans template
-        system_parts.append("You are an expert image prompt engineer. Your task is to rewrite and optimize the user's input into a high-quality image generation prompt.")
-        format_instr = type_formats.get(prompt_type, type_formats['sdxl'])
-        system_parts.append(f"Expected output style: {format_instr}")
-        system_parts.append("""Rules:
-- Preserve the user's main intent and keywords; do not discard specific requests
-- Remove duplicate concepts
-- Organize by importance (most important first)
-- Output ONLY the final prompt text — no markers, no tags like [PRIORITE HAUTE], no meta-commentary""")
-        system_parts.append(format_rules.get(output_format, "Output ONLY the final prompt."))
+        return jsonify({'error': f"Aucun template trouve pour prompt_type='{prompt_type}'. Cree un template dans l'onglet Templates."}), 400
 
     # 3) EXAMPLES — injectes depuis le champ examples du template
     if template_examples:

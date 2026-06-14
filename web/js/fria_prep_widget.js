@@ -33,12 +33,13 @@
                 const r = onNodeCreated?.apply(this, arguments);
                 const node = this;
 
-                // ---- Cacher les widgets natifs pilotés par le DOM ----
+                // ---- Cacher les widgets natifs pilotes par le DOM ----
+                // On utilise UNIQUEMENT w.hidden = true (pas de computeSize negatif
+                // qui empeche ComfyUI de serialiser la valeur du widget)
                 const hideWidget = (n, name) => {
                     const w = n.widgets?.find(x => x.name === name);
                     if (w) {
                         w.hidden = true;
-                        w.computeSize = () => [0, -4];
                         if (w.inputEl) w.inputEl.style.display = "none";
                         if (w.parentEl) w.parentEl.style.display = "none";
                     }

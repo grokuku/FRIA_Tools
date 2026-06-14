@@ -27,23 +27,23 @@
                 const r = onNodeCreated?.apply(this, arguments);
                 const node = this;
 
-                // ---- Cacher les widgets natifs pilotés par le DOM ----
+                // ---- Cacher les widgets natifs pilotes par le DOM ----
+                // On utilise UNIQUEMENT w.hidden = true (pas de computeSize negatif
+                // qui empeche ComfyUI de serialiser la valeur du widget)
                 const styleWidget = node.widgets?.find(x => x.name === "style_id");
                 if (styleWidget) {
                     styleWidget.hidden = true;
-                    styleWidget.computeSize = () => [0, -4];
                     if (styleWidget.inputEl) styleWidget.inputEl.style.display = "none";
                     if (styleWidget.parentEl) styleWidget.parentEl.style.display = "none";
                 }
-                const promptTypeWidget = node.widgets?.find(x => x.name === "prompt_type_id");
+                const promptTypeWidget = node.widgets?.find(x => x.name === "prompt_type");
                 if (promptTypeWidget) {
                     promptTypeWidget.hidden = true;
-                    promptTypeWidget.computeSize = () => [0, -4];
                     if (promptTypeWidget.inputEl) promptTypeWidget.inputEl.style.display = "none";
                     if (promptTypeWidget.parentEl) promptTypeWidget.parentEl.style.display = "none";
                 }
                 // Supprimer les sockets d'entrée
-                for (const inputName of ["style_id", "prompt_type_id"]) {
+                for (const inputName of ["style_id", "prompt_type"]) {
                     const slot = node.findInputSlot?.(inputName);
                     if (slot !== undefined && slot !== -1) {
                         node.removeInput(slot);

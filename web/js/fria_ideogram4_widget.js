@@ -24,7 +24,6 @@
                     const w = n.widgets?.find(x => x.name === name);
                     if (w) {
                         w.hidden = true;
-                        w.computeSize = () => [0, -4];
                         if (w.inputEl) w.inputEl.style.display = "none";
                         if (w.parentEl) w.parentEl.style.display = "none";
                         return w;

@@ -32,15 +32,14 @@
                     const w = n.widgets?.find(x => x.name === name);
                     if (w) {
                         w.hidden = true;
-                        w.computeSize = () => [0, -4];
                         if (w.inputEl) w.inputEl.style.display = "none";
                         if (w.parentEl) w.parentEl.style.display = "none";
                     }
                 };
-                ["prompt_type_id", "preset_id", "style_id"].forEach(n => hideWidget(node, n));
+                ["prompt_type", "preset_id", "style_id"].forEach(n => hideWidget(node, n));
 
                 // ---- Supprimer les sockets d'entrée des widgets pilotés ----
-                for (const inputName of ["prompt_type_id", "preset_id", "style_id"]) {
+                for (const inputName of ["prompt_type", "preset_id", "style_id"]) {
                     const slot = node.findInputSlot?.(inputName);
                     if (slot !== undefined && slot !== -1) {
                         node.removeInput(slot);
