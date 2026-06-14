@@ -291,7 +291,7 @@ def _init_db():
     conn.execute("CREATE INDEX IF NOT EXISTS idx_enhance_sessions_expires ON enhance_sessions(expires_at)")
 
     # Créer les templates par défaut si aucun n'existe
-    existing = conn.execute("SELECT COUNT(*) FROM prompt_templates WHERE is_default = 1").fetchone()[0]
+    existing = conn.execute("SELECT COUNT(*) FROM prompt_templates").fetchone()[0]
     if existing == 0:
         _insert_default_templates(conn)
     conn.commit()
@@ -309,12 +309,8 @@ def _migrate_templates_to_english():
         cur = mconn.cursor()
         existing = cur.execute("SELECT COUNT(*) FROM prompt_templates WHERE is_default = 1").fetchone()[0]
         if existing > 0:
-            tmpl_version = cur.execute("SELECT value FROM app_settings WHERE key = 'templates_version'").fetchone()
-            if not tmpl_version or tmpl_version[0] < '9':
-                cur.execute("DELETE FROM prompt_templates WHERE is_default = 1")
-                _insert_default_templates(mconn)
-                cur.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('templates_version', '10')")
-                mconn.commit()
+            # Ne plus écraser les templates existants — la migration manuelle est faite
+            pass
         mconn.close()
     except Exception as e:
         print(f"[migration] Erreur templates anglais: {e}")
