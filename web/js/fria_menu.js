@@ -162,6 +162,14 @@ function initMenu(appInstance) {
         const cfg = getConfig();
         window.open(cfg.serverUrl || "https://kw.holaf.fr", "_blank");
     }));
+    dd.appendChild(mkItem("Terminal", "💻", () => {
+        if (window.friaTerminal) {
+            window.friaTerminal.toggle();
+        } else {
+            console.warn("[FR.IA] Terminal widget pas encore charge.");
+            alert("FR.IA Terminal: widget pas encore chargé. Reessaye dans une seconde.");
+        }
+    }));
     dd.appendChild(mkItem("Membres", "👥", () => openMembers()));
     dd.appendChild(mkItem("Paramètres", "⚙️", () => openSettings()));
     dd.appendChild(mkItem("Update", "🔄", () => openUpdate()));

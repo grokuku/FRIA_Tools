@@ -101,7 +101,9 @@ _diag_mod = _load_module(
     "FRIADiagnosticNode"
 )
 
-# Charger le module terminal (utilise par la route WebSocket ci-dessous)
+# Charger le module Terminal (utilise par la route WebSocket ci-dessous)
+# NB : ce module ne declare AUCUNE node ComfyUI — le terminal est un
+# panel flottant JS, pas une node (voir web/js/fria_terminal_widget.js).
 _terminal_mod = _load_module(
     os.path.join(_base, "FRIA_ComfyUI", "terminal.py"),
     "FRIATerminal"
@@ -151,16 +153,6 @@ if _diag_mod and hasattr(_diag_mod, "FRIADiagnosticNode"):
     cls = _diag_mod.FRIADiagnosticNode
     NODE_CLASS_MAPPINGS["FRIADiagnosticNode"] = cls
     NODE_DISPLAY_NAME_MAPPINGS["FRIADiagnosticNode"] = "FR.IA Diagnostic"
-
-# Charger la node Terminal (import dynamique, comme les autres nodes)
-_terminal_node_mod = _load_module(
-    os.path.join(_nodes_dir, "terminal_node.py"),
-    "FRIATerminalNode"
-)
-if _terminal_node_mod and hasattr(_terminal_node_mod, "FRIATerminalNode"):
-    cls = _terminal_node_mod.FRIATerminalNode
-    NODE_CLASS_MAPPINGS["FRIATerminalNode"] = cls
-    NODE_DISPLAY_NAME_MAPPINGS["FRIATerminalNode"] = "FR.IA Terminal"
 
 # ── Routes HTTP (update + restart) ──────────────────────────────────
 # Ces routes sont appelees par le menu ComfyUI (fria_menu.js) pour
