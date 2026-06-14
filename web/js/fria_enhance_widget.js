@@ -191,6 +191,7 @@
                 grid.appendChild(typeDiv);
 
                 async function loadEnhanceTemplates() {
+                    const current = typeSelect.value;
                     typeSelect.innerHTML = '<option value="">-- Chargement --</option>';
                     try {
                         const items = await apiGet("prompts/templates");
@@ -198,7 +199,6 @@
                             typeSelect.innerHTML = '<option value="">-- Template --</option>';
                             return;
                         }
-                        const current = typeSelect.value;
                         const pw = node.widgets?.find(x => x.name === "prompt_type");
                         typeSelect.innerHTML = '';
                         items.forEach(t => {

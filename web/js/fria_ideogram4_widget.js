@@ -164,11 +164,11 @@
                 container.appendChild(templateDiv);
 
                 async function loadTemplates() {
+                    const current = templateSelect.value;
                     templateSelect.innerHTML = '<option value="">-- Chargement --</option>';
                     try {
                         const items = await apiGet("prompts/templates");
                         if (Array.isArray(items) && items.length > 0) {
-                            const current = templateSelect.value;
                             templateSelect.innerHTML = '';
                             items.forEach(t => {
                                 const o = document.createElement("option");

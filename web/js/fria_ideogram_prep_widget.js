@@ -152,13 +152,13 @@
                 grid.appendChild(typeDiv);
 
                 async function loadIdeogramPrepTemplates() {
+                    const current = typeSelect.value;
                     typeSelect.innerHTML = '<option value="">-- Chargement --</option>';
                     try {
                         const apiUrl = getApiUrl();
                         const resp = await fetch(apiUrl + '/prompts/templates', { headers: apiHeaders() });
                         const list = resp.ok ? await resp.json() : [];
                         if (!Array.isArray(list) || list.length === 0) return;
-                        const current = typeSelect.value;
                         typeSelect.innerHTML = '';
                         list.forEach(t => {
                             const o = document.createElement("option");
