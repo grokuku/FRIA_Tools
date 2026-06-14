@@ -208,48 +208,19 @@ function hideWidget(node, name) {
                             border: "1px solid #555",
                         });
 
-                        // Poignée de drag (⠿) + boutons haut/bas
+                        row.className = "fria-element-row";
+
+                        // Poignée de drag (⠿)
                         const grip = document.createElement("span");
                         grip.textContent = "⠿";
                         Object.assign(grip.style, {
                             cursor: "grab", color: "#666", fontSize: "10px", flexShrink: "0",
-                            userSelect: "none", marginRight: "2px",
+                            userSelect: "none", marginRight: "2px", touchAction: "none",
                         });
-
-                        // Boutons monter/descendre
-                        const upBtn = document.createElement("button");
-                        upBtn.textContent = "▲";
-                        Object.assign(upBtn.style, {
-                            background: "none", border: "none", color: "#888", cursor: "pointer",
-                            fontSize: "8px", padding: "0", lineHeight: "1", flexShrink: "0",
-                        });
-                        upBtn.title = "Monter";
-                        upBtn.onclick = () => {
-                            if (idx > 0) {
-                                [items[idx - 1], items[idx]] = [items[idx], items[idx - 1]];
-                                renderList();
-                                syncElementsWidget();
-                            }
-                        };
-
-                        const dnBtn = document.createElement("button");
-                        dnBtn.textContent = "▼";
-                        Object.assign(dnBtn.style, {
-                            background: "none", border: "none", color: "#888", cursor: "pointer",
-                            fontSize: "8px", padding: "0", lineHeight: "1", flexShrink: "0",
-                        });
-                        dnBtn.title = "Descendre";
-                        dnBtn.onclick = () => {
-                            if (idx < items.length - 1) {
-                                [items[idx + 1], items[idx]] = [items[idx], items[idx + 1]];
-                                renderList();
-                                syncElementsWidget();
-                            }
-                        };
+                        grip.title = "Glisser-déposer pour réorganiser";
+                        grip.onpointerdown = (e) => startDrag(e, idx, row);
 
                         row.appendChild(grip);
-                        row.appendChild(upBtn);
-                        row.appendChild(dnBtn);
                         const iconSpan = document.createElement("span");
                         iconSpan.style.cssText = "flex-shrink:0;";
                         iconSpan.textContent = item.type === "filter" ? "🔽" : "📝";
@@ -308,6 +279,126 @@ function hideWidget(node, name) {
                         row.appendChild(del);
                         listEl.appendChild(row);
                     });
+                }
+
+                // ---- Drag & drop reorder (pointer events) ----
+                // Le handle ⠿ de chaque ligne declenche un drag fluide :
+                // - clone fantome qui suit le curseur
+                // - indicateur bleu de drop
+                // - reordonnancement deterministe de node._friaElements
+                let dragState = null;
+
+                function startDrag(e, startIdx, row) {
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    const items = node._friaElements || [];
+                    if (items.length < 2) return;
+
+                    const rect = row.getBoundingClientRect();
+                    const ghost = row.cloneNode(true);
+                    Object.assign(ghost.style, {
+                        position: "fixed", left: `${rect.left}px`, top: `${rect.top}px`,
+                        width: `${rect.width}px`, opacity: "0.9", pointerEvents: "none",
+                        zIndex: "10000", boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+                        transform: "scale(1.02)",
+                    });
+                    document.body.appendChild(ghost);
+
+                    // Masquer les chips pendant le drag (ils sont rattaches a la
+                    // ligne statique et ne suivent pas le fantome).
+                    listEl.querySelectorAll(".fria-chips-row").forEach(c => c.style.display = "none");
+
+                    row.style.opacity = "0.35";
+                    const gripInGhost = ghost.querySelector("span");
+                    if (gripInGhost) gripInGhost.style.color = "#fff";
+
+                    dragState = {
+                        startIdx,
+                        currentIdx: startIdx,
+                        ghost,
+                        row,
+                        offsetY: e.clientY - rect.top,
+                    };
+
+                    document.addEventListener("pointermove", onPointerMove);
+                    document.addEventListener("pointerup", onPointerUp);
+                    document.addEventListener("pointercancel", onPointerUp);
+                    try {
+                        grip.setPointerCapture(e.pointerId);
+                    } catch (_) {}
+                }
+
+                function onPointerMove(e) {
+                    if (!dragState) return;
+                    e.preventDefault();
+                    const { ghost, offsetY } = dragState;
+                    ghost.style.top = `${e.clientY - offsetY}px`;
+
+                    // Trouver l'index cible en comparant le curseur au milieu de chaque ligne
+                    const rows = Array.from(listEl.querySelectorAll(".fria-element-row"));
+                    let targetIdx = rows.length;
+                    for (let i = 0; i < rows.length; i++) {
+                        const rc = rows[i].getBoundingClientRect();
+                        const mid = rc.top + rc.height / 2;
+                        if (e.clientY < mid) {
+                            targetIdx = i;
+                            break;
+                        }
+                    }
+
+                    if (targetIdx !== dragState.currentIdx) {
+                        dragState.currentIdx = targetIdx;
+                        showDropIndicator(targetIdx);
+                    }
+                }
+
+                function showDropIndicator(targetIdx) {
+                    const old = listEl.querySelector(".fria-drop-indicator");
+                    if (old) old.remove();
+
+                    const rows = Array.from(listEl.querySelectorAll(".fria-element-row"));
+                    const indicator = document.createElement("div");
+                    indicator.className = "fria-drop-indicator";
+                    Object.assign(indicator.style, {
+                        height: "2px", background: "#60a5fa", borderRadius: "1px",
+                        margin: "2px 0", pointerEvents: "none",
+                    });
+
+                    if (targetIdx >= rows.length) {
+                        listEl.appendChild(indicator);
+                    } else {
+                        listEl.insertBefore(indicator, rows[targetIdx]);
+                    }
+                }
+
+                function onPointerUp(e) {
+                    if (!dragState) return;
+                    document.removeEventListener("pointermove", onPointerMove);
+                    document.removeEventListener("pointerup", onPointerUp);
+                    document.removeEventListener("pointercancel", onPointerUp);
+
+                    const { startIdx, currentIdx, ghost, row } = dragState;
+                    ghost.remove();
+                    const indicator = listEl.querySelector(".fria-drop-indicator");
+                    if (indicator) indicator.remove();
+
+                    // Restaurer la visibilite des chips
+                    listEl.querySelectorAll(".fria-chips-row").forEach(c => c.style.display = "");
+
+                    const items = node._friaElements || [];
+                    if (currentIdx !== startIdx && currentIdx >= 0 && currentIdx <= items.length) {
+                        let insertIdx = currentIdx;
+                        // L'element est toujours present a startIdx pendant le drag ;
+                        // s'il descend, l'insertion doit compenser la suppression.
+                        if (currentIdx > startIdx) insertIdx--;
+                        const [moved] = items.splice(startIdx, 1);
+                        items.splice(insertIdx, 0, moved);
+                    }
+                    row.style.opacity = "";
+                    dragState = null;
+                    renderList();
+                    syncElementsWidget();
                 }
 
                 // Affiche des chips sous l'input texte quand celui-ci contient
