@@ -27,15 +27,17 @@
     // Charger presets et styles au demarrage
     // Charger les types depuis les templates disponibles
     async function loadTemplateTypes() {
+      var sel = document.getElementById('enhance-type');
+      if (!sel) return;
+      var currentVal = sel.value;
+      sel.innerHTML = '<option value="">-- Chargement --</option>';
       try {
         var res = await fetch(API + '/prompts/templates');
         var list = await safeJson(res);
-        if (!Array.isArray(list) || list.length === 0) return;
-        var sel = document.getElementById('enhance-type');
-        if (!sel) return;
-        // Sauvegarder la valeur actuelle
-        var currentVal = sel.value;
-        // Remplacer toutes les options par les templates
+        if (!Array.isArray(list) || list.length === 0) {
+          sel.innerHTML = '<option value="">-- Template --</option>';
+          return;
+        }
         sel.innerHTML = '<option value="">-- Template --</option>';
         var found = false;
         list.forEach(function(t) {
@@ -45,9 +47,10 @@
           sel.appendChild(opt);
           if (t.prompt_type === currentVal) found = true;
         });
-        // Restaurer la selection si possible, sinon garder la premiere
         if (found) sel.value = currentVal;
-      } catch {}
+      } catch {
+        sel.innerHTML = '<option value="">-- Template --</option>';
+      }
     }
 
     async function loadEnhancerConfig() {
@@ -78,6 +81,7 @@
       var elInput = document.getElementById('enhance-input');
       elPreset.onchange = saveEnhancerSettings;
       elType.onchange = saveEnhancerSettings;
+      elType.addEventListener('mousedown', loadTemplateTypes);
       elStyle.onchange = saveEnhancerSettings;
       elInput.oninput = function() { clearTimeout(elInput._saveTimer); elInput._saveTimer = setTimeout(saveEnhancerSettings, 800); };
       // Toggle random count
