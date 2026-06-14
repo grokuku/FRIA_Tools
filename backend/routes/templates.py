@@ -18,7 +18,7 @@ def prompt_templates():
         fmt = request.args.get('output_format')
         # Lister les templates visibles : ceux de l'utilisateur + publics + défauts
         query = """
-            SELECT pt.*, COALESCE(u.username, 'holaf_le_nain') as owner_name
+            SELECT pt.*, u.username as owner_name
             FROM prompt_templates pt
             LEFT JOIN users u ON pt.user_id = u.id
             WHERE (pt.user_id = ? OR pt.is_public = 1 OR pt.is_default = 1)

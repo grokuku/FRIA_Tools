@@ -492,7 +492,7 @@
         var html = '';
         list.forEach(function(t){
           var name = t.name || (t.prompt_type + ' / ' + t.output_format);
-          var author = t.owner_name || 'Admin';
+          var author = t.owner_name || '—';
           var pub = t.is_public ? ' 🌐' : ' 🔒';
           var isDefault = !!t.is_default;
           var canEdit = t.editable && !isDefault;
