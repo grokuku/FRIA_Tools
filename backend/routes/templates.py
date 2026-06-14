@@ -56,7 +56,7 @@ def prompt_templates():
     is_public = 1 if data.get('is_public') else 0
 
     conn.execute("""
-        INSERT INTO prompt_templates (user_id, name, prompt_type, output_format, system_prompt, examples, is_public, is_default)
+        INSERT OR REPLACE INTO prompt_templates (user_id, name, prompt_type, output_format, system_prompt, examples, is_public, is_default)
         VALUES (?, ?, ?, ?, ?, ?, ?, 0)
     """, (user_id, name, pt, fmt, system_prompt, examples, is_public))
     conn.commit()
