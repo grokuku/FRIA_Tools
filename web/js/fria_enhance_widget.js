@@ -78,7 +78,7 @@
                         const w = node.widgets?.find(x => x.name === name);
                         if (w) w.value = val;
                     };
-                    set("prompt_type_id", parseInt(templateSelect.value) || 0);
+                    set("prompt_type", templateSelect.value);
                     set("preset_id", parseInt(presetSelect.value) || 0);
                     set("style_id", parseInt(styleSelect.value) || 0);
                 }

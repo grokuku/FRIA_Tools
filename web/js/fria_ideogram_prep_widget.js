@@ -85,7 +85,7 @@
                         styleWidget.value = parseInt(styleSelect.value) || 0;
                     }
                     if (promptTypeWidget) {
-                        promptTypeWidget.value = parseInt(typeSelect.value) || 0;
+                        promptTypeWidget.value = typeSelect.value;
                     }
                 }
 

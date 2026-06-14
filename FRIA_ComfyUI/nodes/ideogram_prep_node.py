@@ -62,6 +62,8 @@ class FRIAIdeogramPrepNode:
     def prepare(self, seed=0, width=1024, height=1024, description="",
                 element_1="", element_2="", element_3="", element_4="",
                 special_instructions="", style_id=0, prompt_type="ideogram4"):
+        import logging as _log
+        _log.warning(f"[FR.IA Ideogram Prep PYTHON] prompt_type='{prompt_type}' (type={type(prompt_type).__name__}) style_id={style_id}")
         # api_key et api_url lus depuis le fichier de credentials
         api_url = _credentials.get_api_url()
         api_key = _credentials.get_api_key()
