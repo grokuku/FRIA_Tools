@@ -1,17 +1,16 @@
 /**
  * FR.IA Prompt Enhancer — Custom DOM widget for ComfyUI node FRIAEnhanceNode.
  *
- * Le DOM widget pilote les widgets natifs (prompt_type, preset_id, style_id)
- * qui sont serialises par ComfyUI. Pas de widget STRING _api_config cache
- * (qui causait des bugs d'index et des fuites de cle API dans les workflows
- * exportes). L'api_key est lue depuis
+ * Le DOM widget pilote les widgets natifs (template_id, preset_id, style_id)
+ * qui sont serialises par ComfyUI. L'api_key est lue depuis
  * ComfyUI/user/default/fria_credentials.json cote Python.
  *
  * Le DOM widget :
- *   - Dropdown Preset IA (peuple depuis /api/presets) → set widget preset_id
- *   - Dropdown Type (valeurs fixes) → set widget prompt_type
- *   - Dropdown Style (peuple depuis /api/styles) → set widget style_id
- *   - Bouton "Test enhance" (optionnel, peut etre reactive ulterieurement)
+ *   - Dropdown Preset IA (peuple depuis /api/presets) -> set widget preset_id
+ *   - Dropdown Template (peuple depuis /api/prompts/templates) -> set widget template_id
+ *   - Dropdown Style (peuple depuis /api/styles) -> set widget style_id
+ *   - Bouton "Test enhance"
+ *   - Textarea resultat
  */
 (function waitForApp() {
     const app = window.app || window.comfyAPI?.app?.app;
@@ -37,15 +36,19 @@
                         if (w.parentEl) w.parentEl.style.display = "none";
                     }
                 };
-                ["prompt_type", "preset_id", "style_id"].forEach(n => hideWidget(node, n));
+                ["template_id", "preset_id", "style_id"].forEach(n => hideWidget(node, n));
 
-                // ---- Supprimer les sockets d'entrée des widgets pilotés ----
-                for (const inputName of ["prompt_type", "preset_id", "style_id"]) {
+                for (const inputName of ["template_id", "preset_id", "style_id"]) {
                     const slot = node.findInputSlot?.(inputName);
                     if (slot !== undefined && slot !== -1) {
                         node.removeInput(slot);
                     }
                 }
+
+                // Refs vers les widgets natifs
+                const templateIdWidget = node.widgets?.find(x => x.name === "template_id");
+                const presetIdWidget = node.widgets?.find(x => x.name === "preset_id");
+                const styleIdWidget = node.widgets?.find(x => x.name === "style_id");
 
                 // ---- Helpers API ----
                 const getApiUrl = () => {
@@ -73,73 +76,36 @@
                     return resp.json().catch(() => []);
                 };
 
-                // ---- Sync des widgets natifs ----
-                function syncNativeWidgets() {
-                    if (!_friaRestored) return;
-                    const set = (name, val) => {
-                        const w = node.widgets?.find(x => x.name === name);
-                        if (!w) return;
-                        w.value = val;
-                        if (w.callback) w.callback(val);
-                    };
-                    set("prompt_type", templateSelect.value);
-                    set("preset_id", parseInt(presetSelect.value) || 0);
-                    set("style_id", parseInt(styleSelect.value) || 0);
-                }
-
-                // ---- Restauration depuis widgets natifs (au rechargement) ----
-                function restoreFromNativeWidgets() {
-                    let restored = false;
-                    const ptw = node.widgets?.find(x => x.name === "prompt_type");
-                    const pw = node.widgets?.find(x => x.name === "preset_id");
-                    const sw = node.widgets?.find(x => x.name === "style_id");
-                    if (ptw && ptw.value) {
-                        if ([...templateSelect.options].some(o => o.value === ptw.value)) {
-                            templateSelect.value = ptw.value;
-                            restored = true;
-                        }
-                    }
-                    if (pw && pw.value > 0 && [...presetSelect.options].some(o => o.value === String(pw.value))) {
-                        presetSelect.value = String(pw.value);
-                        restored = true;
-                    }
-                    if (sw && sw.value > 0 && [...styleSelect.options].some(o => o.value === String(sw.value))) {
-                        styleSelect.value = String(sw.value);
-                        restored = true;
-                    }
-                    _friaRestored = true;
-                    return restored;
-                }
-
-                // ---- Cache de rafraîchissement ----
-                const _cache = (window.__FRIA_cache = window.__FRIA_cache || { presets: 0, styles: 0 });
+                const _cache = (window.__FRIA_cache = window.__FRIA_cache || { presets: 0, styles: 0, tmpl: 0 });
                 const CACHE_TTL = 15000;
 
-                async function populateSelect(select, apiPath, labelKey, valKey, placeholder) {
+                // ---- Populate generique ----
+                async function populateSelect(select, apiPath, placeholder, cacheKey, valKey) {
                     select.innerHTML = `<option value="0">${placeholder}</option>`;
                     try {
                         const items = await apiGet(apiPath);
-                        if (Array.isArray(items)) {
-                            items.forEach(item => {
-                                const o = document.createElement("option");
-                                o.value = item[valKey || "id"];
-                                o.textContent = item[labelKey || "name"];
-                                select.appendChild(o);
-                            });
+                        if (!Array.isArray(items)) return;
+                        if (apiPath === "presets") {
+                            try { node._friaPresets = items; } catch {}
                         }
+                        items.forEach(item => {
+                            const o = document.createElement("option");
+                            o.value = item[valKey || "id"];
+                            o.textContent = item.name;
+                            select.appendChild(o);
+                        });
                     } catch {}
                 }
-
-                async function refreshIfStale(select, apiPath, cacheKey, valKey) {
+                async function refreshIfStale(select, apiPath, cacheKey, placeholder, valKey) {
                     const now = Date.now();
                     if (now - (_cache[cacheKey] || 0) < CACHE_TTL) return;
                     _cache[cacheKey] = now;
                     const oldVal = select.value;
-                    await populateSelect(select, apiPath, "name", valKey || "id", select.options[0]?.textContent || "--");
+                    await populateSelect(select, apiPath, placeholder, cacheKey, valKey);
                     if ([...select.options].some(o => o.value === oldVal)) select.value = oldVal;
                 }
 
-                // ---- Container (flex column) ----
+                // ---- Container ----
                 const container = document.createElement("div");
                 Object.assign(container.style, {
                     width: "100%", padding: "8px", boxSizing: "border-box",
@@ -155,21 +121,13 @@
                     return l;
                 };
 
-                const selectStyle = {
-                    width: "100%", padding: "3px 6px", borderRadius: "4px",
-                    border: "1px solid #555", background: "#3a3a3e",
-                    color: "#ccc", fontSize: "11px", cursor: "pointer",
-                };
-
-                // Template + Style (top row)
+                // ---- Grille Template + Style (ligne 1) ----
                 const tsRow = document.createElement("div");
                 Object.assign(tsRow.style, { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" });
 
                 const templateDiv = document.createElement("div");
                 const templateSelect = document.createElement("select");
-                Object.assign(templateSelect.style, selectStyle);
-                templateSelect.onchange = syncNativeWidgets;
-                templateSelect.addEventListener("mousedown", () => refreshIfStale(templateSelect, "prompts/templates", "tmpl", "prompt_type"));
+                Object.assign(templateSelect.style, { width: "100%", padding: "3px 6px", borderRadius: "4px", border: "1px solid #555", background: "#3a3a3e", color: "#ccc", fontSize: "11px", cursor: "pointer" });
                 templateDiv.appendChild(mkLabel("Template"));
                 templateDiv.appendChild(templateSelect);
                 tsRow.appendChild(templateDiv);
@@ -178,74 +136,25 @@
                 const styleRow = document.createElement("div");
                 Object.assign(styleRow.style, { display: "flex", gap: "4px", alignItems: "center" });
                 const styleSelect = document.createElement("select");
-                Object.assign(styleSelect.style, selectStyle);
+                Object.assign(styleSelect.style, { width: "100%", padding: "3px 6px", borderRadius: "4px", border: "1px solid #555", background: "#3a3a3e", color: "#ccc", fontSize: "11px", cursor: "pointer" });
                 styleSelect.style.flex = "1";
-                styleSelect.onchange = syncNativeWidgets;
-                styleSelect.addEventListener("mousedown", () => refreshIfStale(styleSelect, "styles", "styles"));
-                const styleRefreshBtn = document.createElement("button");
-                styleRefreshBtn.textContent = "\u21BB";
-                Object.assign(styleRefreshBtn.style, {
-                    padding: "2px 5px", fontSize: "10px", cursor: "pointer",
-                    border: "1px solid #555", borderRadius: "3px",
-                    background: "#3a3a3e", color: "#aaa", flex: "0 0 auto",
-                });
-                styleRefreshBtn.title = "Rafraichir la liste des styles";
-                styleRefreshBtn.onclick = () => { _cache.styles = 0; refreshIfStale(styleSelect, "styles", "styles"); };
                 styleDiv.appendChild(mkLabel("Style"));
                 styleRow.appendChild(styleSelect);
-                styleRow.appendChild(styleRefreshBtn);
                 styleDiv.appendChild(styleRow);
                 tsRow.appendChild(styleDiv);
                 container.appendChild(tsRow);
 
-                // Preset IA (bottom, full width)
+                // ---- Preset IA (ligne 2, full width) ----
                 const presetDiv = document.createElement("div");
                 const presetRow = document.createElement("div");
                 Object.assign(presetRow.style, { display: "flex", gap: "4px", alignItems: "center" });
                 const presetSelect = document.createElement("select");
-                Object.assign(presetSelect.style, selectStyle);
+                Object.assign(presetSelect.style, { width: "100%", padding: "3px 6px", borderRadius: "4px", border: "1px solid #555", background: "#3a3a3e", color: "#ccc", fontSize: "11px", cursor: "pointer" });
                 presetSelect.style.flex = "1";
-                presetSelect.onchange = syncNativeWidgets;
-                presetSelect.addEventListener("mousedown", () => refreshIfStale(presetSelect, "presets", "presets"));
-                const presetRefreshBtn = document.createElement("button");
-                presetRefreshBtn.textContent = "\u21BB";
-                Object.assign(presetRefreshBtn.style, {
-                    padding: "2px 5px", fontSize: "10px", cursor: "pointer",
-                    border: "1px solid #555", borderRadius: "3px",
-                    background: "#3a3a3e", color: "#aaa", flex: "0 0 auto",
-                });
-                presetRefreshBtn.title = "Rafraichir la liste des presets";
-                presetRefreshBtn.onclick = () => { _cache.presets = 0; refreshIfStale(presetSelect, "presets", "presets"); };
                 presetDiv.appendChild(mkLabel("Preset IA"));
                 presetRow.appendChild(presetSelect);
-                presetRow.appendChild(presetRefreshBtn);
                 presetDiv.appendChild(presetRow);
                 container.appendChild(presetDiv);
-
-                async function loadEnhanceTemplates() {
-                    const current = templateSelect.value;
-                    templateSelect.innerHTML = '<option value="0">-- Chargement --</option>';
-                    try {
-                        const items = await apiGet("prompts/templates");
-                        if (!Array.isArray(items) || items.length === 0) {
-                            templateSelect.innerHTML = '<option value="0">-- Template --</option>';
-                            return;
-                        }
-                        templateSelect.innerHTML = '';
-                        items.forEach(t => {
-                            const o = document.createElement("option");
-                            o.value = t.prompt_type;
-                            o.textContent = t.name || t.prompt_type;
-                            templateSelect.appendChild(o);
-                        });
-                        if (current && [...templateSelect.options].some(o => o.value === current)) {
-                            templateSelect.value = current;
-                        }
-                    } catch {
-                        templateSelect.innerHTML = '<option value="0">-- Template --</option>';
-                    }
-                }
-                // mousedown already set above on templateSelect
 
                 // ---- Bouton Test Enhance ----
                 const enhanceBtn = document.createElement("button");
@@ -259,7 +168,7 @@
                 enhanceBtn.onmouseleave = () => enhanceBtn.style.background = "#6366f1";
                 container.appendChild(enhanceBtn);
 
-                // ---- Textarea résultat ----
+                // ---- Textarea resultat ----
                 const resultTextarea = document.createElement("textarea");
                 Object.assign(resultTextarea.style, {
                     width: "100%",
@@ -279,28 +188,108 @@
                 });
                 widget.computeSize = () => [node.size[0] - 20, 240];
 
-                // ---- Initialisation ----
-                loadEnhanceTemplates().then(() => {
-                    restoreFromNativeWidgets();
-                    syncNativeWidgets();
-                });
-                populateSelect(presetSelect, "presets", "name", "id", "-- Preset IA --").then(() => {
-                    populateSelect(styleSelect, "styles", "name", "id", "-- Style --").then(() => {
-                        restoreFromNativeWidgets();
-                        syncNativeWidgets();
-                        // Retry si les options n'etaient pas encore chargees
-                        let ra = 0;
-                        function delayedRestore() {
-                            restoreFromNativeWidgets();
-                            if (++ra < 20) setTimeout(delayedRestore, 300);
+                // ---- Sync des widgets natifs ----
+                function syncNativeWidgets(force) {
+                    if (!_friaRestored && !force) return;
+                    const set = (name, val) => {
+                        const w = node.widgets?.find(x => x.name === name);
+                        if (!w) return;
+                        w.value = val;
+                        if (w.callback) w.callback(val);
+                    };
+                    set("template_id", parseInt(templateSelect.value) || 0);
+                    set("preset_id", parseInt(presetSelect.value) || 0);
+                    set("style_id", parseInt(styleSelect.value) || 0);
+                }
+
+                templateSelect.onchange = syncNativeWidgets;
+                presetSelect.onchange = syncNativeWidgets;
+                styleSelect.onchange = syncNativeWidgets;
+
+                // ---- Restoration depuis widgets natifs ----
+                function restoreFromNativeWidgets() {
+                    let restored = false;
+                    if (templateIdWidget) {
+                        const tid = parseInt(templateIdWidget.value) || 0;
+                        if (tid > 0 && [...templateSelect.options].some(o => o.value === String(tid))) {
+                            templateSelect.value = String(tid);
+                            restored = true;
+                        } else if (tid === 0) {
+                            templateSelect.value = "0";
                         }
-                        setTimeout(delayedRestore, 100);
-                    });
+                    }
+                    if (presetIdWidget) {
+                        const pid = parseInt(presetIdWidget.value) || 0;
+                        if (pid > 0 && [...presetSelect.options].some(o => o.value === String(pid))) {
+                            presetSelect.value = String(pid);
+                            restored = true;
+                        } else if (pid === 0) {
+                            presetSelect.value = "0";
+                        }
+                    }
+                    if (styleIdWidget) {
+                        const sid = parseInt(styleIdWidget.value) || 0;
+                        if (sid > 0 && [...styleSelect.options].some(o => o.value === String(sid))) {
+                            styleSelect.value = String(sid);
+                            restored = true;
+                        } else if (sid === 0) {
+                            styleSelect.value = "0";
+                        }
+                    }
+                    _friaRestored = true;
+                    return restored;
+                }
+
+                node._friaRestore = function () {
+                    let ra = 0;
+                    const retry = () => {
+                        const restored = restoreFromNativeWidgets();
+                        if (restored) syncNativeWidgets();
+                        if (!restored && ++ra < 20) setTimeout(retry, 300);
+                    };
+                    retry();
+                };
+
+                // ---- Initialisation ----
+                Promise.all([
+                    populateSelect(templateSelect, "prompts/templates", "-- Template --", "tmpl"),
+                    populateSelect(presetSelect, "presets", "-- Preset IA --", "presets"),
+                    populateSelect(styleSelect, "styles", "-- Style --", "styles"),
+                ]).then(() => {
+                    const restored = restoreFromNativeWidgets();
+                    if (restored) syncNativeWidgets();
+                    else {
+                        templateSelect.value = String(parseInt(templateIdWidget?.value) || 0);
+                        presetSelect.value = String(parseInt(presetIdWidget?.value) || 0);
+                        styleSelect.value = String(parseInt(styleIdWidget?.value) || 0);
+                        syncNativeWidgets();
+                    }
+                    let ra = 0;
+                    function delayedRestore() {
+                        const r = restoreFromNativeWidgets();
+                        if (r) syncNativeWidgets();
+                        if (++ra < 20) setTimeout(delayedRestore, 300);
+                    }
+                    setTimeout(delayedRestore, 100);
                 });
 
-                // ---- Onclick Test Enhance ----
-                // Appelle /api/enhance en streaming (ndjson keepalive) et
-                // affiche le prompt final + negative_prompt dans la textarea.
+                // ---- mousedown : refresh cache ----
+                templateSelect.addEventListener("mousedown", () => refreshIfStale(templateSelect, "prompts/templates", "tmpl", "-- Template --"));
+                presetSelect.addEventListener("mousedown", () => refreshIfStale(presetSelect, "presets", "presets", "-- Preset IA --"));
+                styleSelect.addEventListener("mousedown", () => refreshIfStale(styleSelect, "styles", "styles", "-- Style --"));
+
+                // ---- Resize : pas de ResizeObserver (voir fria_prep_widget.js) ----
+                const onResize = node.onResize;
+                node.onResize = function (size) {
+                    const r = onResize?.apply(this, arguments);
+                    widget.computeSize = () => [size[0] - 20, 240];
+                    container.style.width = (size[0] - 20) + "px";
+                    tsRow.style.gridTemplateColumns = "1fr 1fr";
+                    return r;
+                };
+                tsRow.style.gridTemplateColumns = "1fr 1fr";
+
+                // ---- Test Enhance ----
                 enhanceBtn.onclick = async () => {
                     const get = (name) => node.widgets?.find(w => w.name === name);
                     const basePrompt = (get("base_prompt")?.value || "").trim();
@@ -308,29 +297,26 @@
                     const seedW = get("seed")?.value;
                     const elementsRaw = get("elements")?.value || "[]";
 
-                    // Parser elements (tableau direct ou objet _elements_json)
                     let elements = [];
                     try {
                         const parsed = JSON.parse(elementsRaw);
                         if (Array.isArray(parsed)) elements = parsed;
                         else if (parsed?.elements) elements = parsed.elements;
                     } catch {
-                        // Texte brut : on enverra comme tel via le payload brut
+                        // Texte brut
                     }
 
                     const payload = {
                         text: basePrompt,
                         seed: seedW > 0 ? seedW : null,
-                        prompt_type: templateSelect.value,
+                        template_id: parseInt(templateSelect.value) || 0,
                         preset_id: parseInt(presetSelect.value) || null,
                         style_id: parseInt(styleSelect.value) || null,
                         special_instructions: specialInstructions,
                     };
-                    // elements en texte brut si pas du JSON structuré
                     if (elements.length > 0) {
                         payload.ep_elements = elements;
                     } else if (elementsRaw.trim() && elementsRaw !== "[]") {
-                        // texte brut : on le concatenre avec base_prompt
                         payload.text = (basePrompt + "\n\n" + elementsRaw).trim();
                     }
 
@@ -374,7 +360,7 @@
                     }
                 };
 
-                // ---- onExecuted : recupere le resultat du Run ComfyUI ----
+                // ---- onExecuted ----
                 const origExec = node.onExecuted;
                 node.onExecuted = function (output) {
                     if (origExec) origExec.call(this, output);
@@ -387,22 +373,6 @@
                     }
                 };
 
-                // ---- Resize ----
-                const onResize = node.onResize;
-                node.onResize = function (size) {
-                    const r = onResize?.apply(this, arguments);
-                    widget.computeSize = () => [size[0] - 20, 240];
-                    return r;
-                };
-
-                node._friaRestore = function () {
-                    let ra = 0;
-                    const retry = () => {
-                        const restored = restoreFromNativeWidgets();
-                        if (!restored && ++ra < 21) setTimeout(retry, 300);
-                    };
-                    retry();
-                };
                 return r;
             };
         },

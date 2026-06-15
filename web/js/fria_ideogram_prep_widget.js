@@ -258,17 +258,11 @@
                     const r = onResize?.apply(this, arguments);
                     widget.computeSize = () => [size[0] - 20, 105];
                     container.style.width = (size[0] - 20) + "px";
+                    // Forcer la grille 2 colonnes pour eviter l'effondrement
+                    if (grid) grid.style.gridTemplateColumns = "1fr 1fr";
                     return r;
                 };
-                if (typeof ResizeObserver !== "undefined") {
-                    const ro = new ResizeObserver(entries => {
-                        for (const entry of entries) {
-                            const w = entry.contentRect.width;
-                            if (w > 0) container.style.width = w + "px";
-                        }
-                    });
-                    ro.observe(container);
-                }
+                if (grid) grid.style.gridTemplateColumns = "1fr 1fr";
 
                 node._friaRestore = function () {
                     let ra = 0;
