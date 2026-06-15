@@ -642,31 +642,7 @@
       URL.revokeObjectURL(a.href);
     }
 
-    // -- Styles --
-
-    function openStylesModal() {
-      document.getElementById('modal-styles').classList.remove('hidden');
-      document.getElementById('modal-styles').classList.add('flex');
-      makeModalDraggable('styles-modal-header', 'styles-modal');
-      loadStyles();
-    }
-
-    function closeStylesModal() {
-      document.getElementById('modal-styles').classList.add('hidden');
-      document.getElementById('modal-styles').classList.remove('flex');
-    }
-
-    async function deleteStyle(id) {
-      if (!confirm('Supprimer ce style ?')) return;
-      try {
-        var res = await fetch(API + '/styles/' + id, { method: 'DELETE' });
-        if (!res.ok) throw await safeJson(res);
-        if (document.getElementById('tab-styles') && !document.getElementById('tab-styles').classList.contains('hidden')) loadStylesTab();
-        if (window.loadStyles) loadStyles();
-      } catch (err) {
-        showModal('Erreur', 'Impossible de supprimer: ' + (err.message || err.error || ''), 'error');
-      }
-    }
+    // -- Styles (dropdown du generator uniquement) --
 
     async function loadStyles() {
       try {
@@ -677,7 +653,6 @@
           return;
         }
         var styles = await r.json();
-        renderStylesList(styles);
         var sel = document.getElementById('enhance-style');
         sel.innerHTML = '<option value="">-- Style --</option>';
         styles.forEach(function(s) {
@@ -690,69 +665,6 @@
           sel.value = currentUser.settings.enhanceStyleId;
         }
       } catch (e) {}
-    }
-
-    function renderStylesList(styles) {
-      var el = document.getElementById('styles-list');
-      if (!styles.length) { el.innerHTML = '<p class="text-xs text-slate-400">Aucun style. Creez-en un !</p>'; return; }
-      var html = '';
-      styles.forEach(function(s) {
-        var canEdit = s.user_id === (currentUser ? currentUser.id : '');
-        html += '<div class="flex items-center justify-between py-1 px-2 rounded text-xs bg-slate-50 dark:bg-slate-800/50">';
-        html += '<div><span class="font-medium text-slate-700 dark:text-slate-200">' + s.name + '</span>';
-        html += ' <span class="text-slate-400">' + (s.is_public ? '🌐 public' : '🔒 prive') + ' (' + (s.owner_name || 'moi') + ')</span>';
-        html += '<br><span class="text-slate-400 text-xs italic">+ ' + s.style_text.substring(0, 60) + '</span>';
-        if (s.negative_prompt) html += '<br><span class="text-rose-400 text-xs">- ' + s.negative_prompt.substring(0, 50) + '</span>';
-        html += '</div>';
-        if (canEdit) {
-          html += '<div class="flex gap-1">';
-          html += '<button onclick="editStyle(' + s.id + ')" class="text-xs text-indigo-400 hover:text-indigo-600">Edit</button>';
-          html += '<button onclick="delStyle(' + s.id + ')" class="text-xs text-rose-400 hover:text-rose-600">Del</button>';
-          html += '</div>';
-        }
-        html += '</div>';
-      });
-      el.innerHTML = html;
-    }
-
-    async function saveStyle() {
-      var name = document.getElementById('style-form-name').value.trim();
-      var text = document.getElementById('style-form-text').value.trim();
-      var neg = document.getElementById('style-form-neg').value.trim();
-      var isPublic = document.getElementById('style-form-public').checked ? 1 : 0;
-      var editId = document.getElementById('style-form-name').dataset.editId;
-      if (!name || !text) { showModal('Style', 'Nom et texte requis', 'error'); return; }
-      try {
-        var body = {name: name, style_text: text, negative_prompt: neg, is_public: isPublic};
-        var endpoint = '/styles';
-        var method = 'POST';
-        if (editId) { endpoint = '/styles/' + editId; method = 'PUT'; }
-        var r = await fetch(API + endpoint, {
-          method: method,
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(body)
-        });
-        if (!r.ok) throw await safeJson(r);
-        clearStyleForm();
-        loadStyles();
-        showModal('Style', editId ? 'Style mis a jour' : 'Style ajoute !', 'success');
-      } catch (err) {
-        showModal('Erreur', (err.error || ''), 'error');
-      }
-    }
-
-    function editStyle(id) {
-      fetch(API + '/styles').then(function(r){ return r.json(); }).then(function(styles){
-        var s = styles.find(function(x){ return x.id === id; });
-        if (!s) return;
-        document.getElementById('style-form-name').value = s.name;
-        document.getElementById('style-form-name').dataset.editId = id;
-        document.getElementById('style-form-text').value = s.style_text;
-        document.getElementById('style-form-neg').value = s.negative_prompt || '';
-        document.getElementById('style-form-public').checked = s.is_public;
-        document.getElementById('btn-style-save').textContent = 'Mettre a jour';
-        document.getElementById('btn-style-clear').classList.remove('hidden');
-      }).catch(function(){});
     }
 
 
@@ -902,16 +814,6 @@
         var kw = d.keywords && d.keywords.length > 0 ? d.keywords.slice(0,8).join(', ') : 'aucun' ;
         showModal('Cache du filtre', d.total + ' mots-cles dans le cache.\n\nEchantillon: ' + kw, 'success');
       } catch (e) {}
-    }
-
-    function clearStyleForm() {
-      document.getElementById('style-form-name').value = '';
-      document.getElementById('style-form-name').dataset.editId = '';
-      document.getElementById('style-form-text').value = '';
-      document.getElementById('style-form-neg').value = '';
-      document.getElementById('style-form-public').checked = false;
-      document.getElementById('btn-style-save').textContent = 'Ajouter';
-      document.getElementById('btn-style-clear').classList.add('hidden');
     }
 
     function clearStyleFormTab() {

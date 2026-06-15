@@ -355,10 +355,6 @@
                   <button onclick="resetEnhancer()" title="Reinitialiser" class="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-600">
                     <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
                   </button>
-                  <button onclick="openStylesModal()" title="Gerer les styles" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition">
-                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l-4 4h8l-4-4z"/><path d="M12 2v20"/></svg>
-                    Styles
-                  </button>
 
                 </div>
               </div>
@@ -591,32 +587,6 @@
                 <button onclick="regenerateApiKey()" class="px-3 py-2 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-500 transition">Regenerer</button>
               </div>
               <p id="settings-key-status" class="hidden text-xs mt-2"></p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>    <!-- Modale Styles -->
-    <div id="modal-styles" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
-      <div id="styles-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 520px; max-height: 70vh; position: relative;">
-        <div id="styles-modal-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
-          <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Styles</h2>
-          <button onclick="closeStylesModal()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
-        </div>
-        <div class="modal-body space-y-4" style="max-height: calc(70vh - 52px);">
-          <div id="styles-list" class="space-y-1 max-h-40 overflow-y-auto">
-            <p class="text-xs text-slate-400">Chargement...</p>
-          </div>
-          <hr class="border-slate-200 dark:border-slate-700">
-          <div class="space-y-2">
-            <input type="text" id="style-form-name" placeholder="Nom du style" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
-            <textarea id="style-form-text" rows="2" placeholder="Texte du style (ex: Hyper realistic, 1970 vintage photography)" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md resize-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200"></textarea>
-            <textarea id="style-form-neg" rows="1" placeholder="Prompt negatif (optionnel)" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md resize-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200"></textarea>
-            <label class="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-              <input type="checkbox" id="style-form-public" class="rounded"> Public
-            </label>
-            <div class="flex gap-2">
-              <button onclick="saveStyle()" id="btn-style-save" class="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500">Ajouter</button>
-              <button onclick="clearStyleForm()" id="btn-style-clear" class="hidden px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 border border-slate-300 rounded-md">Annuler edit</button>
             </div>
           </div>
         </div>
