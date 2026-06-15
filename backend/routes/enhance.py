@@ -783,9 +783,9 @@ def _prepare_enhance(user_id, data):
         # Piocher des keywords depuis des sections inutilisees
         if used_sections:
             ph = ','.join('?' for _ in used_sections)
-            cur.execute(f"SELECT keyword FROM keywords WHERE section_id NOT IN ({ph}) OR section_id IS NULL ORDER BY RANDOM() LIMIT ?", list(used_sections) + [random_count])
+            cur.execute(f"SELECT keyword FROM keywords WHERE (section_id NOT IN ({ph}) OR section_id IS NULL) AND privacy_status = 'public' ORDER BY RANDOM() LIMIT ?", list(used_sections) + [random_count])
         else:
-            cur.execute("SELECT keyword FROM keywords ORDER BY RANDOM() LIMIT ?", (random_count,))
+            cur.execute("SELECT keyword FROM keywords WHERE privacy_status = 'public' ORDER BY RANDOM() LIMIT ?", (random_count,))
         rand_keywords = [r[0] for r in cur.fetchall()]
         conn.close()
 

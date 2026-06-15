@@ -121,8 +121,8 @@ def admin_set_role(user_id):
         return guard
     data = request.get_json()
     new_role = data.get('role')
-    if new_role not in ('admin', 'user'):
-        return jsonify({'error': 'Role invalide'}), 400
+    if new_role not in ('admin', 'kw_editor', 'user'):
+        return jsonify({'error': 'Role invalide. Valeurs acceptées: admin, kw_editor, user'}), 400
     conn = get_db()
     conn.execute('UPDATE users SET role = ? WHERE id = ?', (new_role, user_id))
     conn.commit()

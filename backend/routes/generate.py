@@ -126,19 +126,19 @@ def generate_prompt():
             ph = ','.join('?' for _ in used_sections)
             if nsfw_filter is not None:
                 cur.execute(
-                    f"SELECT keyword FROM keywords WHERE (section_id NOT IN ({ph}) OR section_id IS NULL) AND nsfw = ?",
+                    f"SELECT keyword FROM keywords WHERE (section_id NOT IN ({ph}) OR section_id IS NULL) AND nsfw = ? AND privacy_status = 'public'",
                     list(used_sections) + [nsfw_filter]
                 )
             else:
                 cur.execute(
-                    f"SELECT keyword FROM keywords WHERE section_id NOT IN ({ph}) OR section_id IS NULL",
+                    f"SELECT keyword FROM keywords WHERE (section_id NOT IN ({ph}) OR section_id IS NULL) AND privacy_status = 'public'",
                     list(used_sections)
                 )
         else:
             if nsfw_filter is not None:
-                cur.execute("SELECT keyword FROM keywords WHERE nsfw = ?", (nsfw_filter,))
+                cur.execute("SELECT keyword FROM keywords WHERE nsfw = ? AND privacy_status = 'public'", (nsfw_filter,))
             else:
-                cur.execute("SELECT keyword FROM keywords")
+                cur.execute("SELECT keyword FROM keywords WHERE privacy_status = 'public'")
         candidates = [r[0] for r in cur.fetchall()]
         n = min(random_count, len(candidates))
         rand_keywords = rng.sample(candidates, n) if n > 0 else []

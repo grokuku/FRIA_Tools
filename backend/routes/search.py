@@ -33,8 +33,14 @@ def semantic_search():
     conn = get_db()
     cur = conn.cursor()
 
-    conditions = []
-    params = []
+    user_id = _get_current_user_id()
+
+    # Filtre privacy : voir les public + ses propres keywords (tous statuts)
+    privacy_where, privacy_params = _privacy_filter(user_id)
+
+    conditions = [privacy_where]
+    params = privacy_params.copy()
+
     if nsfw == '0':
         conditions.append("k.nsfw = 0")
     elif nsfw == '1':
@@ -46,11 +52,12 @@ def semantic_search():
         conditions.append("k.subsection_id = ?")
         params.append(subsection)
 
-    where_clause = " AND ".join(conditions) if conditions else "1=1"
+    where_clause = " AND ".join(conditions)
 
     cur.execute(f"""
         SELECT k.id, k.keyword, k.description, k.section_id, k.section_title,
-               k.subsection_id, k.subsection_title, k.nsfw, ke.embedding
+               k.subsection_id, k.subsection_title, k.nsfw, ke.embedding,
+               k.privacy_status, k.user_id
         FROM keywords k
         JOIN keyword_embeddings ke ON ke.keyword_id = k.id
         WHERE {where_clause}
@@ -76,6 +83,8 @@ def semantic_search():
             'subsection_id': row['subsection_id'],
             'subsection_title': row['subsection_title'],
             'nsfw': row['nsfw'],
+            'privacy_status': row['privacy_status'],
+            'user_id': row['user_id'],
             'score': round(similarity, 4)
         })
 

@@ -22,7 +22,8 @@ from auth import make_discord_session, check_guild_access, get_guild_member, get
 from routes.helpers import (
     _login_required, _admin_required, _get_current_user_id, _authenticate_via_token,
     _sync_session_user, get_db, _init_db, _row_get,
-    encrypt_api_key, decrypt_api_key, is_admin, _generate_all_embeddings,
+    encrypt_api_key, decrypt_api_key, is_admin, is_kw_editor, _kw_editor_required,
+    _privacy_filter, _regenerate_keyword_embedding, _generate_all_embeddings,
     _get_ollama_config
 )
 
@@ -40,6 +41,6 @@ __all__ = [
     '_login_required', '_admin_required', '_get_current_user_id',
     '_authenticate_via_token', '_sync_session_user',
     'get_db', '_init_db', '_row_get',
-    'encrypt_api_key', 'decrypt_api_key', 'is_admin', '_generate_all_embeddings',
+    'encrypt_api_key', 'decrypt_api_key', 'is_admin', 'is_kw_editor', '_kw_editor_required', '_privacy_filter', '_regenerate_keyword_embedding', '_generate_all_embeddings',
     '_get_ollama_config',
 ]

@@ -93,6 +93,7 @@
 
       if (tab === 'style') loadStylesTab();
       if (tab === 'template') loadTemplatesTab();
+      if (tab === 'keywords') kwLoadList();
     }
 
     /* ── Theme system ── */

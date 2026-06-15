@@ -850,6 +850,7 @@
       initResizablePanels();
       makeColResizable('styles-divider', 'styles-left', 'styles-right', 25);
       makeColResizable('templates-divider', 'templates-left', 'templates-right', 25);
+      makeColResizable('kw-divider', 'kw-left', 'kw-right', 25);
       initStyleTextareaResize();
     });
     // === Import / Export ===

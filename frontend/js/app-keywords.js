@@ -413,3 +413,418 @@
       ta.select();
       document.execCommand('copy');
     }
+
+    function esc(str) {
+      if (typeof str !== 'string') return '';
+      var div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+
+// ── Keywords Manager ─────────────────────────────────────────────
+
+let kwEditingId = null;
+
+function kwLoadList() {
+    const search = document.getElementById('kw-filter-search').value.trim();
+    const scope = document.getElementById('kw-filter-scope').value;
+    const section = document.getElementById('kw-filter-section').value;
+    const nsfw = document.getElementById('kw-filter-nsfw').value;
+
+    const params = new URLSearchParams();
+    if (search) params.append('q', search);
+    if (scope) params.append('scope', scope);
+    if (section) params.append('section', section);
+    if (nsfw !== '') params.append('nsfw', nsfw);
+
+    // Charger les sections pour le dropdown
+    fetch(API + '/sections')
+        .then(r => r.json())
+        .then(sections => {
+            const sel = document.getElementById('kw-filter-section');
+            const currentVal = sel.value;
+            sel.innerHTML = '<option value="">Toutes sections</option>';
+            sections.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.section_id;
+                opt.textContent = s.section_id + '. ' + s.section_title;
+                sel.appendChild(opt);
+            });
+            sel.value = currentVal;
+        }).catch(() => {});
+
+    const list = document.getElementById('kw-list');
+    list.innerHTML = '<p class="text-xs text-slate-400">Chargement...</p>';
+
+    fetch(API + '/keywords?' + params.toString())
+        .then(r => r.json())
+        .then(data => {
+            renderKwList(data);
+        })
+        .catch(() => {
+            list.innerHTML = '<p class="text-xs text-rose-400">Erreur de chargement</p>';
+        });
+
+    // Vérifier si l'utilisateur est KW editor pour afficher le bouton pending
+    checkKwEditorStatus();
+}
+
+function renderKwList(keywords) {
+    const list = document.getElementById('kw-list');
+    if (!keywords || keywords.length === 0) {
+        list.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">Aucun mot-clé trouvé</p>';
+        return;
+    }
+    list.innerHTML = '';
+    keywords.forEach(kw => {
+        const privacyIcon = kw.privacy_status === 'public' ? '🌐' : (kw.privacy_status === 'public_pending' ? '🟡' : '🔒');
+        const nsfwBadge = kw.nsfw ? '<span class="text-rose-400 text-[10px]">NSFW</span>' : '';
+        const ownerLabel = kw.user_id ? '' : '<span class="text-[10px] text-slate-400">[global]</span>';
+        const preview = (kw.description || '').substring(0, 60);
+
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-1.5 p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700/50 cursor-pointer transition text-xs';
+        row.innerHTML = '<span class="text-xs">' + privacyIcon + '</span>'
+            + '<span class="flex-1 min-w-0"><strong class="text-slate-800 dark:text-slate-200">' + esc(kw.keyword) + '</strong>'
+            + ' <span class="text-slate-400">' + esc(preview) + (preview.length >= 60 ? '...' : '') + '</span>'
+            + '</span>'
+            + nsfwBadge + ' ' + ownerLabel;
+        row.onclick = () => kwEdit(kw);
+
+        // Boutons actions
+        const actions = document.createElement('div');
+        actions.className = 'flex gap-1 shrink-0';
+
+        const editBtn = document.createElement('button');
+        editBtn.textContent = '✎';
+        editBtn.className = 'text-slate-400 hover:text-indigo-500 p-0.5 text-xs';
+        editBtn.title = 'Éditer';
+        editBtn.onclick = (e) => { e.stopPropagation(); kwEdit(kw); };
+        actions.appendChild(editBtn);
+
+        const delBtn = document.createElement('button');
+        delBtn.textContent = '🗑';
+        delBtn.className = 'text-slate-400 hover:text-rose-500 p-0.5 text-xs';
+        delBtn.title = 'Supprimer';
+        delBtn.onclick = (e) => { e.stopPropagation(); kwDelete(kw.id); };
+        actions.appendChild(delBtn);
+
+        row.appendChild(actions);
+        list.appendChild(row);
+    });
+}
+
+function kwEdit(kw) {
+    kwEditingId = kw.id;
+    document.getElementById('kw-form-title').textContent = '✎ Modifier ' + esc(kw.keyword);
+    document.getElementById('kw-form-keyword').value = kw.keyword || '';
+    document.getElementById('kw-form-desc').value = kw.description || '';
+    document.getElementById('kw-form-section-id').value = kw.section_id || '';
+    document.getElementById('kw-form-section-title').value = kw.section_title || '';
+    document.getElementById('kw-form-subsection-id').value = kw.subsection_id || '';
+    document.getElementById('kw-form-subsection-title').value = kw.subsection_title || '';
+    document.getElementById('kw-form-nsfw').checked = !!kw.nsfw;
+    document.getElementById('kw-form-privacy').value = kw.privacy_status || 'private';
+    document.getElementById('btn-kw-save').textContent = 'Sauvegarder';
+    document.getElementById('btn-kw-clear').classList.remove('hidden');
+}
+
+function kwAddNew() {
+    kwEditingId = null;
+    document.getElementById('kw-form-title').textContent = 'Nouveau mot-clé';
+    document.getElementById('kw-form-keyword').value = '';
+    document.getElementById('kw-form-desc').value = '';
+    document.getElementById('kw-form-section-id').value = '';
+    document.getElementById('kw-form-section-title').value = '';
+    document.getElementById('kw-form-subsection-id').value = '';
+    document.getElementById('kw-form-subsection-title').value = '';
+    document.getElementById('kw-form-nsfw').checked = false;
+    document.getElementById('kw-form-privacy').value = 'private';
+    document.getElementById('btn-kw-save').textContent = 'Ajouter';
+    document.getElementById('btn-kw-clear').classList.add('hidden');
+}
+
+function kwClearForm() {
+    kwAddNew();
+}
+
+async function kwSave() {
+    const keyword = document.getElementById('kw-form-keyword').value.trim();
+    const description = document.getElementById('kw-form-desc').value.trim();
+    const section_id = document.getElementById('kw-form-section-id').value.trim();
+    const section_title = document.getElementById('kw-form-section-title').value.trim();
+    const subsection_id = document.getElementById('kw-form-subsection-id').value.trim();
+    const subsection_title = document.getElementById('kw-form-subsection-title').value.trim();
+    const nsfw = document.getElementById('kw-form-nsfw').checked ? 1 : 0;
+    const privacy = document.getElementById('kw-form-privacy').value;
+
+    if (!keyword || !description) {
+        showModal('Erreur', 'Mot-clé et description requis', 'error');
+        return;
+    }
+
+    const body = {
+        keyword, description,
+        section_id, section_title,
+        subsection_id, subsection_title,
+        nsfw, privacy_status: privacy
+    };
+
+    try {
+        let res;
+        if (kwEditingId) {
+            res = await fetch(API + '/keywords/' + kwEditingId, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+            });
+        } else {
+            res = await fetch(API + '/keywords', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+            });
+        }
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showModal('Erreur', data.error || 'Erreur inconnue', 'error');
+            return;
+        }
+        showModal('Succès', kwEditingId ? 'Mot-clé mis à jour' : 'Mot-clé créé', 'success');
+        kwAddNew();
+        kwLoadList();
+    } catch (e) {
+        showModal('Erreur', e.message, 'error');
+    }
+}
+
+async function kwDelete(id) {
+    showConfirm('Confirmer', 'Supprimer ce mot-clé ?', async (ok) => {
+        if (!ok) return;
+        try {
+            const res = await fetch(API + '/keywords/' + id, { method: 'DELETE' });
+            const data = await safeJson(res);
+            if (!res.ok) {
+                showModal('Erreur', data.error || 'Erreur', 'error');
+                return;
+            }
+            if (kwEditingId === id) kwAddNew();
+            kwLoadList();
+        } catch (e) {
+            showModal('Erreur', e.message, 'error');
+        }
+    });
+}
+
+async function kwCheckDuplicates() {
+    const keyword = document.getElementById('kw-form-keyword').value.trim();
+    if (!keyword) {
+        showModal('Info', 'Entre d\'abord un mot-clé pour vérifier les doublons', 'info');
+        return;
+    }
+    try {
+        const res = await fetch(API + '/keywords/check-duplicates', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({keyword, threshold: 0.85})
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showModal('Erreur', data.error || 'Erreur', 'error');
+            return;
+        }
+        let msg = '';
+        if (data.exact_matches && data.exact_matches.length > 0) {
+            msg += '⚠️ <b>Doublons exacts :</b><br>';
+            data.exact_matches.forEach(m => {
+                msg += '• ' + esc(m.keyword) + ' (' + m.privacy_status + ')<br>';
+            });
+        }
+        if (data.semantic_matches && data.semantic_matches.length > 0) {
+            msg += '<br>🔍 <b>Similaires (≥85%) :</b><br>';
+            data.semantic_matches.forEach(m => {
+                msg += '• ' + esc(m.keyword) + ' (' + (m.similarity * 100).toFixed(0) + '%)<br>';
+            });
+        }
+        if (!msg) msg = '✅ Aucun doublon trouvé';
+        showModal('Résultat vérification', msg, data.exact_matches.length > 0 ? 'warning' : 'success');
+    } catch (e) {
+        showModal('Erreur', e.message, 'error');
+    }
+}
+
+// ── Bulk Import ─────────────────────────────────────────────────
+
+function kwOpenBulkImport() {
+    document.getElementById('modal-bulk-import').classList.remove('hidden');
+    document.getElementById('modal-bulk-import').classList.add('flex');
+    document.getElementById('bi-text').value = '';
+    document.getElementById('bi-result').classList.add('hidden');
+    makeModalDraggable('bi-modal-header', 'bi-modal');
+}
+
+function closeBulkImport() {
+    document.getElementById('modal-bulk-import').classList.add('hidden');
+    document.getElementById('modal-bulk-import').classList.remove('flex');
+}
+
+async function doBulkImport() {
+    const text = document.getElementById('bi-text').value.trim();
+    const privacy = document.getElementById('bi-privacy').value;
+    if (!text) {
+        showModal('Erreur', 'Colle le texte à importer', 'error');
+        return;
+    }
+    try {
+        const res = await fetch(API + '/keywords/bulk', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({text, privacy_status: privacy})
+        });
+        const data = await safeJson(res);
+        const resultDiv = document.getElementById('bi-result');
+        resultDiv.classList.remove('hidden');
+        if (res.ok) {
+            resultDiv.className = 'text-xs p-2 rounded border border-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300';
+            resultDiv.innerHTML = '✅ ' + data.message;
+            if (data.errors && data.errors.length > 0) {
+                resultDiv.innerHTML += '<br><br><b>Erreurs :</b><br>' + data.errors.slice(0, 10).join('<br>');
+            }
+            kwLoadList();
+        } else {
+            resultDiv.className = 'text-xs p-2 rounded border border-rose-300 bg-rose-50 dark:bg-rose-900/30 dark:border-rose-700 text-rose-800 dark:text-rose-300';
+            resultDiv.innerHTML = '❌ ' + (data.error || 'Erreur inconnue');
+        }
+    } catch (e) {
+        showModal('Erreur', e.message, 'error');
+    }
+}
+
+// ── Export ──────────────────────────────────────────────────────
+
+function kwExport() {
+    const scope = document.getElementById('kw-filter-scope').value || 'public';
+    window.open(API + '/keywords/export?scope=' + scope, '_blank');
+}
+
+// ── Moderation (KW editors) ─────────────────────────────────────
+
+let isKwEditor = false;
+
+async function checkKwEditorStatus() {
+    try {
+        const res = await fetch(API + '/keywords/pending');
+        if (res.status === 403) {
+            document.getElementById('kw-btn-pending').classList.add('hidden');
+            document.getElementById('kw-pending-section').classList.add('hidden');
+            isKwEditor = false;
+            return;
+        }
+        isKwEditor = true;
+        document.getElementById('kw-privacy-public-opt').disabled = false;
+        document.getElementById('kw-btn-pending').classList.remove('hidden');
+    } catch {
+        isKwEditor = false;
+    }
+}
+
+async function kwLoadPending() {
+    if (!isKwEditor) return;
+    const section = document.getElementById('kw-pending-section');
+    const list = document.getElementById('kw-pending-list');
+    section.classList.remove('hidden');
+    list.innerHTML = '<p class="text-xs text-slate-400">Chargement...</p>';
+
+    try {
+        const res = await fetch(API + '/keywords/pending');
+        const data = await safeJson(res);
+        if (!res.ok || !Array.isArray(data)) {
+            list.innerHTML = '<p class="text-xs text-rose-400">Erreur</p>';
+            return;
+        }
+        if (data.length === 0) {
+            list.innerHTML = '<p class="text-xs text-slate-400">Rien en attente ✅</p>';
+            return;
+        }
+        list.innerHTML = '';
+        data.forEach(kw => {
+            const row = document.createElement('div');
+            row.className = 'flex items-center gap-1.5 p-1.5 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-xs';
+            row.innerHTML = '<span class="flex-1"><strong>' + esc(kw.keyword) + '</strong> <span class="text-slate-400">par ' + esc(kw.creator_name || '?') + '</span></span>';
+
+            const editBtn = document.createElement('button');
+            editBtn.textContent = '✎';
+            editBtn.className = 'px-1.5 py-0.5 text-xs border border-slate-300 rounded hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700';
+            editBtn.title = 'Voir/Modifier';
+            editBtn.onclick = () => {
+                // Ouvrir dans l'éditeur
+                kwEdit(kw);
+                // Scroll vers le formulaire
+                document.getElementById('kw-form-keyword').scrollIntoView({behavior: 'smooth'});
+            };
+
+            const approveBtn = document.createElement('button');
+            approveBtn.textContent = '✅ Valider';
+            approveBtn.className = 'px-1.5 py-0.5 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-500';
+            approveBtn.onclick = () => kwReview(kw.id, 'approve', row);
+
+            const rejectBtn = document.createElement('button');
+            rejectBtn.textContent = '❌ Rejeter';
+            rejectBtn.className = 'px-1.5 py-0.5 text-xs bg-rose-600 text-white rounded hover:bg-rose-500';
+            rejectBtn.onclick = () => {
+                showPrompt('Rejeter', 'Raison du rejet (optionnelle) :', '', (notes) => {
+                    kwReview(kw.id, 'reject', row, notes);
+                });
+            };
+
+            row.appendChild(editBtn);
+            row.appendChild(approveBtn);
+            row.appendChild(rejectBtn);
+            list.appendChild(row);
+        });
+    } catch (e) {
+        list.innerHTML = '<p class="text-xs text-rose-400">Erreur: ' + e.message + '</p>';
+    }
+}
+
+async function kwReview(id, action, rowEl, notes) {
+    try {
+        const res = await fetch(API + '/keywords/' + id + '/review', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action, notes: notes || ''})
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showModal('Erreur', data.error || 'Erreur', 'error');
+            return;
+        }
+        // Animation de retrait
+        rowEl.style.transition = 'opacity 0.3s';
+        rowEl.style.opacity = '0';
+        setTimeout(() => {
+            rowEl.remove();
+            const list = document.getElementById('kw-pending-list');
+            if (list.children.length === 0) {
+                list.innerHTML = '<p class="text-xs text-slate-400">Rien en attente ✅</p>';
+            }
+        }, 300);
+        kwLoadList(); // Recharger la liste
+    } catch (e) {
+        showModal('Erreur', e.message, 'error');
+    }
+}
+
+// ── Initialisation ───────────────────────────────────────────────
+
+// Charger la liste au premier affichage de l'onglet
+// On utilise un observer simple sur la visibilité du conteneur
+document.addEventListener('DOMContentLoaded', function() {
+    // Pas de chargement auto, on attend le clic sur l'onglet.
+    // Le switchMainTab appelle kwLoadList() quand l'onglet keywords est activé
+});
+
+// Hook dans switchMainTab : on surcharge l'appel pour detecter l'onglet keywords
+// (fait dans app-core.js via un event custom)
+

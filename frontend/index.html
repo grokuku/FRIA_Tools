@@ -709,17 +709,120 @@
         </div>
       </div>
 
-      <!-- Keywords Manager tab (vide pour l'instant) -->
-      <div id="tab-keywords-manager" class="hidden w-full flex-1 flex flex-col overflow-hidden relative p-6">
-        <div class="flex flex-col items-center justify-center h-full text-slate-500 dark:text-slate-400">
-          <svg class="w-12 h-12 mb-4 text-slate-300 dark:text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/></svg>
-          <h2 class="text-lg font-semibold text-slate-700 dark:text-slate-200 mb-1">Keywords Manager</h2>
-          <p class="text-sm">Cette section sera bientôt disponible.</p>
+      <!-- Keywords Manager tab -->
+      <div id="tab-keywords-manager" class="hidden w-full flex-1 flex flex-row overflow-hidden relative">
+        <!-- Gauche : liste des mots-clés -->
+        <div id="kw-left" class="flex flex-col overflow-hidden" style="width: 35%; min-width: 200px;">
+          <div class="px-4 pt-4 pb-2 shrink-0 flex items-center gap-2">
+            <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200 flex-1">Keywords</h2>
+            <button onclick="kwAddNew()" class="px-2 py-1 text-xs font-medium bg-emerald-600 text-white rounded-md hover:bg-emerald-500 transition">+ Add</button>
+            <button onclick="kwOpenBulkImport()" class="px-2 py-1 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-500 transition" title="Import en masse">📥 Bulk</button>
+            <button onclick="kwExport()" class="px-2 py-1 text-xs font-medium bg-violet-600 text-white rounded-md hover:bg-violet-500 transition" title="Export">📤</button>
+          </div>
+          <!-- Filtres -->
+          <div class="px-4 pb-2 space-y-1.5 shrink-0">
+            <input type="text" id="kw-filter-search" placeholder="🔍 Recherche dans les keywords..." oninput="kwLoadList()" class="w-full px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+            <div class="flex gap-1.5">
+              <select id="kw-filter-scope" onchange="kwLoadList()" class="flex-1 text-xs px-2 py-1 border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                <option value="">Tout visible</option>
+                <option value="mine">Mes keywords</option>
+                <option value="public">Public uniquement</option>
+              </select>
+              <select id="kw-filter-section" onchange="kwLoadList()" class="flex-1 text-xs px-2 py-1 border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                <option value="">Toutes sections</option>
+              </select>
+            </div>
+            <div class="flex gap-1.5">
+              <select id="kw-filter-nsfw" onchange="kwLoadList()" class="flex-1 text-xs px-2 py-1 border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                <option value="">Tout NSFW</option>
+                <option value="0">SFW</option>
+                <option value="1">NSFW</option>
+              </select>
+              <button id="kw-btn-pending" onclick="kwLoadPending()" class="hidden px-2 py-1 text-xs font-medium bg-rose-600 text-white rounded-md hover:bg-rose-500 transition">⏳ Pending</button>
+            </div>
+          </div>
+          <!-- Liste -->
+          <div id="kw-list" class="flex-1 overflow-y-auto space-y-1 px-4 pb-4">
+            <p class="text-xs text-slate-400">Chargement...</p>
+          </div>
+        </div>
+        <!-- Divider -->
+        <div id="kw-divider" class="shrink-0 cursor-col-resize hover:bg-indigo-500/50 transition-colors" style="width: 6px; background: transparent;"></div>
+        <!-- Droite : edition -->
+        <div id="kw-right" class="flex flex-col overflow-hidden p-4" style="flex: 1; min-width: 250px;">
+          <h3 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">
+            <span id="kw-form-title">Nouveau mot-clé</span>
+          </h3>
+          <div class="space-y-2" id="kw-form">
+            <input type="text" id="kw-form-keyword" placeholder="Mot-clé" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+            <textarea id="kw-form-desc" rows="3" placeholder="Description" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" style="resize: vertical;"></textarea>
+            <div class="flex gap-2">
+              <div class="flex-1">
+                <label class="text-xs text-slate-500 dark:text-slate-400">Section</label>
+                <input type="text" id="kw-form-section-id" placeholder="ID (ex: 01)" class="w-full px-3 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 mb-1">
+                <input type="text" id="kw-form-section-title" placeholder="Titre section" class="w-full px-3 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+              </div>
+              <div class="flex-1">
+                <label class="text-xs text-slate-500 dark:text-slate-400">Sous-section</label>
+                <input type="text" id="kw-form-subsection-id" placeholder="ID" class="w-full px-3 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 mb-1">
+                <input type="text" id="kw-form-subsection-title" placeholder="Titre sous-section" class="w-full px-3 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+              </div>
+            </div>
+            <div class="flex items-center gap-4">
+              <label class="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                <input type="checkbox" id="kw-form-nsfw" class="rounded"> NSFW
+              </label>
+              <select id="kw-form-privacy" class="text-xs px-2 py-1 border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                <option value="private">🔒 Privé</option>
+                <option value="public_pending">🟡 Public (pending)</option>
+                <option value="public" id="kw-privacy-public-opt" disabled>🌐 Public</option>
+              </select>
+            </div>
+            <div class="flex gap-2 pt-2">
+              <button onclick="kwSave()" id="btn-kw-save" class="px-3 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">Ajouter</button>
+              <button onclick="kwClearForm()" id="btn-kw-clear" class="hidden px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 border border-slate-300 rounded-md transition">Annuler</button>
+              <button onclick="kwCheckDuplicates()" id="btn-kw-check" class="px-3 py-1.5 text-xs text-amber-500 hover:text-amber-700 border border-amber-300 rounded-md ml-auto transition">🔍 Vérifier doublons</button>
+            </div>
+          </div>
+          <!-- Zone pending pour les KW editors -->
+          <div id="kw-pending-section" class="hidden mt-4 border-t border-slate-200 dark:border-slate-700 pt-4">
+            <h3 class="text-xs font-semibold text-rose-500 dark:text-rose-400 uppercase tracking-wider mb-2">⏳ Modération en attente</h3>
+            <div id="kw-pending-list" class="space-y-1">
+              <p class="text-xs text-slate-400">Chargement...</p>
+            </div>
+          </div>
         </div>
       </div>
 
 
     </div>
+
+  <!-- Bulk import modal -->
+  <div id="modal-bulk-import" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+    <div id="bi-modal" class="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden dark:bg-slate-800 dark:border-slate-700" style="width: 500px; max-height: 80vh; position: relative;">
+      <div id="bi-modal-header" class="border-b border-slate-200 bg-slate-50 px-5 py-3 flex items-center justify-between cursor-grab dark:border-slate-700 dark:bg-slate-800/80 select-none">
+        <span class="text-sm font-semibold text-slate-800 dark:text-slate-200">📥 Import en masse</span>
+        <button onclick="closeBulkImport()" class="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">&times;</button>
+      </div>
+      <div class="p-4 space-y-3">
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+          Une ligne par mot-clé. Format : <code class="text-indigo-600 dark:text-indigo-400">keyword | description | section | subsection | nsfw(0/1)</code>
+        </p>
+        <textarea id="bi-text" rows="10" placeholder="ex: dragon_fire | Un dragon crachant du feu | 05 | 05.02 | 1
+elven_queen | Une reine elfe majestueuse | 02 | 02.01 | 0"
+          class="w-full px-3 py-2 text-xs font-mono border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" style="resize: vertical;"></textarea>
+        <div class="flex items-center gap-4">
+          <select id="bi-privacy" class="text-xs px-2 py-1 border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+            <option value="private">🔒 Privé</option>
+            <option value="public_pending">🟡 Public (pending)</option>
+          </select>
+          <button onclick="doBulkImport()" class="px-4 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition">Importer</button>
+          <button onclick="closeBulkImport()" class="px-4 py-1.5 text-xs text-slate-500 hover:text-slate-700 border border-slate-300 rounded-md transition ml-auto">Fermer</button>
+        </div>
+        <div id="bi-result" class="hidden text-xs p-2 rounded border"></div>
+      </div>
+    </div>
+  </div>
 
   <footer class="shrink-0 bg-slate-900 text-slate-400 text-xs border-t border-slate-800 dark:bg-slate-950 dark:border-slate-800">
     <div class="w-full mx-auto px-4 py-2 flex items-center justify-center gap-6">

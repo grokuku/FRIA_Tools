@@ -218,6 +218,16 @@ def _init_db():
     if "user_id" not in cols_kw:
         conn.execute("ALTER TABLE keywords ADD COLUMN user_id TEXT REFERENCES users(id)")
 
+    # Migration : colonnes privacy_status et review
+    for col, default in [
+        ("privacy_status", "'public'"),
+        ("reviewed_by", "NULL"),
+        ("reviewed_at", "NULL"),
+        ("review_notes", "NULL"),
+    ]:
+        if col not in cols_kw:
+            conn.execute(f"ALTER TABLE keywords ADD COLUMN {col} TEXT DEFAULT {default}")
+
     cols_users = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
     for col, default in [("role", "'user'"), ("settings", "'{}'"), ("guild_nickname", "NULL"), ("api_token", "NULL")]:
         if col not in cols_users:
@@ -732,6 +742,68 @@ def is_admin(user_id: str) -> bool:
     except Exception as e:
         print(f"[is_admin] Erreur: {e}")
         return False  # Fail secure : refuser admin en cas d'erreur
+
+
+def is_kw_editor(user_id: str) -> bool:
+    """Retourne True si l'utilisateur est admin OU kw_editor."""
+    try:
+        if is_admin(user_id):
+            return True
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT role FROM users WHERE id = ?", (user_id,))
+        row = cur.fetchone()
+        conn.close()
+        return row is not None and row["role"] == "kw_editor"
+    except Exception as e:
+        print(f"[is_kw_editor] Erreur: {e}")
+        return False
+
+
+def _kw_editor_required():
+    """Retourne une erreur 403 si l'utilisateur n'est pas kw_editor ou admin."""
+    try:
+        guard = _login_required()
+        if guard:
+            return guard
+        if not is_kw_editor(_get_current_user_id()):
+            return jsonify({"error": "Accès réservé aux éditeurs de mots-clés."}), 403
+        return None
+    except Exception as e:
+        return jsonify({"error": f"Erreur vérification kw_editor: {e}"}), 500
+
+
+def _privacy_filter(user_id: str) -> (str, list):
+    """Retourne (clause_where, params) pour filtrer les keywords selon le statut.
+    Un user voit : ses propres keywords (tous statuts) + les public des autres.
+    Les kw_editor/admin voient en plus les public_pending de tous."""
+    if is_kw_editor(user_id):
+        return ("(k.privacy_status != 'private' OR k.user_id = ?)", [user_id])
+    else:
+        return ("(k.privacy_status = 'public' OR k.user_id = ?)", [user_id])
+
+
+def _regenerate_keyword_embedding(keyword_id: int):
+    """Régénère l'embedding pour un mot-clé spécifique."""
+    try:
+        from embeddings import generate_embedding
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT keyword, description FROM keywords WHERE id = ?", (keyword_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return
+        text = f"{row['keyword']}: {row['description']}"
+        vec = generate_embedding(text)
+        cur.execute(
+            "INSERT OR REPLACE INTO keyword_embeddings (keyword_id, embedding) VALUES (?, ?)",
+            (keyword_id, json.dumps(vec))
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[_regenerate_keyword_embedding] Erreur: {e}")
 
 
 def _get_ollama_config() -> dict:

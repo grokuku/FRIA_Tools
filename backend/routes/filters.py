@@ -173,7 +173,7 @@ def _rebuild_filter_cache(cur, filter_id, config):
         return
 
     # Filtre simple : construction de la requête
-    conditions = ["1=1"]
+    conditions = ["k.privacy_status = 'public'"]
     params = []
     section = config.get('section', '').strip()
     subsection = config.get('subsection', '').strip()
@@ -212,7 +212,7 @@ def _rebuild_filter_cache(cur, filter_id, config):
             from embeddings import generate_embedding, cosine_similarity
             qe = generate_embedding(semantic_text)
             # Pré-filtrer section/nsfw/subsection dans la requête SQL (hidden_ids appliqué APRES la limite)
-            sem_conds = ["1=1"]
+            sem_conds = ["k.privacy_status = 'public'"]
             sem_params = []
             if section:
                 sem_conds.append("k.section_id = ?")
