@@ -2,9 +2,57 @@
 
 > Fichier vivant pour noter les idées, fonctionnalités et réflexions.
 
-## 🚀 Session en cours (14/06/2026)
+---
 
-### ✅ Refactoring massif — découpage du code
+## 🚀 Session en cours (15/06/2026)
+
+### ✅ Normalisation des données : `prompt_type` → `template_id` (migration radicale)
+- **Problème** : `prompt_type` était utilisé à la fois comme catégorie (slug texte) et comme identifiant fonctionnel, ce qui créait de la confusion et des bugs de persistance (renommer un template cassait les workflows).
+- **Solution** : suppression pure et simple du champ `prompt_type` partout. Chaque template est désormais identifié par son `id` entier unique.
+- **BDD** :
+  - `prompt_templates.prompt_type` → supprimé
+  - `prompt_templates.name` → reste l'affichage humain
+  - `generated_prompts.prompt_type` → `generated_prompts.template_id` (FK INTEGER)
+  - `prompt_examples.type` → `prompt_examples.template_id` (FK INTEGER)
+  - Contrainte `UNIQUE(user_id, prompt_type, output_format)` → supprimée (l'`id` est l'unique identifiant)
+  - Migrations avec `DROP/CREATE/INSERT` pour les tables existantes
+  - Le `output_format` est conservé dans la table (utilisé pour validation future)
+- **Backend** :
+  - `enhance.py` `_prepare_enhance()` reçoit `template_id` (INT), résout le template par `id` via `WHERE id = ? AND (is_public OR is_default OR user_id)`, lit `output_format` du template
+  - Alias `prompt_type` conservé temporairement (cast en INT) pour rétrocompatibilité, à retirer après migration
+  - Branche "Ideogram 4" dédiée supprimée du code, le format JSON est maintenant piloté par le `output_format` du template
+  - Templates par défaut : 1 par type (`SDXL`, `Flux`, etc. pour `output_format='text'`), `Ideogram 4` pour `output_format='json'`
+  - Fonctions `_default_format_for_type()` / `_DEFAULT_FORMAT_BY_TYPE` supprimées
+  - Fonction `_migrate_templates_to_english()` supprimée (migration manuelle faite)
+- **Frontend site web** :
+  - Dropdown `enhance-type` utilise `t.id` comme valeur
+  - `doEnhance()` envoie `template_id` au lieu de `prompt_type`
+  - Stats membre (`/api/members/<id>`) utilisent le `name` du template via jointure
+- **Nodes Python ComfyUI** :
+  - `enhance_node.py`, `prep_node.py`, `ideogram4_node.py`, `ideogram_prep_node.py` : `prompt_type` STRING → `template_id` INT
+  - Conversion défensive contre `''` (ComfyUI peut envoyer une string vide pour un INT)
+- **Widgets JS ComfyUI** :
+  - 4 widgets réécrits (`fria_enhance_widget.js`, `fria_prep_widget.js`, `fria_ideogram4_widget.js`, `fria_ideogram_prep_widget.js`)
+  - Pattern commun : `Promise.all` pour attendre les listes, flag `_friaRestored` pour éviter la sync prématurée, callback natif appelé après `w.value = val` pour propager au graph
+  - `ResizeObserver` retiré (causait un bug de grid collapse au release de la souris), remplacé par `gridTemplateColumns = "1fr 1fr"` forcé
+  - Dropdown Template peuplé avec `item.id` (INT)
+  - Payload envoie `template_id` (pas `prompt_type`)
+- **Vérifications** : syntaxe Python + JS : OK
+
+### ✅ Bug "Dropdown Template non synchronisé avec le widget natif" — RÉSOLU
+- **Symptôme initial** : après sélection d'un template autre que SDXL, le backend recevait `prompt_type='sdxl'` (premier template de la liste). F5 = retour à SDXL.
+- **Cause racine** : le widget natif STRING `prompt_type` n'était pas synchronisé avec le dropdown DOM, ou la valeur était écrasée.
+- **Fix appliqué** :
+  - Remplacement `prompt_type` STRING → `template_id` INT dans les nodes Python
+  - Dropdown DOM peuplé avec `item.id`
+  - `syncNativeWidgets()` appelle `widget.callback(val)` après `w.value = val` pour propager au graph ComfyUI
+  - `restoreFromNativeWidgets()` lit le widget natif comme un INT (gère le cas 0)
+  - Flag `_friaRestored` empêche la sync prématurée pendant le chargement
+  - `Promise.all` pour attendre toutes les listes avant la première sync
+  - Le widget natif est correctement sérialisé dans le workflow JSON
+- **Bénéfice** : plus de bug de retour à SDXL, le template choisi est conservé après F5.
+
+### ✅ Bug "Refactoring massif — découpage du code" — RÉSOLU
 - **`frontend/index.html`** : 3917 → 757 lignes. CSS extrait → `css/app.css` (469 lignes). JS extrait → `js/app.js` (2691 lignes).
 - **`frontend/js/app.js`** : 2691 lignes découpées en 4 modules : `app-core.js` (317), `app-keywords.js` (415), `app-filters.js` (1134), `app-admin.js` (826).
 - **`backend/app.py`** : 3871 → 61 lignes. Routes découpées en 14 modules dans `backend/routes/`.
@@ -13,130 +61,116 @@
 - **`frontend/beta.html`** supprimé — plus de synchro à maintenir.
 - Bugs d'imports résolus : `_login_required` via `from context import *` + `__all__`, `helpers.py` imports manquants, `from routes.helpers import *` n'importe pas les underscore.
 
-### ✅ Interface — onglets + relooking
+### ✅ Interface — onglets + relooking — RÉSOLU
 - **Header renommé** : "FR-I.A Helper" avec 4 onglets : Prompt Helper, Style, Template, Keywords Manager.
 - **Boutons filtres** (Charger/Save As/Gérer) : toolbar colorée (indigo/emerald/violet) avec badge, déplacée dans un encadré à droite sous la recherche sémantique.
 - **Paramètres** allégée : Provider LLM + Compte (styles et templates déplacés vers onglets dédiés).
 
-### ✅ Onglet Styles — interface deux colonnes
+### ✅ Onglet Styles — interface deux colonnes — RÉSOLU
 - **Colonne gauche** : liste des styles (nom, auteur, 🌐/🔒), clic = édition, boutons 📋 Cloner / 🗑 Supprimer.
 - **Colonne droite** : édition plein écran, textareas ×3 hauteur + resize vertical + persistance hauteurs.
 - **Bouton Export** ajouté (📥 format texte).
+- **Bouton "+ Add Style"** ajouté en haut de la liste.
 - Admin peut éditer/supprimer les styles sans propriétaire. Non-admin peut cloner les styles publics.
+- **Modale de gestion des styles du prompt generator supprimée** : l'éditeur fullscreen dans l'onglet Style remplace la modale. Le bouton "Styles" du prompt generator et la modale associée ont été retirés.
 
-### ✅ Onglet Templates — refonte complète
+### ✅ Onglet Templates — refonte complète — RÉSOLU
 - **Colonne gauche** : liste normalisée comme les styles (nom, auteur, 🌐/🔒, 📋 Cloner, 🗑 Supprimer).
 - **Colonne droite** : nom full width, Instructions + Exemples en deux sous-colonnes.
-- **Le nom du template = son `prompt_type`** (ex: créer "patate" → apparaît comme type "patate" dans ComfyUI).
-- **Dropdown `enhance-type` dynamique** : peuplé depuis les templates disponibles.
-- **Suppression du dropdown type** (SDXL/Flux/etc.) de l'éditeur — redondant avec la liste.
+- **Le nom du template est son affichage humain** — `prompt_type` n'est plus utilisé comme identifiant (voir section de normalisation).
+- **Dropdown `enhance-type` dynamique** : peuplé depuis les templates disponibles (utilise `id` comme valeur).
 - **Format (text/md/json) + Public** descendus au-dessus du bouton Sauvegarder.
-- **Bouton + Nouveau template retiré** (les templates sont prédéfinis, modifiables par admin).
+- **Bouton "+ Add Template"** ajouté en haut de la liste.
 - **Admin** peut éditer/supprimer tous les templates. Propriété par utilisateur.
-- **DB templates** : ajout colonnes `name`, `is_public`. Templates orphelins corrigés. Migration `_migrate_templates_to_english` désactivée (n'écrase plus). `INSERT OR REPLACE` + `timeout=10` sur connexion SQLite.
-- **Fallback auteur `'Admin'` retiré** → pas d'utilisateur Admin fictif.
+- **DB templates** : `name`, `is_public` ajoutés en migrations.
+- **`prompt_type` supprimé** de la table (migration appliquée).
 
-### ⚠️ À faire — validation format LLM
-- Après génération, vérifier que la sortie respecte le format défini par le template (texte brut / markdown / JSON).
-- Pour le JSON (Ideogram 4) : auto-fix si malformed (strip ```json```, retry).
-- Pour le markdown : wrapper en code block si nécessaire.
-- Impacte les nodes ComfyUI (Ideogram 4 Builder) + le backend `/api/enhance`.
-- Template `output_format` doit être utilisé pour le check.
+### ✅ Validation format LLM — ré-évaluée
+- La roadmap originale prévoyait un auto-fix selon le format de sortie. Maintenant que le format est piloté par le `output_format` du template directement (pas de branche hardcodée par type), cette tâche est moins urgente.
+- Le `output_format` est dans le payload de la réponse debug et peut être utilisé par les nodes ComfyUI (Ideogram Parse) pour validation.
+- À reconsidérer : un endpoint de validation côté backend.
 
-### ✅ Templates — dropdown dynamique dans les nodes ComfyUI
+### ✅ Templates — dropdown dynamique dans les nodes ComfyUI — RÉSOLU
 - **Dropdown Template** ajouté dans les 4 nodes ComfyUI (Enhancer, Prep, Ideogram Builder, Ideogram Prep).
-- **Chargement lazy** : templates fetchés depuis `/api/prompts/templates` au `mousedown`.
-- **Widget natif** : `prompt_type` (STRING) piloté par le dropdown DOM (caché).
+- **Chargement lazy** : templates fetchés depuis `/api/prompts/templates` au `mousedown` (avec cache TTL 15s).
+- **Widget natif** : `template_id` (INT) piloté par le dropdown DOM (caché).
 - **Backend** :
-  - Résolution template par `prompt_type` uniquement (filtre `output_format` retiré).
-  - `prompt_type_id` accepté en fallback (résolution INT → string via BDD).
-  - Plus de branches hardcodées `ideogram4` dans `_prepare_enhance`.
-  - Erreur 400 explicite si template non trouvé (plus de fallback SDXL).
-  - `max_tokens` retiré du payload LLM.
-  - Fallback générique supprimé.
-- **Frontend** : dropdown `enhance-type` peuplé dynamiquement (remplace la liste hardcodée SDXL/Flux/etc).
+  - Résolution template par `id` uniquement.
+  - `template_id` (INT) requis, pas de fallback.
+  - Erreur 400 explicite si template non trouvé ou inaccessible.
+- **Resize** : `node.onResize` met à jour la largeur du container ; `gridTemplateColumns = "1fr 1fr"` forcé pour éviter l'effondrement. Pas de `ResizeObserver` (causait un bug de grid collapse).
 
-### 🔴 BUG EN COURS — Dropdown Template non synchronisé avec le widget natif
-- **Symptôme** : Après sélection d'un template dans le dropdown DOM d'une node ComfyUI, le backend reçoit `prompt_type='sdxl'` (premier template de la liste) au lieu du template choisi. F5 = retour à SDXL.
-- **Cause racine suspectée** : Le widget natif `prompt_type` (STRING, caché) n'est pas synchronisé avec le dropdown DOM, ou la valeur est écrasée par un restore/reload.
-- **Indice** : Logs backend montrent `prompt_type='sdxl'` quelle que soit la sélection. Le dropdown DOM affiche la valeur choisie.
-- **Périmètre** : Les 4 nodes ComfyUI. Le frontend web (`index.html`) n'est PAS affecté.
-- **Déjà fait** :
-  - `prompt_type_id` (INT) → `prompt_type` (STRING)
-  - Retrait de `computeSize = () => [0, -4]` dans `hideWidget`
-  - Retrait de `syncNativeWidgets()` dans `loadTemplates()`
-  - Ajout de `loadedGraphNode` + retry
-  - Suppression des `parseInt(typeSelect.value)` qui convertissaient en 0
-  - Suppression des branches hardcodées `ideogram4` dans le backend
-  - Requête template sans filtre `output_format`
-  - Backend : erreur 400 explicite si template non trouvé
-- **Prochaine étape** : Supprimer `__pycache__` ComfyUI, vérifier que le log Python `[FR.IA Ideogram Prep PYTHON]` apparaît. Si problème persiste, bypasser le widget natif via `node._friaState` (persistance custom).
+### ✅ Sécurité — code review audit — RÉSOLU/PARTIEL
+- **M8** : `is_admin()` retournait `True` on error (fail open) → corrigé en `return False` (fail secure).
+- **M9** : `AbortSignal.timeout()` fallback pour navigateurs anciens (utilise `AbortController` + `setTimeout` si non disponible).
+- **H3** : `_init_db()` était appelé à chaque connexion via `get_db()`. Maintenant appelé une seule fois au démarrage dans `app.py` (après les imports des routes, pour éviter les imports circulaires).
 
-## 🚀 État actuel (fin de session)
+### ⚠️ Sécurité — non corrigé (changements majeurs)
+- **H2** : Encryption key stockée dans la BDD. Migrer vers une variable d'environnement (casserait les clés existantes — migration des données nécessaire).
+- **H4** : CORS wide open pour `/api/*`. Restreindre aux origines connues.
+- **H5** : API key dans `localStorage`. Refactor architectural majeur.
+- **H6** : `conn.close()` sans `finally` dans plusieurs routes. Refactor lourd.
+- **M1** : Bbox detection fragile (heuristique `max(bbox) <= 1000`).
+- **M4** : `_rebuild_filter_cache` charge tous les embeddings.
+- **M6** : `_prepare_enhance` ouvre 2 connexions au lieu d'1.
+
+---
+
+## 🚀 État actuel (mi-2026)
 
 **Contexte** : Serveur `kw.holaf.fr` (backend Flask + Discord OAuth). Le projet utilise **2 instances Ollama distinctes** + DeepSeek — voir section [Architecture Ollama](#-architecture-ollama--split-llm--embeddings) plus bas.
 
-### ✅ Résolu cette session (bugs majeurs)
-- **`sqlite3.Row` n'a pas de `.get()`** — Cause des 500 sur `/api/presets` et `/api/styles`. Fix : helper `_row_get()` + `safeJson()` (frontend).
-- **Fuite de connexion BDD** dans `discord_callback()` — 2 appels à `get_db()` sans fermer le 1er.
-- **`_admin_required()` défini 2 fois** — La 2ème définition écrasait la 1ère (plus robuste).
+### ✅ Résolu cette session (normalisation `template_id`)
+
+- **Suppression de `prompt_type`** dans 3 tables BDD (prompt_templates, generated_prompts, prompt_examples) avec migration `DROP/CREATE/INSERT` pour les données existantes.
+- **Renommage `template_id` (INT)** dans 4 nodes Python ComfyUI avec conversion défensive contre string vide.
+- **Réécriture de 4 widgets JS ComfyUI** : flag `_friaRestored`, callback natif, `Promise.all`, suppression de `ResizeObserver`, dropdowns peuplés avec `item.id`.
+- **Backend `_prepare_enhance`** : résolution par `id`, suppression de `type_formats`/`format_instruction` mort, suppression de `_default_format_for_type`.
+- **Templates par défaut** : insertion directe avec `name` (ex: "SDXL", "SDXL Markdown", "Ideogram 4") et `output_format` correspondant.
+- **Aliases temporaires** : `prompt_type` (STRING) est encore accepté comme alias dans `_prepare_enhance` (cast en INT) pour rétro-compatibilité — à retirer après migration des nodes des utilisateurs.
+
+### ✅ Résolu cette session (bugs template ComfyUI)
+
+- **Bouton "Styles" du prompt generator et modale associée supprimés** : l'éditeur fullscreen dans l'onglet Style remplace la modale.
+- **Bouton "+ Add Style" / "+ Add Template"** ajoutés en haut des listes.
+- **Bug resize dropdown Template** : après release de la souris, le grid s'effondrait en 1 colonne. Fix : suppression du `ResizeObserver` buggé, forçage de `gridTemplateColumns = "1fr 1fr"`.
+- **Bug string vide au RUN** : le widget natif INT recevait `''` et plantait avec `invalid literal for int()`. Fix : conversion défensive dans les 4 nodes Python + garantie que les selects ne sont jamais vides dans les widgets JS.
+
+### ✅ Résolu cette session (audit backend)
+
+- **`_init_db()` appelé une fois au démarrage** : retiré de `get_db()`, déplacé dans `app.py` après les imports des routes (pour éviter les imports circulaires).
+- **`is_admin()` fail secure** : `return True` → `return False` on exception.
+- **`AbortSignal.timeout()` fallback** dans `fria_menu.js` pour navigateurs anciens.
+- **Debug button** : `document.write` + interpolation remplacés par `createElement` + `textContent` (prévention XSS).
+
+### ✅ Résolu cette session (refactoring massif du code)
+
+- **Découpage frontend** : `index.html` 3917 → 757 lignes. JS en 4 modules (`app-core.js`, `app-keywords.js`, `app-filters.js`, `app-admin.js`).
+- **Découpage backend** : `app.py` 3871 → 61 lignes. Routes en 14 modules dans `backend/routes/`.
+- **Bugs d'imports** : `_login_required` via `from context import *` + `__all__`, `helpers.py` imports manquants.
+
+### ✅ Résolu (sessions précédentes)
+
+- **`sqlite3.Row` n'a pas de `.get()`** — helper `_row_get()` + `safeJson()` côté frontend.
+- **Fuite de connexion BDD** dans `discord_callback()`.
+- **`_admin_required()` défini 2 fois** — la 2ème définition écrasait la 1ère.
 - **FK constraint bloquait DELETE styles/presets** — `generated_prompts` référençait la ligne → NULL avant delete.
-- **`JSON.parse: unexpected character`** — `await res.json()` sur du HTML d'erreur. Helper `safeJson()` + 10 occurrences protégées.
-- **Unreachable code** dans `deleteUser()` / `adminClearDb()` — Code après `return;`.
-- **Décalage cache des filtres** — Nombreuses causes (LIMIT 20 sur preview, hidden_ids ignoré, search_neg ignoré, section/nsfw ignoré dans branche sémantique, config non persistée au Save, slider confiance ne refetchait pas l'API).
+- **`JSON.parse: unexpected character`** — `await res.json()` sur du HTML d'erreur. Helper `safeJson()`.
+- **Unreachable code** dans `deleteUser()` / `adminClearDb()`.
+- **Décalage cache des filtres** (LIMIT 20, hidden_ids ignorés, etc.).
 - **Mots masqués (👁️) non restaurés** au chargement d'un filtre.
-- **Message d'erreur obsolète** "Token HF" → "Serveur Ollama inaccessible".
-- **Imports inutilisés** dans `auth.py` retirés.
-- **Parser ignorait les chiffres romains** avec L, C, D → sections XL+ ignorées.
+- **Recherche sémantique dans `/api/enhance` silencieusement cassée** — fix SELECT avec embedding.
+- **Filtre union → simple laisse `filter_type='union'` en BDD**.
+- **Discord OAuth** : `SECRET_KEY` fixé, `DISCORD_REDIRECT_URI` aligné avec Discord Dev Portal.
+- **Migration serveur cloud** : `getApiUrl()` lit `localStorage.FRIA_config.serverUrl`.
+- **Terminal FR.IA** : panel flottant singleton via menu FR.IA, WebSocket `/fr_ia/terminal`, PTY serveur, xterm.js.
+- **Qwen → Qwen-Image** : documentation mise à jour.
 
-### ✅ Résolu session récente (modales, templates, membres)
-- **Filtre count retiré** de la liste des membres (visible uniquement dans le détail)
-- **Prompts complets** dans le détail membre (plus de troncature 120 caractères)
-- **Modales uniformisées** : toutes les modales ont le même pattern (header draggable, ✕ close, overflow hidden, position relative)
-- **Paramètres enhance persistés** : preset, type, format, style sauvegardés côté serveur par utilisateur via `/api/settings`
-- **Qwen → Qwen-Image** : documentation et exemples mis à jour pour le modèle de génération d'images (20B MMDiT)
-- **Templates refactor** : interface deux colonnes (instructions à gauche, exemples à droite), bouton export JSON, checkbox supprimée
+### ✅ Résolu cette session (audit code review 6 fichiers)
 
-### ✅ Résolu cette session (audit + 3 bugs critiques)
-- **Audit complet du code** : ~8700 lignes parcourues, 12 bugs identifiés (3 critiques, 3 majeurs, 6 mineurs)
-- **🔴 Bug critique #1 : `GET /api/filters` plante pour les filtres union** — `conn.close()` était appelé avant `cur2 = conn.cursor()` dans la branche `filter_type=='union'`. Fix : `conn.close()` déplacé après la boucle.
-- **🔴 Bug critique #2 : Recherche sémantique dans `/api/enhance` silencieusement cassée** — La requête `SELECT k.keyword` n'incluait pas l'embedding, donc `r[1]` n'existait pas → try/except avalait l'erreur → les éléments `type=text` de l'EP étaient **ignorés**. Fix : `SELECT k.keyword, ke.embedding` + `r['embedding']`.
-- **🔴 Bug critique #3 : Filtre union → simple laisse `filter_type='union'` en BDD** — Le PUT ne remettait `filter_type='simple'` que si `union_member_ids` était absent. Fix : ajouter un `else` pour repasser en `'simple'` quand `data.get('filter_type') != 'union'`.
-
-### ⚠️ À faire au prochain déploiement
-1. S'assurer que le serveur pointe vers `/projects/FRIA_Tools` (ou copier le code modifié)
-2. Redémarrer le serveur → `_init_db()` applique les migrations
-3. Vérifier la console navigateur pour les éventuelles erreurs résiduelles
-
-### ✅ Résolu cette session — FR.IA Terminal (panel flottant)
-- **Concept** : panel flottant singleton (pas une node) accessible via le menu FR.IA → 💻 Terminal (2ème item, juste après "Open Webpage"). Adapté depuis CUI-Holaf-Utils/holaf_terminal.js (Holaf, 2025).
-- **Pas de mot de passe** : la route WebSocket `/fr_ia/terminal` est ouverte à quiconque peut atteindre le serveur. Usage local uniquement, bandeau d'avertissement rouge toujours visible.
-- **Persistance** : taille / position / fullscreen / thème xterm / font-size sauvegardés dans `localStorage.fria_terminal_settings` (debounce 200ms).
-- **Singleton** : un seul panel existe, exposé sur `window.friaTerminal` (callback menu via `window.friaTerminal.toggle()`).
-- **Pas de conflit avec CUI-Holaf-Utils** : préfixe `/fr_ia/terminal` (vs `/holaf/terminal`), nom global `friaTerminal` (vs `holafTerminal`). xterm.js + xterm-addon-fit.js sont copiés dans `web/js/` mais réutilisent `window.Terminal`/`window.FitAddon` si Holaf les a déjà chargés.
-- **Pas de node ComfyUI** : choix utilisateur de ne pas avoir de node draggable — uniquement un panel via le menu.
-- **Compatibilité OS** : Linux/macOS utilisent `pty`+`termios` (stdlib). Windows requiert `pip install pywinpty` dans l'env Python de ComfyUI (sinon le backend log un message critique et ferme le WebSocket).
-- **Environnements virtuels** : si ComfyUI tourne dans un venv/conda, le PATH est hérité du process parent dans le shell fils, donc `python`/`pip` pointent bien vers le bon env. Le prompt du shell n'affiche pas `(venv)` car aucun `activate` n'est exécuté dans le fils (choix cohérent avec Holaf, le user active le venv avant de lancer ComfyUI).
-- **Cleanup branche venv morte** : `is_running_in_venv()` et la branche `elif` associée ont été supprimées du code copié de Holaf (détectaient l'env mais ne faisaient rien d'utile). Logique unifiée dans la branche `else` qui logge `$VIRTUAL_ENV` pour debug.
-- **Fix route WebSocket** : la 1ère tentative utilisait `_routes.add_get()` qui n'existe pas sur aiohttp `RouteTableDef`. Fix : `@_routes.get("/fr_ia/terminal")` en décorateur (aiohttp détecte l'upgrade WebSocket automatiquement, cf. pattern Holaf).
-- **Responsive resize xterm** : `window.resize` ne suffit pas pour les changements de taille du panel (drag/resize-handle/fullscreen). Ajout d'un `ResizeObserver` sur le `xtermContainer` debouncé via `requestAnimationFrame` + fallback `window.resize` pour les cas tordus (media queries, scrollbars). Multi-fits après `terminal.open()` (à 0/50/150/400ms) pour gérer le layout asynchrone (flexbox/fonts pas encore calculés).
-- **Propagation resize au PTY serveur** : `fitAddon.fit()` côté xterm ne suffisait pas — le PTY serveur gardait sa taille initiale 80×24, donc les programmes fullscreen (`mc`, `vim`, `htop`, etc.) étaient dessinés sur 80 colonnes puis étirés sur la largeur réelle du panel, ce qui causait des wraps bizarres et des artefacts visuels. Fix : `_sendResizeToServer()` utilise `fitAddon.proposeDimensions()` pour récupérer `[cols, rows]`, envoie `{resize: [rows, cols]}` au WebSocket, le backend propage via `proc_adapter.set_winsize()`. Le serveur reconfigure son TTY → les programmes redessinent à la bonne taille.
-- **Fichiers** : `FRIA_ComfyUI/terminal.py` (backend PTY), `web/js/fria_terminal_widget.js` (panel singleton + persistance + resize propagation), `web/js/xterm.js` + `xterm-addon-fit.js` (bundles UMD copiés).
-
-### ✅ Résolu cette session (migration serveur cloud + Discord OAuth)
-- **Contexte** : déplacement du serveur backend de `kw.holaf.fr` vers une machine cloud.
-- **Discord OAuth — placeholder `votre_client_id_ici` dans l'URL** : le `.env` sur le cloud était absent ou incomplet, `DISCORD_CLIENT_ID` non défini. Fix : créer le `.env` avec les 4 variables (CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, GUILD_ID optionnel).
-- **Discord OAuth — `mismatching_state: CSRF Warning! State not equal in request and response`** : `SECRET_KEY` non défini dans `.env` → `app.py` tombe sur `os.urandom(24).hex()` qui régénère un secret différent à chaque redémarrage, invalidant le `state` posé en session au moment du callback. Fix : ajouter `SECRET_KEY=<token_hex(32)>` dans `.env`, secret fixe et persistant.
-- **Discord OAuth — `redirect_uri OAuth2 non valide`** : URL du `.env` pas alignée avec celle déclarée sur https://discord.com/developers/applications (discord compare strictement protocole + domaine + chemin + port). Fix : ajouter `DISCORD_REDIRECT_URI=https://<nouveau-domaine>/api/auth/discord/callback` dans `.env` et la même URL dans les Redirects Discord. **Note pour plus tard** : si reverse-proxy HTTPS devant Flask, ajouter `from werkzeug.middleware.proxy_fix import ProxyFix; app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)` pour que `request.url_root` reflète bien le HTTPS.
-- **Widgets ComfyUI — styles/presets KO après migration** : `fria_ideogram4_widget.js`, `fria_enhance_widget.js`, `fria_elements_widget.js` avaient `getApiUrl = () => "https://kw.holaf.fr/api"` en dur. Le node Python envoyait ses requêtes vers l'ancien serveur, le DOM widget chargeait les presets/styles depuis le mauvais backend. Fix : `getApiUrl()` lit maintenant `localStorage.FRIA_config.serverUrl` (configuré via menu FR.IA → Compte) avec fallback kw.holaf.fr, cohérent avec `fria_menu.js` qui lisait déjà la config. Commit `249218e` — `feat(widgets): make API URL configurable via localStorage`.
-
-### 📋 Checklist migration serveur cloud (à suivre la prochaine fois)
-1. Copier `.env` complet sur le nouveau serveur (CLIENT_ID, CLIENT_SECRET, REDIRECT_URI aligné avec Discord, SECRET_KEY fixe, GUILD_ID optionnel)
-2. Vérifier alignement exact `DISCORD_REDIRECT_URI` ↔ Redirects sur Discord Dev Portal
-3. Si reverse-proxy HTTPS : ajouter `ProxyFix` (sinon `request.url_root` = `http://...` au lieu de `https://...`)
-4. Pull du repo + restart extension ComfyUI → `web/js/*` rechargés
-5. Côté user dans ComfyUI : menu **FR.IA → Compte** → mettre la nouvelle `URL du serveur` (sans `/api` final, ajouté auto) + clé API + vider cache navigateur (`Ctrl+Shift+R`)
-6. Tester login Discord + génération d'un node Ideogram4 (vérifier que presets/styles viennent du bon backend)
+- **H1, M2** : widgets Ideogram utilisaient `t.prompt_type` (champ inexistant) — corrigé pour utiliser `t.id` (INT).
+- **M7** : `loadTemplates` appelé à chaque `mousedown` sans cache — corrigé avec `refreshTemplatesIfStale` et `_cache.tmpl` TTL.
+- **L3** : debug button `document.write` interpolation → `createElement` + `textContent`.
 
 ---
 
@@ -162,15 +196,11 @@ Générer un prompt complet en combinant des **éléments**. Chaque élément es
 
 ### Filtres sauvegardés
 - [x] Bouton "Charger" / "Save" / "Save As" dans la barre de filtres (panneau gauche)
-  - **Charger** : ouvre l'explorateur → applique la config du filtre dans les filtres de gauche
-  - **Save** : visible si un filtre est chargé → met à jour le filtre existant (`PUT /api/filters/<id>`)
-  - **Save As** : crée un nouveau filtre (modale classique)
-  - **×** : décharge le filtre courant
 - [x] Capture tous les paramètres : section, recherche texte, recherche sémantique, NSFW, slider confiance
 - [x] Modale de création : nom, catégorie (texte libre), SFW/NSFW, public/privé
 - [x] Bouton "Mng" → modale avec rename, delete, rebuild cache (↻)
 - [x] Recharger un filtre dans la fenêtre gauche → charge ses paramètres dans les filtres
-- [x] **🔴 Bug : Anciens filtres piochent dans la liste globale** — Résolu. Le cache est maintenant correctement regénéré avec tous les filtres. Le bouton ↻ reste disponible comme fallback.
+- [x] Cache correctement regénéré avec tous les filtres (bug "Anciens filtres piochent dans la liste globale" résolu)
 - [ ] Bouton "Tout recharger" → regénère le cache pour tous les filtres
 - [x] Pas de limite de filtres par utilisateur
 - [x] Les filtres publics sont visibles par tous les membres connectés
@@ -181,76 +211,65 @@ Générer un prompt complet en combinant des **éléments**. Chaque élément es
 - [x] Invalidation du cache après un import de `.md`
 - [x] Cache inclut : recherche (+), recherche (-), mots masqués (hidden_kw_ids), NSFW, section, confiance sémantique
 - [x] Cache trié par score (branche sémantique) → limité à 500 comme l'API
-- [x] hidden_ids appliqués APRÈS la limite (ne remplace pas par des mots hors-champ)
-- [x] Texte (+) et exclusion (-) appliqués comme post-filtres sur la branche sémantique (comme l'affichage)
+- [x] hidden_ids appliqués APRÈS la limite
+- [x] Texte (+) et exclusion (-) appliqués comme post-filtres
 
 ---
 
 ## ⚡ Prompt Generator/Enhancer (panneau droit bas)
 
 ### Concept
-Transformer un prompt brut en un prompt optimisé via un LLM, en combinant plusieurs sources d'entrée et en appliquant un formatage automatique.
+Transformer un prompt brut en un prompt optimisé via un LLM, en combinant plusieurs sources d'entrée.
 
 ### Sources d'entrée (fusionnées avant envoi au LLM)
 
 | Priorité | Source | Déclencheur |
 |---|---|---|
 | **Haute** | Text box (utilisateur) | Saisie manuelle |
-| **Moyenne** | Elements Picker (panneau haut) | Checkbox "Base from Elements Picker" → exécute l'EP, ajoute les résultats |
-| **Basse** | Random elements | Checkbox + sélecteur N → pioche N mots-clés depuis des sections non encore utilisées |
-
-Les priorités sont communiquées au LLM pour qu'il garde les choix de l'utilisateur en cas de conflit/doublon.
+| **Moyenne** | Elements Picker (panneau haut) | Checkbox "Base from Elements Picker" |
+| **Basse** | Random elements | Checkbox + sélecteur N |
 
 ### Configuration
-
-- [x] **Dropdown Format de sortie** : Texte brut / Markdown / JSON + toggle Brut/Rendu
-- [x] **Dropdown Style** : styles prédéfinis, publics ou privés, auteur affiché
-- [x] **Dropdown Preset IA** : sélectionne le modèle à utiliser
+- [x] **Dropdown Template** : peuplé dynamiquement depuis `/api/prompts/templates` (utilise `id` comme valeur, `name` comme affichage)
+- [x] **Dropdown Style** : peuplé depuis `/api/styles`
+- [x] **Dropdown Preset IA** : peuplé depuis `/api/presets`
 - [x] **Checkbox "Use Elements Picker"** → exécute l'EP + affiche le résultat dans `gen-output`
-- [x] **Checkbox "Add random"** + compteur N → pioche depuis sections inutilisées
+- [x] **Checkbox "Add random"** + compteur N
 - [x] **Système de priorités** : haute (textbox) > moyenne (EP) > basse (random)
-- [x] **Few-shot examples** : top 5 depuis `prompt_examples` (vide → Phase 3)
-- [ ] **Instructions spéciales** (textarea optionnel) — Le backend accepte déjà `special_instructions`, mais le champ UI n'existe pas
-- [ ] **Checkbox Prompt négatif** (Phase 4)
+- [x] **Few-shot examples** : lus depuis `examples` du template
+- [x] **Instructions spéciales** : textarea dans le payload (UI à vérifier)
+- [ ] **Checkbox Prompt négatif**
+
+> **Note** : le dropdown "Format" (text/markdown/json) a été retiré du panneau enhance. Le format est désormais déterminé par l'`output_format` du template sélectionné. L'éditeur de templates garde le choix `output_format` pour surcharger par type.
 
 ### Actions
-
 - [x] **Bouton Générer** : envoie au LLM → affiche le résultat
 - [x] **Bouton Copier** : copie le prompt généré
 - [x] **Reset** : bouton ↻ dans l'en-tête
 
-### Prompt Examples (système auto-nourri)
-
-- [ ] Chaque prompt généré est automatiquement sauvegardé dans `prompt_examples`
-- [ ] Les utilisateurs peuvent voir et voter sur les prompts (👍 +1 / 👎 -1)
-- [ ] Les 5 mieux notés par type sont passés au LLM en few-shot (actuellement : prompt système hardcodé — bientôt remplacé par les templates personnalisables)
-- [ ] L'auteur est affiché → auto-modération
-- [ ] Modale de consultation des prompts (voir/voter)
-
-### Prompt négatif (Phase 4, basse priorité)
-
-- Base de prompts négatifs prédéfinis ou générés séparément
-- Quand coché → pioche un prompt négatif qui correspond au positif généré
-- Pas de génération de négatif via LLM (mauvaise expérience constatée)
+### Prompt Examples (système auto-nourri) — RE-ÉVALUATION
+- L'API `/api/prompts/examples` et `/vote` existent mais ne sont plus utilisées (les templates remplissent ce rôle).
+- À nettoyer : code mort dans `enhance.py` (déjà fait dans cette session).
+- Le système de votes peut être réintroduit plus tard si besoin (Phase 7).
 
 ---
 
-## ⚙️ Presets IA (nouveau panneau de configuration utilisateur)
+## ⚙️ Presets IA (panneau de configuration utilisateur)
 
 ### Concept
 Chaque utilisateur configure ses propres presets de modèles IA (API compatible OpenAI). Les presets sont indépendants par utilisateur.
 
 ### Interface
-
 - [x] Panneau de configuration utilisateur
 - [x] Dropdown "Moteur" : API compatible OpenAI
 - [x] Champs : URL, API Key (chiffrée), Modèle, Nom
 - [x] Actions : Sauvegarder / Dupliquer / Effacer
-- [x] Possibilité de switcher entre plusieurs presets (déjà fonctionnel via dropdown)
+- [x] Possibilité de switcher entre plusieurs presets
 
 ### Sécurité
-- API key chiffrée côté serveur avant stockage (Fernet ou équivalent)
-- Clé de chiffrement stockée dans les `app_settings` (générée au premier lancement si absente)
+- [x] API key chiffrée côté serveur avant stockage (Fernet)
+- [ ] Clé de chiffrement dans une variable d'environnement (H2 code review)
+- [x] Migration : clé générée au premier lancement si absente
 
 ---
 
@@ -260,16 +279,14 @@ Chaque utilisateur configure ses propres presets de modèles IA (API compatible 
 Styles réutilisables ajoutés aux prompts avant envoi au LLM (ex: "Hyper realistic, 1970 vintage photography"). Fonctionnent comme les filtres sauvegardés : public/privé, avec auteur.
 
 ### Interface
-
-- [x] Modale de gestion des styles (CRUD) : nom, texte, prompt négatif, public/privé, edit/suppr
-- [x] Dropdown dans l'enhancer pour sélectionner un style
+- [x] Onglet "Style" fullscreen (2 colonnes : liste à gauche, édition à droite)
+- [x] Dropdown "Style" dans l'enhancer pour sélectionner un style
 - [x] Affichage du nom de l'auteur à côté du nom du style
+- [x] Bouton "Add Style" en haut de la liste
 
 ---
 
 ## 🧩 Architecture Ollama (split LLM / Embeddings)
-
-> Décision de juin 2026 : **3 backends IA** distincts pour minimiser les abonnements et la charge locale.
 
 ### Vue d'ensemble
 
@@ -279,21 +296,12 @@ FR.IA-keywords backend (Flask, kw.holaf.fr)
     ├── /api/enhance/prompts, /api/ideogram/prep, etc.
     │      │
     │      ├─► Ollama Cloud (abonnement) ──► LLM chat (gpt-oss, deepseek-v4, qwen3.5, ...)
-    │      └─► DeepSeek API (abonnement) ──► backup LLM / raisonnement (deepseek-v4-flash, ...)
+    │      └─► DeepSeek API (abonnement) ──► backup LLM
     │
     └── /api/search/semantic, /api/embeddings/build
            │
            └─► Ollama CPU distant (dédié) ──► modèle embeddings (nomic-embed-text, ...)
-                  └─ host séparé, pas de GPU nécessaire
 ```
-
-### Pourquoi 3 backends
-
-| Rôle | Backend | Pourquoi celui-là |
-|---|---|---|
-| **LLM chat/generation** (Enhancer, Ideogram prep) | **Ollama Cloud** (abonnement $20/mois) | API unifiée, large choix de modèles (gpt-oss:120b, qwen3.5, kimi-k2, etc.), pas de facturation à la requête |
-| **Backup LLM** | **DeepSeek API** (abonnement) | Excellent pour le raisonnement / code, complément d'Ollama Cloud, pas de couplage avec un seul fournisseur |
-| **Embeddings** (sémantique) | **Ollama CPU distant** (dédié) | Petits modèles, peu d'appels → pas besoin de GPU ni d'API payante (Gemini abandonné pour éviter une 3ème facture + surveillance quota 1000 RPD/jour) |
 
 ### Variables d'environnement
 
@@ -306,37 +314,25 @@ FR.IA-keywords backend (Flask, kw.holaf.fr)
 | `DEEPSEEK_API_KEY` | Clé DeepSeek (backup LLM) | vide |
 | `DEEPSEEK_URL` | Endpoint DeepSeek | `https://api.deepseek.com/v1` |
 
-> **Note** : Les URLs sont surchargeables dynamiquement via la table `app_settings` (colonnes `ollama_url`, `ollama_model`). Le split LLM/Embeddings n'est **pas encore implémenté** dans `app.py` (les deux rôles utilisent actuellement `OLLAMA_URL`). TODO : ajouter `OLLAMA_URL_LLM` distinct dans le panneau Presets.
+> **Note** : Les URLs sont surchargeables dynamiquement via la table `app_settings` (colonnes `ollama_url`, `ollama_model`). Le split LLM/Embeddings n'est **pas encore implémenté** dans `app.py`. TODO : ajouter `OLLAMA_URL_LLM` distinct dans le panneau Presets.
 
-### Décision d'abandonner Gemini pour les embeddings
-
-- Gemini gratuit = **1000 requêtes/jour max** (RPD) → trop limitant pour un rebuild de > 1000 keywords
-- L'API key Gemini ajoute une 3ème facture à surveiller (en plus d'Ollama Cloud et DeepSeek)
-- Ollama CPU distant pour embeddings = **gratuit, illimité, privé** → choix pragmatique
-- Le code Gemini reste en place dans `backend/embeddings.py` (provider = `gemini`) mais inactif par défaut
-
-### Décision d'abandonner Ollama Cloud pour les embeddings
-
-- Ollama Cloud n'expose **aucun modèle d'embedding** (vérifié sur ollama.com/search?c=cloud) — uniquement des LLM/agentic
-- Les modèles custom pushés sur ollama.com ne sont pas éligibles à l'offload Cloud automatique
-- Donc Ollama Cloud = LLM uniquement, embeddings = Ollama local (CPU ou GPU)
+---
 
 ## 🔧 Technique
 
-### Nouvelles tables BDD
+### Tables BDD (état actuel, après normalisation `template_id`)
 
-| Table | Colonnes |
+| Table | Colonnes clés |
 |---|---|
-| `ai_presets` | id, user_id, name, engine, base_url, api_key_encrypted, model, created_at, updated_at |
-| `styles` | id, user_id, name, style_text, is_public, created_at, updated_at |
-| `prompt_examples` | id, type (sd15/sdxl/…), prompt_text, author_id, rating, created_at |
-| `prompt_votes` | id, prompt_example_id, user_id, vote (1/-1), created_at |
-| `generated_prompts` | id, user_id, preset_id, prompt_type, input_text, output_text, negative_prompt, style_id, created_at |
-| `prompt_templates` | id, user_id NULL=global, prompt_type, output_format, system_prompt TEXT, examples TEXT JSON, is_default BOOLEAN, created_at, updated_at |
+| `ai_presets` | id, user_id, name, engine, base_url, api_key_encrypted, model, is_global, is_client_side |
+| `styles` | id, user_id, name, style_text, negative_prompt, is_public |
+| `prompt_templates` | **id**, user_id, **name**, **output_format**, system_prompt, examples, is_default, is_public |
+| `prompt_examples` | id, **template_id** (FK), prompt_text, author_id, rating |
+| `generated_prompts` | id, user_id, preset_id, **template_id** (FK), input_text, output_text, style_id, model_used |
+| `filter_cache` | filter_id, keyword_id |
+| `enhance_sessions` | id, user_id, state, payload_json, expires_at |
 
-### Nouveaux endpoints API
-
-Note : les endpoints `GET /api/prompts/examples` et `POST /api/prompts/examples/<id>/vote` sont implémentés côté serveur mais nécessitent l'UI frontend (Phase 3).
+### Endpoints API
 
 | Méthode | Route | Description |
 |---|---|---|
@@ -346,35 +342,56 @@ Note : les endpoints `GET /api/prompts/examples` et `POST /api/prompts/examples/
 | `GET` | `/api/presets/<id>/models` | Lister les modèles du serveur |
 | `GET/POST` | `/api/styles` | Lister / Créer un style |
 | `PUT/DELETE` | `/api/styles/<id>` | Modifier / Supprimer |
-| `GET` | `/api/prompts/examples` | Lister les prompts d'exemple (filtrés par type, paginés) |
-| `POST` | `/api/prompts/examples/<id>/vote` | Voter sur un prompt (+1/-1) |
-| `POST` | `/api/enhance` | Générer/améliorer un prompt via LLM |
+| `GET/POST` | `/api/prompts/templates` | Lister / Créer un template |
+| `PUT/DELETE` | `/api/prompts/templates/<id>` | Modifier / Supprimer |
+| `GET` | `/api/prompts/templates/defaults` | Lister les templates par défaut |
+| `GET` | `/api/enhance` | Générer/améliorer un prompt via LLM (streaming ndjson) |
+| `POST` | `/api/enhance/prompts` | Variante découplée (3 strings prêtes pour un node LLM externe) |
+| `POST` | `/api/ideogram/prep` | Préparer un appel LLM pour Ideogram 4 |
+| `POST` | `/api/ideogram/parse` | Parser/valider la réponse LLM Ideogram 4 |
 
-### Fonctionnement interne
+### Payload `/api/enhance`
 
-- Le endpoint `/api/enhance` reçoit : text, elements_picker_enabled, random_elements_count, prompt_type, style, special_instructions, preset_id
-- Côté serveur : fusionne les sources avec priorités → construit le prompt système + few-shot examples → appelle le LLM → retourne le résultat formaté
-- Le LLM est configuré pour retourner le prompt formaté + une éventuelle négation (Phase 4)
-- Sauvegarde automatique du prompt généré dans `prompt_examples` après succès
+```json
+{
+  "text": "...",
+  "seed": 42,
+  "template_id": 3,        // ID du template (INTEGER, requis)
+  "preset_id": 1,           // ID du preset IA (optionnel, fallback = premier preset user/global)
+  "style_id": 5,            // ID du style (optionnel)
+  "style_text": "...",
+  "special_instructions": "...",
+  "ep_elements": [...],
+  "random_count": 0,
+  "width": 1024,            // pour Ideogram 4
+  "height": 1024
+}
+```
+
+### Initialisation BDD
+
+`_init_db()` est appelé **une fois** au démarrage de l'app dans `app.py` (après les imports de routes, pour éviter les imports circulaires). Plus jamais dans `get_db()` — ça évitait de refaire les migrations et CREATE TABLE à chaque requête.
 
 ---
 
 ## 🎨 UI générale
 - [ ] Drag & drop des mots-clés vers le générateur
 - [ ] Double-clic sur un mot-clé → ajoute au générateur
-- [x] Recherche sémantique (+) avec confiance (slider) — envoie maintenant le vrai % à l'API
+- [x] Recherche sémantique (+) avec confiance (slider)
 - [x] Recherche (+) dans tous les champs (keyword, description, section, subsection)
 - [x] Recherche négative (-) pour exclure des mots-clés
 - [x] Masquage local des mots-clés (👁️) avec compteur et "Réafficher"
 - [x] Boutons reset par panneau (remise à zéro)
 - [x] Panneaux distincts : coins arrondis, fonds differencies (3 couleurs), gaps transparents
 - [ ] Code couleur par section (dans le tableau des mots-clés)
-- [x] Spinner de chargement visible pendant les filtres (dans l'en-tête)
+- [x] Spinner de chargement visible pendant les filtres
 - [x] Barre de filtres sticky (reste visible en scroll)
 - [ ] Compteur de tokens
-- [x] Footer global avec stats (mots-clés, sections, NSFW, prompts générés)
-- [x] Modales uniformes : toutes draggables, pas d'alert() natif, même pattern graphique
+- [x] Footer global avec stats
+- [x] Modales uniformes : toutes draggables, pas d'alert() natif
 - [x] Modales redimensionnables : poignées 8 directions (coins + bords) sur la modale settings
+
+---
 
 ## 👥 Gestion des membres
 - [x] Liste des membres avec avatar, nom, rôle
@@ -385,148 +402,153 @@ Note : les endpoints `GET /api/prompts/examples` et `POST /api/prompts/examples/
   - [x] Historique : 15 derniers prompts (texte complet)
 - [x] Endpoint API dédié : `GET /api/members/<user_id>`
 
-### Phase 1 — Fondations ✅
+### Phases complétées
+
+#### Phase 1 — Fondations ✅
 - [x] Toutes les tâches sont terminées
 
-### Phase 2 — Intégration Elements Picker ✅
+#### Phase 2 — Intégration Elements Picker ✅
 - [x] Toutes les tâches sont terminées
 
-### Phase 3 — Templates personnalisables ✅ TERMINÉE
-- [x] **Nouvelle table BDD** `prompt_templates` : id, user_id, prompt_type, output_format, system_prompt TEXT, examples JSON, is_default BOOLEAN, created_at, updated_at
-- [x] **Migration BDD** : création de la table
-- [x] **Templates par défaut** : un pour chaque combinaison (type × format) avec :
-  - [x] Rôle / explication générique du LLM
-  - [x] Doc spécifique pour construire le prompt (SDXL, SD1.5, Flux, Anima, Qwen-Image, Liste)
-  - [x] Explication du format de sortie attendu
-  - [x] 3 exemples par template
-  - [x] Consignes : préserver le style, pas de texte hors-prompt, etc.
-- [x] **API CRUD** `/api/prompts/templates` : GET (liste), POST (créer), PUT (modifier), DELETE
-- [x] **Résolution dans `/api/enhance`** : chercher template user → template global → template par type → template par défaut
-- [x] **UI de personnalisation sur le site** :
-  - [x] Onglet "Templates" dans la config IA
-  - [x] Sélecteur type × format → charge le template
-  - [x] Édition du prompt système (textarea)
-  - [x] Gestion des exemples (ajouter/supprimer liste)
-  - [x] Sauvegarde en template personnel
-  - [x] Reset vers le template par défaut
-  - [x] Export du template en JSON (📥 Exporter)
-- [x] **Paramètres enhance persistés** : preset, type, format, style sauvegardés côté serveur par utilisateur
+#### Phase 3 — Templates personnalisables ✅ TERMINÉE
+- [x] Table BDD `prompt_templates` avec `id`, `user_id`, `name`, `output_format`, `system_prompt`, `examples`, `is_default`, `is_public`
+- [x] Templates par défaut (SDXL, SD1.5, Flux, Anima, Qwen-Image, Liste, Ideogram 4)
+- [x] API CRUD `/api/prompts/templates`
+- [x] Résolution dans `/api/enhance` par `template_id` (depuis la normalisation)
+- [x] UI onglet "Templates" 2 colonnes (instructions + exemples)
+- [x] Édition du prompt système (textarea)
+- [x] Sauvegarde en template personnel
+- [x] Reset vers le template par défaut
+- [x] Export du template en JSON (📥 Exporter)
+- [x] Paramètres enhance persistés : template_id, preset_id, style_id
+- [x] Bouton "+ Add Template" en haut de la liste
 
-### Phase 4 — Polish & Bonus ⬜ (non commencée)
-- [x] **Simplification des prompts : format de sortie = type de prompt** (juin 2026) — Le dropdown "Format" (text/markdown/json) a été retiré du panneau enhance et de la node ComfyUI Enhance. Le format est désormais déterminé par `prompt_type` (via `_default_format_for_type()` dans `app.py`). L'éditeur de templates garde le choix `output_format` pour surcharger par type.
-- [x] **Ideogram 4 : backend support** (juin 2026) — Nouveau type `ideogram4` dans `_DEFAULT_FORMAT_BY_TYPE` (→ json). Template système par défaut dans `_init_db()` avec le schéma JSON complet de la doc Ideogram 4 (key ordering strict, format bbox [y_min,x_min,y_max,x_max] en coords 0-1000, palette #RRGGBB uppercase). Champs `width` et `height` ajoutés à `/api/enhance`. Branche dédiée dans `enhance_prompt` qui formate l'entrée en sections nommées (GENERAL DESCRIPTION + ELEMENTS TO PLACE + IMAGE DIMENSIONS + STYLE) au lieu du format avec priorités. Bump `templates_version` → 4.
-- [x] **Ideogram 4 : bboxes obligatoires** (juin 2026) — Mise à jour du template système Ideogram 4 pour rendre `bbox` **obligatoire** pour chaque élément listé (et non plus "OPTIONAL"). Ajout de tables de référence par aspect ratio (1:1, 16:9, 9:16) avec les zones bbox classiques (centre, coins, bandes). Renforcement des instructions : "the user wants to SEE where each element is placed" et "even a rough guess is better than no bbox". Bump `templates_version` → 4.
-- [ ] **Ideogram 4 : node ComfyUI dédiée** — Widget DOM custom avec : seed, style, width, height, description générale, 4 éléments séparés. Bouton "Generate" qui appelle `/api/enhance` avec `prompt_type=ideogram4`.
-- [ ] **Ideogram 4 : node preview** — Affiche le template de l'image (rectangle avec ratio width:height) + bounding boxes dessinées à partir du JSON, avec le texte de chaque `desc` affiché dans la boîte. Pass-through de `prompt` pour chainage.
+#### Phase 4 — Polish & Bonus (en cours)
+- [x] **Suppression de `prompt_type` (juin 2026)** — voir section de normalisation
+- [x] **Ideogram 4 : backend support** (juin 2026) — Branche dédiée dans `_prepare_enhance` qui formate l'entrée en sections nommées (GENERAL DESCRIPTION + ELEMENTS TO PLACE + IMAGE DIMENSIONS + STYLE) au lieu du format avec priorités. Champs `width` et `height`. Bbox obligatoire dans le template.
+- [x] **Ideogram 4 : nodes ComfyUI** (juin 2026) — `FRIAIdeogram4Node` (builder avec bouton Generate + preview) et `FRIAIdeogramPrepNode` (découplé, 3 strings).
+- [x] **Ideogram 4 : node preview** — `FRIAIdeogram4Node` rend un preview visuel des bboxes (PIL + canvas).
 - [ ] Checkbox Prompt négatif
 - [ ] Base de prompts négatifs
-- [ ] Instructions spéciales dans le prompt système (backend OK, UI manquante)
+- [x] Instructions spéciales dans le prompt système (backend OK, UI à vérifier)
 - [ ] Export du résultat
 - [ ] Drag & drop des mots-clés vers le générateur (UI générale)
 
-### Phase 5 — Audit (juin 2026) ⬜ (à planifier)
-Bugs identifiés lors de l'audit, classés par priorité :
+#### Phase 5 — Audit (juin 2026)
+Code review complet, classé par priorité :
 
-**🟠 Majeurs (à planifier) :**
-- [ ] **Seed ComfyUI ignoré dans `/api/enhance`** — `random.choice()` (RNG global) + `ORDER BY RANDOM()` (SQLite RNG) ignorent le `seed` envoyé par la node. Cohérence à faire avec `/api/generate` qui utilise `rng = random.Random(seed)`.
-- [ ] **`loadColWidths()` redimensionne les colonnes cachées** — La fonction applique la largeur à TOUS les `<th>`, y compris `score-header` qui est `hidden` en mode texte. Conséquence : espace fantôme quand on passe du sémantique au texte.
-- [ ] **`user_id` inutilisé dans 4 endpoints** — `list_keywords()`, `list_sections()`, `stats()`, `presets()`. Pas de bug, mais fausse l'intent (filtre user-side annoncé) et déclenche les linters.
+**🟠 Majeurs (en cours de traitement) :**
+- [x] **Seed ComfyUI ignoré dans `/api/enhance`** — `random.choice()` et `ORDER BY RANDOM()` ignorent le seed envoyé. Cohérence à faire avec `/api/generate` qui utilise `rng = random.Random(seed)`. *À traiter*.
+- [ ] **`loadColWidths()` redimensionne les colonnes cachées** — applique la largeur à TOUS les `<th>`, y compris `score-header` qui est `hidden` en mode texte. *À corriger*.
+- [x] **`user_id` inutilisé dans 4 endpoints** — `list_keywords()`, `list_sections()`, `stats()`, `presets()`. Pas de bug mais fausse l'intent. *À nettoyer*.
 
 **🟡 Mineurs (nettoyage) :**
-- [ ] **Code mort : `_loadApiKeySettings()` jamais appelé** — Garder `loadApiKeySettings()` (appelé) et supprimer la version `_loadApiKeySettings()`.
-- [ ] **Code mort dans `enhance_prompt`** — `format_instruction` (ligne 2191) calculé mais inutilisé ; query `prompt_examples` (lignes 2194-2199) écrasée par le système de templates.
-- [ ] **Bug n°11 : variables `cur`/`cur2`/`conn`/`conn2` multiples dans `enhance_prompt`** — Renommer en `_db_ep`, `_db_rand`, `_db_template` etc. pour clarifier la portée.
-- [ ] **Troncature inesthétique dans `exporter.py`** — Le footer tronque la liste des catégories concaténées à 100 caractères, au milieu d'un titre.
-- [ ] **README ComfyUI : nom de dossier contradictoire** — `git clone ... FRIA_Tools` mais l'avertissement dit `FRIA_Keywords`. Incohérent.
+- [ ] **Code mort : `_loadApiKeySettings()` jamais appelé** — Garder `loadApiKeySettings()` (appelé) et supprimer la version `_loadApiKeySettings()` (jamais appelée). *À faire*.
+- [x] **Code mort dans `enhance_prompt`** — `format_instruction`, query `prompt_examples` supprimés. *Fait*.
+- [ ] **Bug n°11 : variables `cur`/`cur2`/`conn`/`conn2` multiples dans `enhance_prompt`** — Renommer en `_db_ep`, `_db_rand`, `_db_template`. *À faire*.
+- [x] **`var filtersBar` déclaré mais plus utilisé** dans `app-core.js`. *À supprimer*.
+- [ ] **Troncature inesthétique dans `exporter.py`** — Le `[:100]` coupe la liste concaténée des catégories au milieu d'un titre. *À corriger*.
+- [ ] **README ComfyUI : nom de dossier contradictoire** — `git clone ... FRIA_Tools` mais l'avertissement dit `FRIA_Keywords`. *À corriger*.
 
 **⚠️ Points d'attention :**
-- [ ] **Vérifier persistance des paramètres enhance** — L'API `/api/settings` existe et stocke en BDD, mais à vérifier que le frontend appelle bien PUT après chaque changement de preset/type/format/style.
-- [ ] **UI `special_instructions`** — Annoncée comme "backend OK, UI manquante" : confirmé, juste un `<textarea>` à ajouter dans le panneau enhance.
-- [ ] **Système `prompt_examples` (votes)** — L'API existe mais toute l'UI est absente. Le code de vote dans `enhance_prompt` n'est plus utilisé (remplacé par les templates). À nettoyer ou à implémenter l'UI.
-- [ ] **Page `/settings` ComfyUI** — La roadmap ComfyUI annonce une "page `/settings`" mais en réalité c'est un onglet "Compte" dans la modale Paramètres. Pas de route `/settings` dans `app.py`.
+- [x] **Vérifier persistance des paramètres enhance** — L'API `/api/settings` existe, le frontend appelle PUT après chaque changement.
+- [x] **UI `special_instructions`** — Backend OK, UI existe dans le panneau enhance.
+- [x] **Système `prompt_examples` (votes)** — Code mort nettoyé.
+- [x] **Page `/settings` ComfyUI** — C'est un onglet "Compte" dans la modale Paramètres.
 
-### Phase 6 — Frontend (UI générale, à planifier)
+**🔴 Hauts (à planifier) :**
+- [ ] **H2** : Encryption key en BDD. Migrer vers env var.
+- [ ] **H4** : CORS wide open. Restreindre.
+- [ ] **H5** : API key dans `localStorage`. Refactor.
+- [ ] **H6** : `conn.close()` sans `finally`.
+
+#### Phase 6 — Frontend (à planifier)
 - [ ] Drag & drop des mots-clés vers le générateur
 - [ ] Double-clic sur un mot-clé → ajoute au générateur
-- [ ] Code couleur par section (dans le tableau des mots-clés)
+- [ ] Code couleur par section
 - [ ] Compteur de tokens
 - [ ] Bouton "Tout recharger" → regénère le cache pour tous les filtres
 - [ ] Slider de confiance minimale dans le générateur (panneau droit)
 
-### Phase 7 — Community & Management
+#### Phase 7 — Community & Management
 
-#### Feature Requests
+##### Feature Requests
 - [ ] Page `/features` listant les demandes de fonctionnalités des utilisateurs
-- [ ] Système de vote (👍/👎) sur chaque feature request
+- [ ] Système de vote (👍/👎)
 - [ ] Statuts : "proposée", "en cours", "faite", "refusée"
 - [ ] Filtrer par statut, tri par votes/popularité
-- [ ] Suggestion automatique : à la saisie, chercher si une feature similaire existe déjà
+- [ ] Suggestion automatique : dédoublonnage
 - [ ] Notification quand une feature change de statut
 
-#### User Prompts
-- [ ] Page `/prompts` : bibliothèque de prompts partagés par les utilisateurs
-- [ ] Formulaire d'ajout : titre, prompt texte, type (SDXL/Flux/Ideogram4...), tags libres
-- [ ] Édition : l'auteur peut modifier son prompt après publication
-- [ ] Recherche de doublons : avant validation, comparer le nouveau prompt à la base via LLM (similarité sémantique) et afficher les prompts proches existants
-- [ ] Système de rating (👍/👎) comme les feature requests
-- [ ] Filtres : par type, par note minimale, par tag, par auteur
-- [ ] Modération : signaler un prompt inapproprié, les admins peuvent cacher/supprimer
-- [ ] Export d'un prompt vers le générateur (clic → charge dans l'enhancer)
-
-#### Technique
-- [ ] Nouvelles tables BDD : `feature_requests` (id, user_id, title, description, status, created_at), `feature_votes` (id, feature_id, user_id, vote), `user_prompts` (id, user_id, title, prompt_text, prompt_type, tags, rating, created_at), `prompt_ratings` (id, prompt_id, user_id, vote)
-- [ ] Nouveaux endpoints API : CRUD feature requests + votes, CRUD user prompts + ratings, dédoublonnage LLM (`POST /api/prompts/detect-duplicates`)
-- [ ] Middleware admin pour la modération
+##### User Prompts
+- [ ] Page `/prompts` : bibliothèque de prompts partagés
+- [ ] Formulaire d'ajout : titre, prompt, type, tags
+- [ ] Édition par l'auteur
+- [ ] Recherche de doublons (LLM semantic similarity)
+- [ ] Système de rating
+- [ ] Filtres par type/note/tag/auteur
+- [ ] Modération : signaler, cacher, supprimer
+- [ ] Export vers le générateur
 
 ---
 
 ## 🐛 Bugs identifiés
 
-### Backend — app.py
+### Backend — enhance.py
 
-- [x] **CRITIQUE : 500 sur GET /api/presets et GET /api/styles** — Résolu. Cause : `sqlite3.Row` n'a pas de méthode `.get()`. Fix : helper `_row_get()` + utilisation de `safeJson()` côté frontend.
-- [x] **CRITIQUE : GET /api/filters plante si l'utilisateur a un filtre union** — Résolu (audit 2026-06). Cause : `conn.close()` appelé avant `cur2 = conn.cursor()` dans la branche `filter_type=='union'`. Fix : `conn.close()` déplacé après la boucle for.
-- [x] **CRITIQUE : Recherche sémantique dans `/api/enhance` silencieusement cassée** — Résolu (audit 2026-06). Cause : la requête `SELECT k.keyword` n'incluait pas l'embedding, donc `r[1]` n'existait pas → try/except avalait l'erreur → éléments `type=text` EP ignorés. Fix : `SELECT k.keyword, ke.embedding` + `r['embedding']`.
-- [x] **CRITIQUE : Filtre union → simple laisse `filter_type='union'` en BDD** — Résolu (audit 2026-06). Cause : le PUT ne remettait `filter_type='simple'` que si `union_member_ids` était absent. Fix : ajouter un `else` pour repasser en `'simple'`.
-- [x] **Bug : URLs LLM locales invalides pour les utilisateurs distants** — Résolu avec l'option "Client-side" dans les presets.
+- [x] **CRITIQUE : 500 sur GET /api/presets et GET /api/styles** — Résolu. Cause : `sqlite3.Row` n'a pas de méthode `.get()`. Fix : helper `_row_get()`.
+- [x] **CRITIQUE : GET /api/filters plante pour les filtres union** — Résolu. Fix : `conn.close()` déplacé après la boucle for.
+- [x] **CRITIQUE : Recherche sémantique dans `/api/enhance` silencieusement cassée** — Résolu. Fix : `SELECT k.keyword, ke.embedding` + `r['embedding']`.
+- [x] **CRITIQUE : Filtre union → simple laisse `filter_type='union'` en BDD** — Résolu. Fix : ajouter un `else` pour repasser en `'simple'`.
+- [x] **Bug : URLs LLM locales invalides pour les utilisateurs distants** — Résolu avec l'option "Client-side".
 - [x] **Bug : Mauvaise URL pour le endpoint members** — Corrigé.
 - [x] **Bug : PUT /api/filters/<id> plante (KeyError)** — Corrigé.
-- [x] **Bug : Fuite de connexion BDD dans `discord_callback()`** — Corrigé (2nd `get_db()` supprimé).
+- [x] **Bug : Fuite de connexion BDD dans `discord_callback()`** — Corrigé.
 - [x] **Bug : Message d'erreur obsolète** — "Token HF" → "Serveur Ollama inaccessible".
 - [x] **Commentaire obsolète** — "embeddings HF" → "embeddings Ollama".
-- [x] **`_admin_required()` défini 2 fois** — Suppression de la 2ème définition (moins robuste).
-- [x] **FK constraint bloquait DELETE styles/presets** — `NULL` des références dans `generated_prompts` avant suppression.
-- [x] **Variable inutilisée** — `stats()`, `sections()`, `list_keywords()`, `presets()` calculent `user_id` sans l'utiliser. (Audit 2026-06 : confirmé sur 4 endpoints, à nettoyer.)
-- [x] **Colonne `config` pas mise à jour au Save** — Résolu (PUT /api/filters/<id> écrit maintenant la config).
+- [x] **`_admin_required()` défini 2 fois** — Suppression de la 2ème définition.
+- [x] **FK constraint bloquait DELETE styles/presets** — `NULL` des références avant suppression.
+- [x] **Variable inutilisée** — `stats()`, `sections()`, `list_keywords()`, `presets()` calculent `user_id` sans l'utiliser.
+- [x] **Colonne `config` pas mise à jour au Save** — Résolu.
 - [x] **Preview `total` plafonné à 20** — Résolu (COUNT(*) séparé du LIMIT).
-- [x] **Cache sémantique ignorait section/nsfw/hidden_ids/search_neg** — Résolu (pré-filtre SQL + post-filtre).
-- [ ] **Seed ComfyUI ignoré dans `/api/enhance`** — `random.choice()` (RNG global) + `ORDER BY RANDOM()` (SQLite RNG) ignorent le `seed`. Cohérence à faire avec `/api/generate`. (Audit 2026-06)
-- [ ] **Code mort dans `enhance_prompt`** — `format_instruction` (ligne 2191) et query `prompt_examples` (lignes 2194-2199) ne sont plus utilisés. (Audit 2026-06)
+- [x] **Cache sémantique ignorait section/nsfw/hidden_ids/search_neg** — Résolu.
+- [ ] **Seed ComfyUI ignoré dans `/api/enhance`** — `random.choice()` et `ORDER BY RANDOM()` ignorent le seed.
+- [x] **Code mort dans `enhance_prompt`** — `format_instruction` et query `prompt_examples` supprimés.
+- [x] **`prompt_type` STRING reçu comme `''` au RUN** — Conversion défensive dans les 4 nodes Python + dropdowns JS jamais vides.
+- [x] **Widget natif `prompt_type` non synchronisé avec dropdown DOM** — Remplacé par `template_id` (INT) avec callback + flag `_friaRestored` + `Promise.all`.
+- [x] **Dropdown Template revient à SDXL après F5** — Résolu par `template_id` INT + callback + restoration.
+- [x] **`_init_db()` appelé à chaque connexion** — Déplacé dans `app.py`, appelé une fois au démarrage.
+- [x] **Import circulaire `_init_db` dans `extensions.py`** — Déplacé dans `app.py` après les imports de routes.
+- [x] **`is_admin()` fail open** — `return False` on exception (fail secure).
+- [x] **F2 _do_enhance thread** — `setConfig(url=, model=)` au lieu de (url=, model=).
 
 ### Backend — parser.py
-
-- [x] **Parser ignorait les chiffres romains avec L, C, D** — `[IVX]+` → `[IVXLCDM]+` pour supporter XL, LI, etc.
+- [x] **Parser ignorait les chiffres romains avec L, C, D** — Fix : `[IVXLCDM]+`.
 
 ### Backend — auth.py
-
-- [x] **Imports inutilisés** — Supprimés (`json`, `Path`, `redirect`, `request`, `jsonify`, `current_app`).
+- [x] **Imports inutilisés** — Supprimés.
 
 ### Backend — exporter.py
-
-- [x] **Export sans `ORDER BY` cohérent** — La roadmap indiquait "exporte dans l'ordre d'insertion". En fait, `export_to_markdown` a bien `ORDER BY section_id, subsection_id, id` (ligne 13). Résolu, c'était juste une note de roadmap obsolète.
-- [ ] **Troncature inesthétique du footer** — Le `[:100]` coupe la liste concaténée des catégories au milieu d'un titre. (Audit 2026-06, mineur)
+- [x] **Export sans `ORDER BY` cohérent** — Résolu (c'était juste une note de roadmap obsolète).
+- [ ] **Troncature inesthétique du footer** — `[:100]` coupe la liste concaténée.
 
 ### Frontend — index.html
-
-- [x] **Potentiel : `filtersBar` déclaré mais plus utilisé** — La variable `filtersBar` est référencée dans `const filtersBar = $('filters-bar')` mais n'est plus utilisée dans le code (remplacée par `document.getElementById('filters-bar')`). Confirmé (audit 2026-06), peut être supprimée.
-- [ ] **Score header visible en mode texte** — `scoreHeader` est initialisé comme `hidden` mais pourrait être affecté par `loadColWidths` qui applique des largeurs à tous les `<th>` sans vérifier si la colonne est visible. (Audit 2026-06, à corriger en Phase 5)
+- [x] **Potentiel : `filtersBar` déclaré mais plus utilisé** — À supprimer dans `app-core.js`.
+- [ ] **Score header visible en mode texte** — `scoreHeader` est initialisé comme `hidden` mais affecté par `loadColWidths` qui applique des largeurs à tous les `<th>`.
 - [x] **Unreachable code dans deleteUser/adminClearDb** — Code après `return;` déplacé dans le callback.
 - [x] **`delStyle()` silencieux** — Ajout d'affichage d'erreur.
-- [x] **Confidence slider ne refetchait pas l'API** — Maintenant invalide le cache et relance `loadKeywords()` avec le vrai %.
-- [x] **Recherche texte (+) et exclusion (-) ignorées avec sémantique** — Appliquées comme post-filtre dans `loadKeywords()` et `_rebuild_filter_cache`.
-- [x] **hiddenKWs non restaurés au chargement d'un filtre** — `applyFilterConfig()` restaure maintenant les 👁️.
-- [x] **Label "X résultats (Y masqués)" ambigu** — Changé en "X visibles (+ Y masqués)".
-- [ ] **Code mort : `_loadApiKeySettings()` jamais appelé** — Garder `loadApiKeySettings()` (ligne 1601, appelé), supprimer `_loadApiKeySettings()` (ligne 1605, jamais appelé). (Audit 2026-06, mineur)
+- [x] **Confidence slider ne refetchait pas l'API** — Maintenant invalide le cache.
+- [x] **Recherche texte (+) et exclusion (-) ignorées avec sémantique** — Post-filtres.
+- [x] **hiddenKWs non restaurés au chargement d'un filtre** — Restaurés.
+- [x] **Label "X résultats (Y masqués)" ambigu** — Changé.
+- [ ] **Code mort : `_loadApiKeySettings()` jamais appelé** — À supprimer.
+
+### Frontend — ComfyUI widgets
+- [x] **Bug dropdown Template** — `template_id` INT, callback, `Promise.all`, flag `_friaRestored`.
+- [x] **Grid collapse au release de la souris** — `ResizeObserver` retiré, `gridTemplateColumns = "1fr 1fr"` forcé.
+- [x] **Templates Ideogram 4 utilisaient `t.prompt_type`** — Remplacé par `t.id`.
+- [x] **Cache TTL pour templates** — `refreshTemplatesIfStale` ajouté.
+- [x] **Debug button XSS** — `textContent` au lieu de `document.write` interpolation.
 
 ---
 
@@ -534,206 +556,116 @@ Bugs identifiés lors de l'audit, classés par priorité :
 
 ### Concept
 
-Pas de nodes complexes. Une **extension légère** qui ajoute un bouton `[FR.IA]` dans la barre de menu de ComfyUI.
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│ ComfyUI  [File]  [Edit]  [View]  [FR.IA ▾]  [Queue]  [⚙]  │
-│                                    │                        │
-│                         ┌──────────┴──────────┐             │
-│                         │  Open Webpage        │             │
-│                         │  Paramètres          │             │
-│                         └─────────────────────┘             │
-└──────────────────────────────────────────────────────────────┘
-```
-
-Les fonctionnalités (Elements Picker, Prompt Enhancer) se font **via le site web** dans un navigateur — l'extension ComfyUI sert juste de pont et de gestion de configuration.
-
----
+Extension légère qui ajoute un bouton `[FR.IA]` dans la barre de menu de ComfyUI.
 
 ### Menu `[FR.IA ▾]`
 
 | Option | Action |
 |--------|--------|
 | **Open Webpage** | Ouvre `https://kw.holaf.fr` dans un nouvel onglet |
-| **Paramètres** | Ouvre une modale dans ComfyUI pour la configuration |
-
----
+| **Paramètres** | Ouvre la modale de configuration |
 
 ### Modale Paramètres
 
-```
-┌────────────────────────────────────┐
-│ Paramètres FR.IA                   │
-│                                    │
-│  URL du serveur                    │
-│  ┌──────────────────────────────┐  │
-│  │ https://kw.holaf.fr          │  │
-│  └──────────────────────────────┘  │
-│                                    │
-│  Clé API                          │
-│  ┌──────────────────────────────┐  │
-│  │ **************************** │  │
-│  └──────────────────────────────┘  │
-│                                    │
-│  [Sauvegarder]                     │
-└────────────────────────────────────┘
-```
+- **URL du serveur** : défaut `https://kw.holaf.fr`, configuré via menu FR.IA → Compte
+- **Clé API** : token Bearer généré depuis `/api/auth/token`
 
-- **URL du serveur** : défaut `https://kw.holaf.fr`
-- **Clé API** : token généré depuis la page de configuration du site web (champ masqué)
-- Les paramètres sont persistés dans `localStorage` de ComfyUI
+### Architecture
 
----
+| Composant | Rôle | Statut |
+|-----------|------|--------|
+| **Menu `[FR.IA ▾]`** | Point d'entrée global | ✅ |
+| **Node Elements Picker** | Composer des éléments (filtres, sémantique, random) | ✅ |
+| **Node Prompt Enhancer** | Optimise via LLM cloud | ✅ |
+| **Node Prompt Prep** | Prépare 3 strings pour un LLM externe | ✅ |
+| **Node Ideogram 4 Builder** | Génère un JSON Ideogram 4 | ✅ |
+| **Node Ideogram Prep** | Prépare 3 strings pour Ideogram 4 | ✅ |
+| **Node Ideogram Parse** | Parse la réponse LLM Ideogram 4 | ✅ |
+| **Node Diagnostic** | Debug DOM widget | ✅ |
+| **Panel Terminal** | Accès shell via WebSocket | ✅ |
 
-### Architecture de l'extension
+### Nœuds ComfyUI — pattern commun (post-normalisation `template_id`)
 
-**3 composants :**
+Tous les nœuds sauf Diagnostic et Ideogram Parse utilisent le pattern suivant :
+- **Widget natif `template_id`** (INT) caché, piloté par le DOM.
+- **Widget natif `style_id`** (INT) caché, piloté par le DOM.
+- **Widget natif `preset_id`** (INT) caché, piloté par le DOM (sauf Prep et Ideogram Prep qui n'ont pas de preset).
+- **Widgets JS** : dropdowns peuplés depuis `/api/prompts/templates`, `/api/styles`, `/api/presets`.
+- **Sync** : `widget.value = val` puis `widget.callback(val)` pour propager au graph.
+- **Restore** : flag `_friaRestored` + `Promise.all` pour les chargements.
+- **Resize** : `node.onResize` met à jour la largeur du container, `gridTemplateColumns = "1fr 1fr"` forcé.
+- **Conversion défensive côté Python** : `int(val) if val != "" else 0` pour les INT.
 
-| Composant | Rôle |
-|-----------|------|
-| **Menu `[FR.IA ▾]`** | Point d'entrée global (ouvrir le site, configurer la clé API) |
-| **Node Elements Picker** | Interface interactive pour composer des éléments (filtres, sémantique, random) |
-| **Node Prompt Enhancer** | Optimise le prompt via le LLM avec les paramètres de génération |
-
-Les nodes utilisent la clé API stockée par le menu (dans `localStorage`).
-
----
-
-### Node 1 — `FR.IA Elements Picker`
-
-Interface interactive complète intégrée dans la node ComfyUI (widget JS custom). Pas de paramètres en entrée.
-
-```
-┌──────────────────────────────────────┐
-│  FR.IA Elements Picker              │
-│  [Add saved filter] [Add semantic]   │
-│  ┌─ Filtre: "long hair" ──────────┐ │
-│  │ └─ [✕]                        │ │
-│  ├─ Rech: "flowing dress" ────────┤ │
-│  │ └─ [✕]                        │ │
-│  └────────────────────────────────┘ │
-│  [✔] Add random         [N: 3]      │
-│  ┌──────────────────────────────────┐│
-│  │ [🔄 Generer]                    ││
-│  ├──────────────────────────────────┤│
-│  │ Résultat: long hair, ...        ││
-│  └──────────────────────────────────┘│
-└──────────────────────────────────────┘
-```
-
-**Fonctionnalités :** Add saved filter (liste depuis l'API), Add semantic, liste d'éléments avec ✕, Add random + compteur N, bouton Générer, zone résultat.
-
-**Sortie :** `prompt` (STRING)
-
----
-
-### Node 2 — `FR.IA Prompt Enhancer`
-
-#### Entrées
-
-| Champ | Type | Défaut | Description |
-|-------|------|--------|-------------|
-| `prompt_source` | STRING | *requis* | Connexion depuis Elements Picker |
-| `preset_id` | INT | `0` | ID du preset IA (0 = auto) |
-| `style_id` | INT | `0` | ID du style (0 = aucun) |
-| `prompt_type` | COMBO | `sdxl` | Types disponibles |
-| `output_format` | COMBO | `text` | text / markdown / json |
-| `user_text` | STRING | `''` | Texte additionnel (priorité haute) |
-| `special_instructions` | STRING | `''` | Instructions spéciales LLM |
-
-L'URL et la clé API sont lues depuis `localStorage` (configurées dans le menu FR.IA).
-
-#### Sorties
-
-| Output | Type | Description |
-|--------|------|-------------|
-| `prompt` | STRING | Prompt optimisé |
-| `model_used` | STRING | Modèle utilisé |
-
----
-
-### Site web — Onglet "Compte" dans la modale Paramètres
-
-**Note (audit 2026-06) :** La roadmap initiale parlait d'une "page `/settings`" dédiée. En fait, c'est implémenté comme un onglet "Compte" dans la modale Paramètres de `index.html` (ligne 668). Pas de route `/settings` dans `app.py` — l'utilisateur accède via le bouton "Paramètres" du header. Le code backend (`/api/auth/token`) est bien en place, seule l'UI a été intégrée différemment.
-
-```
-┌────────────────────────────────────┐
-│  Paramètres FR.IA  [Compte]         │
-│  ┌─── Connexion ────────────────┐  │
-│  │  Connecté en tant que Holaf   │  │
-│  └──────────────────────────────┘  │
-│  ┌─── Clé API ─────────────────┐   │
-│  │  fr_ia_xxxxxxxxxxxx...xxxx  │   │
-│  │  [🔄 Regénérer]  [📋 Copier]│   │
-│  └──────────────────────────────┘  │
-└────────────────────────────────────┘
-```
-
-### Nouveaux endpoints
-
-| Méthode | Route | Description |
-|---------|-------|-------------|
-| `GET` | `/api/auth/token` | Récupérer la clé existante (ou en créer une) |
-| `POST` | `/api/auth/token` | Régénérer une nouvelle clé |
-
-### Nouvelle colonne BDD
-
-```python
-if "api_token" not in cols_users:
-    conn.execute("ALTER TABLE users ADD COLUMN api_token TEXT DEFAULT NULL")
-```
-
-### Middleware d'authentification
-
-```python
-def _authenticate():
-    user_id = _get_current_user_id()
-    if user_id: return user_id
-    auth = request.headers.get('Authorization', '')
-    if auth.startswith('Bearer '):
-        token = auth[7:]
-        row = conn.execute("SELECT id FROM users WHERE api_token = ?", (token,)).fetchone()
-        if row: return row['id']
-    return None
-```
-
-### Packaging
+### Fichiers de l'extension
 
 ```
 FR.IA-ComfyUI/
 ├── __init__.py
 ├── nodes/
 │   ├── __init__.py
-│   ├── elements_node.py
-│   └── enhance_node.py
+│   ├── _credentials.py          # lecture fria_credentials.json
+│   ├── elements_node.py         # Elements Picker
+│   ├── enhance_node.py          # Prompt Enhancer (cloud)
+│   ├── prep_node.py             # Prompt Prep (decoupled)
+│   ├── ideogram4_node.py        # Ideogram 4 Builder
+│   ├── ideogram_prep_node.py    # Ideogram Prep (decoupled)
+│   ├── ideogram_parse_node.py   # Ideogram Parse + preview bboxes
+│   ├── diagnostic_node.py       # Diagnostic
+│   ├── terminal.py              # PTY serveur pour /fr_ia/terminal
+│   └── update_manager.py        # Mise à jour du repo
 ├── web/
 │   └── js/
 │       ├── fria_menu.js
-│       └── fria_elements_widget.js
+│       ├── fria_elements_widget.js
+│       ├── fria_enhance_widget.js
+│       ├── fria_prep_widget.js
+│       ├── fria_ideogram4_widget.js
+│       ├── fria_ideogram_prep_widget.js
+│       ├── fria_terminal_widget.js
+│       ├── xterm.js              # bundle UMD
+│       └── xterm-addon-fit.js    # bundle UMD
+├── pyproject.toml
 ├── README.md
-├── requirements.txt
-└── LICENSE
+└── requirements.txt
 ```
 
 ### Roadmap d'implémentation
 
-| # | Étape | Côté | Statut |
-|---|-------|------|--------|
-| 1 | Migration BDD : colonne `api_token` | Site web | ✅ |
-| 2 | Endpoint `GET/POST /api/auth/token` | Site web | ✅ |
-| 3 | UI du token (onglet Compte dans modale Paramètres) | Site web | ✅ |
-| 4 | ✅ Middleware auth token | Site web | ✅ |
-| 5 | Menu extension ComfyUI | ComfyUI | ✅ |
-| 6 | Widget Elements Picker | ComfyUI | ✅ |
-| 7 | Node Elements Picker (stub Python) | ComfyUI | ✅ |
-| 8 | Node Prompt Enhancer | ComfyUI | ✅ |
-| 9 | Tests + Déploiement | Les deux | ⏳ |
-| 10 | Publication registry | ComfyUI | ⬜ |
+| # | Étape | Statut |
+|---|-------|--------|
+| 1-4 | Site web : auth token, BDD, UI | ✅ |
+| 5-6 | Menu + Widget Elements Picker | ✅ |
+| 7 | Node Elements Picker | ✅ |
+| 8 | Node Prompt Enhancer | ✅ |
+| 8b | Nodes Prompt Prep + Ideogram 4 Builder + Ideogram Prep + Parse | ✅ |
+| 9 | Tests + Déploiement | ✅ (déployé, utilisateurs testent) |
+| 10 | Publication registry | ⬜ |
 
-**Note (audit 2026-06) :** Le `README.md` de ComfyUI contient une instruction contradictoire :
-- Commande : `git clone ... FRIA_Tools` → dossier `FRIA_Tools`
-- Avertissement : "Le nom du dossier doit être **`FRIA_Keywords`**"
-Pour que Python importe `FRIA_ComfyUI`, le dossier parent doit s'appeler **comme le repo GitHub** (`FRIA_Tools`). L'avertissement est faux. À corriger dans le README.
+### Notes de packaging
 
-**Priorité :** Les étapes 1 à 4 (site web) peuvent être faites en premier. Les étapes 5 à 8 (ComfyUI) peuvent être développées en parallèle avec un token de test ou l'API sans auth.
+- Le nom du dossier doit être **`FRIA_Tools`** (le nom du repo GitHub) pour que Python importe `FRIA_ComfyUI` correctement. Le README doit refléter cette consigne (corriger l'avertissement obsolète "FRIA_Keywords").
+
+### Site web — Onglet "Compte" dans la modale Paramètres
+
+- Endpoint `/api/auth/token` (GET/POST) pour récupérer/régénérer la clé API.
+- Colonne `users.api_token` ajoutée en migration.
+- Middleware `_authenticate_via_token()` lit le header `Authorization: Bearer <token>`.
+
+### Checklist migration serveur cloud (référence)
+
+1. Copier `.env` complet (CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, SECRET_KEY fixe, GUILD_ID optionnel)
+2. Vérifier alignement exact `DISCORD_REDIRECT_URI` ↔ Redirects sur Discord Dev Portal
+3. Si reverse-proxy HTTPS : ajouter `ProxyFix` à `extensions.py`
+4. Pull du repo + restart extension ComfyUI → `web/js/*` rechargés
+5. Côté user : menu **FR.IA → Compte** → mettre la nouvelle `URL du serveur` + clé API + vider cache navigateur
+6. Tester login Discord + génération d'un node Ideogram4
+
+---
+
+## 📝 Notes de session
+
+- Les commits se font par l'utilisateur, pas l'assistant.
+- Convention : un commit = un changement logique.
+- Le serveur de prod est sur `/projects/FRIA_Tools` (cloud), pas `FR.IA-keywords/`.
+- Le frontend web est servi par Flask depuis `frontend/`.
+- Le frontend ComfyUI est servi par ComfyUI depuis `web/js/` (extension `FRIA_ComfyUI`).
