@@ -45,10 +45,10 @@
                         if (w.parentEl) w.parentEl.style.display = "none";
                     }
                 };
-                ["prompt_type", "style_id"].forEach(n => hideWidget(node, n));
+                ["template_id", "style_id"].forEach(n => hideWidget(node, n));
 
                 // ---- Supprimer les sockets d'entrée ----
-                for (const inputName of ["prompt_type", "style_id"]) {
+                for (const inputName of ["template_id", "style_id"]) {
                     const slot = node.findInputSlot?.(inputName);
                     if (slot !== undefined && slot !== -1) {
                         node.removeInput(slot);
@@ -56,7 +56,7 @@
                 }
 
                 // Refs vers les widgets natifs (utiles pour le sync)
-                const promptTypeWidget = node.widgets?.find(x => x.name === "prompt_type");
+                const templateIdWidget = node.widgets?.find(x => x.name === "template_id");
                 const styleWidget = node.widgets?.find(x => x.name === "style_id");
 
                 // ---- Cache de rafraîchissement ----
@@ -91,13 +91,13 @@
 
                 function syncNativeWidgets() {
                     if (!_friaRestored) return;
-                    if (promptTypeWidget) {
-                        promptTypeWidget.value = typeSelect.value;
-                        if (promptTypeWidget.callback) promptTypeWidget.callback(typeSelect.value);
+                    if (templateIdWidget) {
+                        templateIdWidget.value = parseInt(templateSelect.value) || 0;
+                        if (templateIdWidget.callback) templateIdWidget.callback(templateIdWidget.value);
                     }
                     if (styleWidget) {
                         styleWidget.value = parseInt(styleSelect.value) || 0;
-                        if (styleWidget.callback) styleWidget.callback(parseInt(styleSelect.value) || 0);
+                        if (styleWidget.callback) styleWidget.callback(styleWidget.value);
                     }
                 }
 
@@ -105,9 +105,10 @@
                 // (restaures par ComfyUI au rechargement de la page)
                 function restoreFromNativeWidgets() {
                     let restored = false;
-                    if (promptTypeWidget && promptTypeWidget.value) {
-                        if ([...typeSelect.options].some(o => o.value === promptTypeWidget.value)) {
-                            typeSelect.value = promptTypeWidget.value;
+                    if (templateIdWidget) {
+                        const tid = parseInt(templateIdWidget.value) || 0;
+                        if (tid > 0 && [...typeSelect.options].some(o => o.value === String(tid))) {
+                            typeSelect.value = String(tid);
                             restored = true;
                         }
                     }
@@ -181,33 +182,37 @@
                 const typeSelect = document.createElement("select");
                 Object.assign(typeSelect.style, selectStyle);
                 typeSelect.onchange = syncNativeWidgets;
-                typeSelect.addEventListener("mousedown", () => refreshIfStale(typeSelect, "prompts/templates", "tmpl"));
+                typeSelect.addEventListener("mousedown", refreshTemplatesIfStale);
                 typeDiv.appendChild(mkLabel("Template"));
                 typeDiv.appendChild(typeSelect);
                 grid.appendChild(typeDiv);
 
-                async function populateSelect(select, apiPath) {
-                    select.innerHTML = `<option value="">-- Chargement --</option>`;
+                async function populateTemplateSelect() {
+                    typeSelect.innerHTML = `<option value="0">-- Chargement --</option>`;
                     try {
-                        const items = await apiGet(apiPath);
-                        if (Array.isArray(items) && items.length > 0) {
-                            select.innerHTML = '';
-                            items.forEach(item => {
-                                const o = document.createElement("option");
-                                o.value = item.prompt_type;
-                                o.textContent = item.name || item.prompt_type;
-                                select.appendChild(o);
-                            });
+                        const items = await apiGet("prompts/templates");
+                        if (!Array.isArray(items) || items.length === 0) {
+                            typeSelect.innerHTML = `<option value="0">-- Template --</option>`;
+                            return;
                         }
-                    } catch {}
+                        typeSelect.innerHTML = '';
+                        items.forEach(item => {
+                            const o = document.createElement("option");
+                            o.value = item.id;
+                            o.textContent = item.name || (`Template ${item.id}`);
+                            typeSelect.appendChild(o);
+                        });
+                    } catch {
+                        typeSelect.innerHTML = `<option value="0">-- Template --</option>`;
+                    }
                 }
-                async function refreshIfStale(select, apiPath, cacheKey) {
+                async function refreshTemplatesIfStale() {
                     const now = Date.now();
-                    if (now - (_cache[cacheKey] || 0) < CACHE_TTL) return;
-                    _cache[cacheKey] = now;
-                    const oldVal = select.value;
-                    await populateSelect(select, apiPath);
-                    if (oldVal !== "" && [...select.options].some(o => o.value === oldVal)) select.value = oldVal;
+                    if (now - (_cache.tmpl || 0) < CACHE_TTL) return;
+                    _cache.tmpl = now;
+                    const oldVal = typeSelect.value;
+                    await populateTemplateSelect();
+                    if (oldVal !== "0" && [...typeSelect.options].some(o => o.value === oldVal)) typeSelect.value = oldVal;
                 }
 
                 // Style (droite) — peuplé depuis /api/styles
@@ -250,10 +255,9 @@
                 widget.computeSize = () => [node.size[0] - 20, 110];
 
                 // ---- Initialisation ----
-                populateSelect(typeSelect, "prompts/templates").then(() => {
+                populateTemplateSelect().then(() => {
                     restoreFromNativeWidgets();
                     syncNativeWidgets();
-                    // Retry si les options n'etaient pas encore chargees
                     let ra = 0;
                     function delayedRestore() {
                         restoreFromNativeWidgets();
