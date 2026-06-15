@@ -664,92 +664,202 @@ function kwOpenBulkImport() {
     makeModalDraggable('bi-modal-header', 'bi-modal');
 }
 
+let _bulkParsedLines = null;
+let _bulkFileContent = '';
+
 function closeBulkImport() {
     document.getElementById('modal-bulk-import').classList.add('hidden');
     document.getElementById('modal-bulk-import').classList.remove('flex');
+    document.getElementById('bi-preview').classList.add('hidden');
+    document.getElementById('bi-preview').innerHTML = '';
+    document.getElementById('bi-result').classList.add('hidden');
+    document.getElementById('bi-dropzone-text').textContent = 'Clique pour choisir un fichier';
+    document.getElementById('bi-filename').classList.add('hidden');
+    document.getElementById('bi-filename').textContent = '';
+    document.getElementById('btn-bi-confirm').classList.add('hidden');
+    document.getElementById('bi-file').value = '';
+    _bulkParsedLines = null;
+    _bulkFileContent = '';
 }
 
-function kwCopyAIPrompt() {
-    const prompt = `Tu es un assistant spécialisé dans la conversion de fichiers en mots-clés pour un générateur d\'images IA.
+function kwBulkFileSelected(event) {
+    const file = event.target.files[0];
+    if (!file) return;
 
-J\'ai besoin que tu convertisses mon fichier (Markdown, CSV, JSON, ou texte brut) au format suivant :
+    document.getElementById('bi-filename').textContent = '📄 ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' Ko)';
+    document.getElementById('bi-filename').classList.remove('hidden');
+    document.getElementById('bi-dropzone-text').textContent = 'Clique pour changer de fichier';
+    document.getElementById('bi-result').classList.add('hidden');
 
-\`\`\`
-keyword | description | section_id | subsection_id | nsfw
-\`\`\`
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const text = e.target.result;
+        _bulkFileContent = text;
+        _parseAndShowPreview(text);
+    };
+    reader.onerror = function() {
+        showModal('Erreur', 'Impossible de lire le fichier', 'error');
+    };
+    reader.readAsText(file);
+}
 
-Chaque ligne = un mot-clé. Les champs sont séparés par \`|\` (pipe).
+function _parseAndShowPreview(text) {
+    const previewDiv = document.getElementById('bi-preview');
+    const resultDiv = document.getElementById('bi-result');
+    resultDiv.classList.add('hidden');
 
-**Règles :**
-- \`keyword\` : un identifiant court en snake_case ou kebab-case, en anglais. Ex: \`dragon_fire\`, \`elven_queen\`
-- \`description\` : description détaillée en français (ou anglais), prête à être utilisée dans un prompt. Ex: \"Un dragon rouge crachant du feu, ailes déployées, ciel d\'orage\"
-- \`section_id\` : optionnel. Identifiant numérique de la section (ex: 01, 05)
-- \`subsection_id\` : optionnel. Identifiant de la sous-section (ex: 01.01, 05.02)
-- \`nsfw\` : 0 (SFW) ou 1 (NSFW), optionnel, défaut 0
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+    const parsed = [];
+    const errors = [];
 
-**Exemples valides :**
-\`\`\`
-dragon_fire | Un dragon rouge crachant du feu dans un ciel d\'orage | 05 | 05.02 | 1
-elven_queen | Une reine elfe majestueuse dans une clairière enchantée | 02 | 02.01 | 0
-sunset_beach | Plage au coucher du soleil, vagues douces, ciel orange et rose | 03 | 03.01 | 0
-cyberpunk_city | Rue de ville cyberpunk la nuit, néons, pluie, reflets | 08 | 08.03 | 0
-\`\`\`
+    lines.forEach((line, i) => {
+        const parts = line.split('|').map(p => p.trim());
+        if (parts.length < 2) {
+            errors.push({ line: i + 1, text: line, reason: 'Format invalide : besoin keyword | description au minimum' });
+            return;
+        }
+        const keyword = parts[0];
+        const description = parts[1];
+        const sectionId = parts[2] || '';
+        const subsectionId = parts[3] || '';
+        const nsfw = (parts[4] === '1') ? 1 : 0;
+        if (!keyword || !description) {
+            errors.push({ line: i + 1, text: line, reason: 'keyword ou description vide' });
+            return;
+        }
+        parsed.push({ keyword, description, sectionId, subsectionId, nsfw });
+    });
 
-**Important :**
-1. Conserve le sens original de chaque entrée — ne résume pas, ne coupe pas
-2. Si une entrée n\'a pas de section, laisse les champs vides (ex: \`keyword | description | | | 0\`)
-3. Garde les descriptions riches et détaillées (1-2 phrases), pas de simples tags
-4. Le NSFW doit être 1 si le contenu est explicitement adulte, 0 sinon
-5. Ignore les entrées qui ne sont pas des mots-clés (titres, séparateurs, métadonnées)
-6. Produit UNIQUEMENT le tableau, sans explications ni commentaires avant/après
+    _bulkParsedLines = parsed;
 
-Convertis mon fichier ci-dessous :`;
-
-    navigator.clipboard.writeText(prompt)
-        .then(() => showModal('✅ Copié', 'Le prompt AI a été copié. Colle-le dans Gemini, DeepSeek, Claude, etc. avec ton fichier à convertir.', 'success'))
-        .catch(() => {
-            // Fallback pour contexte non-HTTPS
-            var ta = document.createElement('textarea');
-            ta.value = prompt;
-            ta.style.position = 'fixed';
-            ta.style.left = '-9999px';
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand('copy');
-            document.body.removeChild(ta);
-            showModal('✅ Copié', 'Le prompt AI a été copié. Colle-le dans Gemini, DeepSeek, Claude, etc. avec ton fichier à convertir.', 'success');
+    let html = '';
+    if (parsed.length > 0) {
+        html += '<table class="w-full text-xs border-collapse">';
+        html += '<thead><tr class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">';
+        html += '<th class="px-2 py-1 text-left">Keyword</th><th class="px-2 py-1 text-left">Description</th><th class="px-2 py-1 text-left">Section</th><th class="px-2 py-1 text-left">Sous-section</th><th class="px-2 py-1 text-center">NSFW</th>';
+        html += '</tr></thead><tbody>';
+        parsed.forEach(p => {
+            const nsfwBadge = p.nsfw ? '<span class="text-rose-500">⚠️ NSFW</span>' : '<span class="text-slate-400">SFW</span>';
+            html += '<tr class="border-b border-slate-100 dark:border-slate-700">';
+            html += '<td class="px-2 py-1 font-medium text-slate-800 dark:text-slate-200">' + esc(p.keyword) + '</td>';
+            html += '<td class="px-2 py-1 text-slate-500 max-w-[200px] truncate">' + esc(p.description) + '</td>';
+            html += '<td class="px-2 py-1 text-slate-400">' + esc(p.sectionId) + '</td>';
+            html += '<td class="px-2 py-1 text-slate-400">' + esc(p.subsectionId) + '</td>';
+            html += '<td class="px-2 py-1 text-center">' + nsfwBadge + '</td>';
+            html += '</tr>';
         });
+        html += '</tbody></table>';
+    }
+    if (errors.length > 0) {
+        html += '<div class="mt-2 p-2 bg-rose-50 dark:bg-rose-900/30 rounded border border-rose-200 dark:border-rose-800">';
+        html += '<p class="text-rose-600 dark:text-rose-400 font-medium mb-1">⚠️ ' + errors.length + ' erreur(s) de parsing :</p>';
+        errors.forEach(e => {
+            html += '<p class="text-rose-500 text-[10px]">Ligne ' + e.line + ' : ' + esc(e.reason) + '</p>';
+            html += '<code class="text-rose-400 text-[10px] block ml-2">' + esc(e.text.substring(0, 80)) + '</code>';
+        });
+        html += '</div>';
+    }
+
+    html = '<div class="px-2 py-1.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 text-xs font-medium">'
+        + '✅ ' + parsed.length + ' ligne(s) valide(s)'
+        + (errors.length > 0 ? ' · ⚠️ ' + errors.length + ' erreur(s)' : '')
+        + '</div>'
+        + html;
+
+    previewDiv.innerHTML = html;
+    previewDiv.classList.remove('hidden');
+
+    document.getElementById('btn-bi-confirm').classList.remove('hidden');
 }
 
-async function doBulkImport() {
-    const text = document.getElementById('bi-text').value.trim();
-    const privacy = document.getElementById('bi-privacy').value;
-    if (!text) {
-        showModal('Erreur', 'Colle le texte à importer', 'error');
+async function kwBulkConfirm() {
+    if (!_bulkFileContent) {
+        showModal('Erreur', 'Sélectionne d\'abord un fichier', 'error');
         return;
     }
+    const privacy = document.getElementById('bi-privacy').value;
+
     try {
         const res = await fetch(API + '/keywords/bulk', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({text, privacy_status: privacy})
+            body: JSON.stringify({text: _bulkFileContent, privacy_status: privacy})
         });
         const data = await safeJson(res);
         const resultDiv = document.getElementById('bi-result');
         resultDiv.classList.remove('hidden');
         if (res.ok) {
             resultDiv.className = 'text-xs p-2 rounded border border-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300';
-            resultDiv.innerHTML = '✅ ' + data.message;
+            resultDiv.innerHTML = '✅ <b>' + data.message + '</b>';
             if (data.errors && data.errors.length > 0) {
                 resultDiv.innerHTML += '<br><br><b>Erreurs :</b><br>' + data.errors.slice(0, 10).join('<br>');
             }
             kwLoadList();
+            setTimeout(() => closeBulkImport(), 3000);
         } else {
             resultDiv.className = 'text-xs p-2 rounded border border-rose-300 bg-rose-50 dark:bg-rose-900/30 dark:border-rose-700 text-rose-800 dark:text-rose-300';
             resultDiv.innerHTML = '❌ ' + (data.error || 'Erreur inconnue');
         }
     } catch (e) {
         showModal('Erreur', e.message, 'error');
+    }
+}
+
+// ── Scan des doublons ─────────────────────────────────────────
+
+async function kwOpenDuplicateScan() {
+    showModal('🔍 Scan en cours', 'Analyse de la base à la recherche de doublons...', 'info');
+
+    try {
+        const res = await fetch(API + '/keywords/scan-duplicates');
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showModal('Erreur', data.error || 'Erreur de scan', 'error');
+            return;
+        }
+
+        let html = '';
+
+        // Stats
+        html += '<div class="text-xs mb-3">';
+        html += '<p>🔍 <b>' + data.exact_count + '</b> groupe(s) de doublons exacts trouvés';
+        if (data.semantic_count > 0) {
+            html += ' · <b>' + data.semantic_count + '</b> groupe(s) de doublons sémantiques (≥85%)';
+        }
+        html += '</p></div>';
+
+        if (data.exact_count === 0 && data.semantic_count === 0) {
+            html = '<p class="text-emerald-600 dark:text-emerald-400 text-sm">✅ Aucun doublon trouvé dans la base !</p>';
+        } else {
+            // Exact duplicates
+            if (data.exact_duplicates && data.exact_duplicates.length > 0) {
+                html += '<h4 class="text-xs font-semibold text-rose-600 dark:text-rose-400 mb-1">⚠️ Doublons exacts</h4>';
+                data.exact_duplicates.forEach(g => {
+                    html += '<div class="mb-1.5 p-1.5 bg-rose-50 dark:bg-rose-900/20 rounded border border-rose-200 dark:border-rose-800 text-xs">';
+                    html += '<span class="font-medium">' + esc(g.normalized) + '</span> ×' + g.count;
+                    html += '<div class="text-slate-500">' + g.keywords.map(k => esc(k)).join(' · ') + '</div>';
+                    html += '</div>';
+                });
+            }
+
+            // Semantic duplicates
+            if (data.semantic_groups && data.semantic_groups.length > 0) {
+                html += '<h4 class="text-xs font-semibold text-amber-600 dark:text-amber-400 mb-1 mt-3">🔍 Doublons sémantiques (≥85%)</h4>';
+                data.semantic_groups.forEach(group => {
+                    html += '<div class="mb-1.5 p-1.5 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-800 text-xs">';
+                    group.forEach((item, idx) => {
+                        const simPct = (item.similarity * 100).toFixed(0);
+                        const label = idx === 0 ? '🎯 Référence' : '🔗 ' + simPct + '% similaire';
+                        html += '<div>' + label + ' : <b>' + esc(item.keyword) + '</b> <span class="text-slate-400">' + esc(item.description.substring(0, 60)) + '</span></div>';
+                    });
+                    html += '</div>';
+                });
+            }
+        }
+
+        showModal('🔍 Résultat du scan des doublons', html, data.exact_count > 0 ? 'warning' : 'success');
+    } catch (e) {
+        showModal('Erreur', e.message || 'Erreur de scan', 'error');
     }
 }
 

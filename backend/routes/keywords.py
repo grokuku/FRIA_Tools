@@ -541,6 +541,105 @@ def check_keyword_duplicates():
     })
 
 
+@app.route('/api/keywords/scan-duplicates', methods=['GET'])
+def scan_keyword_duplicates():
+    """Scan complet de la base : trouve tous les doublons exacts et sémantiques."""
+    guard = _login_required()
+    if guard:
+        return guard
+
+    user_id = _get_current_user_id()
+    privacy_where, privacy_params = _privacy_filter(user_id)
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # 1. Exact duplicates (même mot, casse insensible)
+    cur.execute(f"""
+        SELECT LOWER(keyword) as kw_lower, GROUP_CONCAT(id) as ids,
+               GROUP_CONCAT(keyword) as keywords,
+               COUNT(*) as cnt
+        FROM keywords
+        WHERE {privacy_where}
+        GROUP BY LOWER(keyword)
+        HAVING COUNT(*) > 1
+        ORDER BY cnt DESC
+    """, privacy_params)
+    exact_duplicates = []
+    for r in cur.fetchall():
+        ids = [int(x) for x in r['ids'].split(',')]
+        kws = r['keywords'].split(',')
+        exact_duplicates.append({
+            'normalized': r['kw_lower'],
+            'count': r['cnt'],
+            'ids': ids,
+            'keywords': kws,
+        })
+
+    # 2. Semantic duplicates : pour chaque keyword, trouver les similaires
+    # On charge les embeddings et on compare par paires
+    semantic_groups = []
+    try:
+        from embeddings import generate_embedding, cosine_similarity
+        cur.execute(f"""
+            SELECT k.id, k.keyword, k.description, k.privacy_status, ke.embedding
+            FROM keywords k
+            JOIN keyword_embeddings ke ON ke.keyword_id = k.id
+            WHERE {privacy_where}
+        """, privacy_params)
+        rows = cur.fetchall()
+        # Construire des groupes par similarite
+        visited = set()
+        threshold = 0.85
+        for i, r1 in enumerate(rows):
+            if r1['id'] in visited:
+                continue
+            try:
+                v1 = json.loads(r1['embedding'])
+            except Exception:
+                continue
+            group = [{
+                'id': r1['id'],
+                'keyword': r1['keyword'],
+                'description': r1['description'],
+                'privacy_status': r1['privacy_status'],
+                'similarity': 1.0,
+            }]
+            visited.add(r1['id'])
+            for j, r2 in enumerate(rows):
+                if j <= i or r2['id'] in visited:
+                    continue
+                try:
+                    v2 = json.loads(r2['embedding'])
+                    sim = cosine_similarity(v1, v2)
+                    if sim >= threshold:
+                        group.append({
+                            'id': r2['id'],
+                            'keyword': r2['keyword'],
+                            'description': r2['description'],
+                            'privacy_status': r2['privacy_status'],
+                            'similarity': round(sim, 4),
+                        })
+                        visited.add(r2['id'])
+                except Exception:
+                    continue
+            if len(group) > 1:
+                group.sort(key=lambda x: x['similarity'], reverse=True)
+                semantic_groups.append(group)
+        semantic_groups.sort(key=lambda g: len(g), reverse=True)
+    except Exception as e:
+        print(f"[scan_keyword_duplicates] Erreur semantique: {e}")
+
+    conn.close()
+    return jsonify({
+        'exact_duplicates': exact_duplicates,
+        'semantic_groups': semantic_groups,
+        'exact_count': len(exact_duplicates),
+        'semantic_count': len(semantic_groups),
+        'total_duplicates': sum(g['count'] for g in exact_duplicates) + sum(len(g) for g in semantic_groups),
+    })
+
+
 # ── Sections / Subsections / Stats (avec filtre privacy) ──────────
 
 @app.route('/api/subsections', methods=['GET'])
