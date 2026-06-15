@@ -666,6 +666,8 @@ function kwOpenBulkImport() {
 
 let _bulkParsedLines = null;
 let _bulkFileContent = '';
+let _bulkRowIdCounter = 0;
+let _bulkExistingSet = null; // Set of LOWER(keyword) from DB
 
 function closeBulkImport() {
     document.getElementById('modal-bulk-import').classList.add('hidden');
@@ -680,6 +682,7 @@ function closeBulkImport() {
     document.getElementById('bi-file').value = '';
     _bulkParsedLines = null;
     _bulkFileContent = '';
+    _bulkExistingSet = null;
 }
 
 function kwBulkFileSelected(event) {
@@ -707,10 +710,13 @@ function _parseAndShowPreview(text) {
     const previewDiv = document.getElementById('bi-preview');
     const resultDiv = document.getElementById('bi-result');
     resultDiv.classList.add('hidden');
+    _bulkExistingSet = null; // Reset duplicate cache
 
     const lines = text.split('\n').map(l => l.trim()).filter(l => l);
-    const parsed = [];
+    const rows = [];
     const errors = [];
+
+    _bulkRowIdCounter = 0;
 
     lines.forEach((line, i) => {
         const parts = line.split('|').map(p => p.trim());
@@ -727,63 +733,269 @@ function _parseAndShowPreview(text) {
             errors.push({ line: i + 1, text: line, reason: 'keyword ou description vide' });
             return;
         }
-        parsed.push({ keyword, description, sectionId, subsectionId, nsfw });
+        rows.push({
+            id: ++_bulkRowIdCounter,
+            keyword, description, sectionId, subsectionId, nsfw,
+        });
     });
 
-    _bulkParsedLines = parsed;
+    _bulkParsedLines = rows;
 
-    let html = '';
-    if (parsed.length > 0) {
-        html += '<table class="w-full text-xs border-collapse">';
-        html += '<thead><tr class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">';
-        html += '<th class="px-2 py-1 text-left">Keyword</th><th class="px-2 py-1 text-left">Description</th><th class="px-2 py-1 text-left">Section</th><th class="px-2 py-1 text-left">Sous-section</th><th class="px-2 py-1 text-center">NSFW</th>';
-        html += '</tr></thead><tbody>';
-        parsed.forEach(p => {
-            const nsfwBadge = p.nsfw ? '<span class="text-rose-500">⚠️ NSFW</span>' : '<span class="text-slate-400">SFW</span>';
-            html += '<tr class="border-b border-slate-100 dark:border-slate-700">';
-            html += '<td class="px-2 py-1 font-medium text-slate-800 dark:text-slate-200">' + esc(p.keyword) + '</td>';
-            html += '<td class="px-2 py-1 text-slate-500 max-w-[200px] truncate">' + esc(p.description) + '</td>';
-            html += '<td class="px-2 py-1 text-slate-400">' + esc(p.sectionId) + '</td>';
-            html += '<td class="px-2 py-1 text-slate-400">' + esc(p.subsectionId) + '</td>';
-            html += '<td class="px-2 py-1 text-center">' + nsfwBadge + '</td>';
-            html += '</tr>';
-        });
-        html += '</tbody></table>';
-    }
-    if (errors.length > 0) {
-        html += '<div class="mt-2 p-2 bg-rose-50 dark:bg-rose-900/30 rounded border border-rose-200 dark:border-rose-800">';
-        html += '<p class="text-rose-600 dark:text-rose-400 font-medium mb-1">⚠️ ' + errors.length + ' erreur(s) de parsing :</p>';
-        errors.forEach(e => {
-            html += '<p class="text-rose-500 text-[10px]">Ligne ' + e.line + ' : ' + esc(e.reason) + '</p>';
-            html += '<code class="text-rose-400 text-[10px] block ml-2">' + esc(e.text.substring(0, 80)) + '</code>';
-        });
-        html += '</div>';
-    }
-
-    html = '<div class="px-2 py-1.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 text-xs font-medium">'
-        + '✅ ' + parsed.length + ' ligne(s) valide(s)'
-        + (errors.length > 0 ? ' · ⚠️ ' + errors.length + ' erreur(s)' : '')
-        + '</div>'
-        + html;
-
-    previewDiv.innerHTML = html;
+    // Construire le DOM
+    previewDiv.innerHTML = '';
     previewDiv.classList.remove('hidden');
+
+    // Barre d'actions
+    const toolbar = document.createElement('div');
+    toolbar.className = 'px-2 py-1.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 text-xs font-medium flex items-center gap-2';
+    toolbar.innerHTML = '<span>✅ <span id="bi-valid-count">' + rows.length + '</span> ligne(s) valide(s)'
+        + (errors.length > 0 ? ' · ⚠️ ' + errors.length + ' erreur(s)' : '')
+        + '</span>';
+    const dupBtn = document.createElement('button');
+    dupBtn.textContent = '🔍 Vérifier doublons';
+    dupBtn.className = 'ml-auto px-2 py-0.5 text-xs bg-amber-500 text-white rounded hover:bg-amber-400 transition';
+    dupBtn.onclick = _bulkCheckDuplicates;
+    toolbar.appendChild(dupBtn);
+    previewDiv.appendChild(toolbar);
+
+    // Erreurs de parsing
+    if (errors.length > 0) {
+        const errDiv = document.createElement('div');
+        errDiv.className = 'mt-2 p-2 bg-rose-50 dark:bg-rose-900/30 rounded border border-rose-200 dark:border-rose-800 text-xs';
+        errDiv.innerHTML = '<p class="text-rose-600 dark:text-rose-400 font-medium mb-1">⚠️ ' + errors.length + ' erreur(s) de parsing :</p>';
+        errors.forEach(e => {
+            const p = document.createElement('p');
+            p.className = 'text-rose-500 text-[10px]';
+            p.textContent = 'Ligne ' + e.line + ' : ' + e.reason;
+            errDiv.appendChild(p);
+            const code = document.createElement('code');
+            code.className = 'text-rose-400 text-[10px] block ml-2';
+            code.textContent = e.text.substring(0, 80);
+            errDiv.appendChild(code);
+        });
+        previewDiv.appendChild(errDiv);
+    }
+
+    // Tableau editable
+    if (rows.length > 0) {
+        const table = document.createElement('table');
+        table.className = 'w-full text-xs border-collapse mt-2';
+        table.innerHTML = '<thead><tr class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">'
+            + '<th class="px-1 py-1 text-center w-6"></th>'
+            + '<th class="px-2 py-1 text-left">Keyword</th>'
+            + '<th class="px-2 py-1 text-left">Description</th>'
+            + '<th class="px-2 py-1 text-left w-16">Section</th>'
+            + '<th class="px-2 py-1 text-left w-20">Sous-section</th>'
+            + '<th class="px-2 py-1 text-center w-12">NSFW</th>'
+            + '<th class="px-1 py-1 text-center w-6"></th>'
+            + '</tr></thead>';
+        const tbody = document.createElement('tbody');
+
+        rows.forEach(r => {
+            const tr = document.createElement('tr');
+            tr.id = 'bi-row-' + r.id;
+            tr.className = 'border-b border-slate-100 dark:border-slate-700';
+            tr.dataset.id = r.id;
+
+            // Checkbox
+            const tdCheck = document.createElement('td');
+            tdCheck.className = 'px-1 py-1 text-center';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = true;
+            cb.className = 'bi-row-cb';
+            cb.dataset.rowId = r.id;
+            cb.onchange = _bulkUpdateCount;
+            tdCheck.appendChild(cb);
+
+            // Keyword (editable)
+            const tdKw = document.createElement('td');
+            tdKw.className = 'px-2 py-1';
+            const kwInput = document.createElement('input');
+            kwInput.type = 'text';
+            kwInput.value = r.keyword;
+            kwInput.className = 'w-full px-1 py-0.5 text-xs border border-slate-200 dark:border-slate-600 rounded bg-transparent dark:text-slate-200';
+            kwInput.dataset.rowId = r.id;
+            kwInput.dataset.field = 'keyword';
+            kwInput.oninput = _bulkUpdateRow;
+            tdKw.appendChild(kwInput);
+
+            // Description (editable)
+            const tdDesc = document.createElement('td');
+            tdDesc.className = 'px-2 py-1';
+            const descInput = document.createElement('input');
+            descInput.type = 'text';
+            descInput.value = r.description;
+            descInput.className = 'w-full px-1 py-0.5 text-xs border border-slate-200 dark:border-slate-600 rounded bg-transparent dark:text-slate-200';
+            descInput.dataset.rowId = r.id;
+            descInput.dataset.field = 'description';
+            descInput.oninput = _bulkUpdateRow;
+            tdDesc.appendChild(descInput);
+
+            // Section
+            const tdSec = document.createElement('td');
+            tdSec.className = 'px-2 py-1';
+            const secInput = document.createElement('input');
+            secInput.type = 'text';
+            secInput.value = r.sectionId;
+            secInput.className = 'w-full px-1 py-0.5 text-xs border border-slate-200 dark:border-slate-600 rounded bg-transparent dark:text-slate-200';
+            secInput.dataset.rowId = r.id;
+            secInput.dataset.field = 'sectionId';
+            secInput.oninput = _bulkUpdateRow;
+            tdSec.appendChild(secInput);
+
+            // Subsection
+            const tdSub = document.createElement('td');
+            tdSub.className = 'px-2 py-1';
+            const subInput = document.createElement('input');
+            subInput.type = 'text';
+            subInput.value = r.subsectionId;
+            subInput.className = 'w-full px-1 py-0.5 text-xs border border-slate-200 dark:border-slate-600 rounded bg-transparent dark:text-slate-200';
+            subInput.dataset.rowId = r.id;
+            subInput.dataset.field = 'subsectionId';
+            subInput.oninput = _bulkUpdateRow;
+            tdSub.appendChild(subInput);
+
+            // NSFW toggle
+            const tdNsfw = document.createElement('td');
+            tdNsfw.className = 'px-2 py-1 text-center';
+            const nsCb = document.createElement('input');
+            nsCb.type = 'checkbox';
+            nsCb.checked = !!r.nsfw;
+            nsCb.className = 'bi-row-nsfw';
+            nsCb.dataset.rowId = r.id;
+            nsCb.onchange = _bulkUpdateRow;
+            tdNsfw.appendChild(nsCb);
+
+            // Delete button
+            const tdDel = document.createElement('td');
+            tdDel.className = 'px-1 py-1 text-center';
+            const delBtn = document.createElement('button');
+            delBtn.textContent = '×';
+            delBtn.className = 'text-rose-400 hover:text-rose-600 text-xs font-bold px-1';
+            delBtn.title = 'Supprimer cette ligne';
+            delBtn.onclick = function() { _bulkDeleteRow(r.id); };
+            tdDel.appendChild(delBtn);
+
+            tr.append(tdCheck, tdKw, tdDesc, tdSec, tdSub, tdNsfw, tdDel);
+            tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        previewDiv.appendChild(table);
+    }
 
     document.getElementById('btn-bi-confirm').classList.remove('hidden');
 }
 
+function _bulkUpdateCount() {
+    const cbs = document.querySelectorAll('.bi-row-cb');
+    const checked = Array.from(cbs).filter(cb => cb.checked).length;
+    document.getElementById('bi-valid-count').textContent = checked;
+}
+
+function _bulkUpdateRow(e) {
+    const input = e.target;
+    const id = parseInt(input.dataset.rowId);
+    const field = input.dataset.field;
+    const row = _bulkParsedLines.find(r => r.id === id);
+    if (row) {
+        if (field === 'nsfw') {
+            row.nsfw = input.checked ? 1 : 0;
+        } else {
+            row[field] = input.value;
+        }
+        // Si le keyword change, invalider le cache doublon
+        if (field === 'keyword') {
+            const tr = document.getElementById('bi-row-' + id);
+            if (tr) tr.classList.remove('bg-rose-100', 'dark:bg-rose-900/30', 'line-through', 'opacity-60');
+            const cb = tr?.querySelector('.bi-row-cb');
+            if (cb) cb.disabled = false;
+            _bulkExistingSet = null; // Invalider le cache
+        }
+    }
+}
+
+function _bulkDeleteRow(id) {
+    _bulkParsedLines = _bulkParsedLines.filter(r => r.id !== id);
+    const tr = document.getElementById('bi-row-' + id);
+    if (tr) tr.remove();
+    _bulkUpdateCount();
+}
+
+async function _bulkCheckDuplicates() {
+    const dupBtn = document.querySelector('#bi-preview button');
+    if (dupBtn) dupBtn.textContent = '🔍 Vérification...';
+
+    try {
+        // Charger les keywords existants
+        const res = await fetch(API + '/keywords?scope=public&limit=5000');
+        const existing = await safeJson(res);
+        if (!Array.isArray(existing)) return;
+
+        _bulkExistingSet = new Set(existing.map(kw => kw.keyword.toLowerCase()));
+
+        let dupCount = 0;
+        _bulkParsedLines.forEach(r => {
+            const tr = document.getElementById('bi-row-' + r.id);
+            if (!tr) return;
+            const cb = tr.querySelector('.bi-row-cb');
+            if (_bulkExistingSet.has(r.keyword.toLowerCase())) {
+                tr.classList.add('bg-rose-100', 'dark:bg-rose-900/30', 'line-through', 'opacity-60');
+                if (cb) {
+                    cb.checked = false;
+                    cb.disabled = true;
+                }
+                dupCount++;
+            } else {
+                tr.classList.remove('bg-rose-100', 'dark:bg-rose-900/30', 'line-through', 'opacity-60');
+                if (cb) cb.disabled = false;
+            }
+        });
+
+        _bulkUpdateCount();
+        if (dupBtn) dupBtn.textContent = '🔍 Vérifier doublons';
+        showModal('Résultat', dupCount > 0
+            ? '⚠️ ' + dupCount + ' doublon(s) trouvé(s) et désactivé(s). Vérifie et confirme si nécessaire.'
+            : '✅ Aucun doublon trouvé !',
+            dupCount > 0 ? 'warning' : 'success');
+    } catch (e) {
+        if (dupBtn) dupBtn.textContent = '🔍 Vérifier doublons';
+        showModal('Erreur', e.message || 'Erreur de vérification', 'error');
+    }
+}
+
 async function kwBulkConfirm() {
-    if (!_bulkFileContent) {
+    if (!_bulkParsedLines || _bulkParsedLines.length === 0) {
         showModal('Erreur', 'Sélectionne d\'abord un fichier', 'error');
         return;
     }
+
+    // Reconstruire le texte à partir des données éditées
+    const selectedRows = _bulkParsedLines.filter(r => {
+        const tr = document.getElementById('bi-row-' + r.id);
+        if (!tr) return false;
+        const cb = tr.querySelector('.bi-row-cb');
+        return cb && cb.checked;
+    });
+
+    if (selectedRows.length === 0) {
+        showModal('Erreur', 'Aucune ligne sélectionnée pour l\'import', 'error');
+        return;
+    }
+
+    // Reconstruire le format texte
+    const text = selectedRows.map(r =>
+        r.keyword + ' | ' + r.description + ' | ' + r.sectionId + ' | ' + r.subsectionId + ' | ' + r.nsfw
+    ).join('\n');
+
     const privacy = document.getElementById('bi-privacy').value;
 
     try {
         const res = await fetch(API + '/keywords/bulk', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({text: _bulkFileContent, privacy_status: privacy})
+            body: JSON.stringify({text, privacy_status: privacy})
         });
         const data = await safeJson(res);
         const resultDiv = document.getElementById('bi-result');

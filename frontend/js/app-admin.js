@@ -268,7 +268,7 @@
         }
         body.innerHTML = '<div class="space-y-3">'
           + '<div class="text-center">' + avatarHtml + '</div>'
-          + '<div class="text-center text-xs text-slate-500">' + (m.role === 'admin' ? 'Admin' : 'Membre') + '</div>'
+          + '<div class="text-center text-xs text-slate-500">' + (m.role === 'admin' ? 'Admin' : m.role === 'kw_editor' ? 'KW Editor' : 'Membre') + '</div>'
           + statsHtml
           + (favHtml ? '<hr class="border-slate-200 dark:border-slate-700">' + favHtml : '')
           + '<hr class="border-slate-200 dark:border-slate-700">'
@@ -358,7 +358,9 @@
             : '<span class="w-6 h-6 rounded-full bg-slate-500 inline-flex items-center justify-center text-xs text-white">' + escapeHtml((u.display_name || u.username)[0]) + '</span>';
           var badge = u.role === 'admin'
             ? '<span class="text-xs px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-300">admin</span>'
-            : '<span class="text-xs px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400">user</span>';
+            : u.role === 'kw_editor'
+              ? '<span class="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300">kw_editor</span>'
+              : '<span class="text-xs px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400">user</span>';
           return '<div class="flex items-center gap-2.5 p-2 rounded bg-slate-50 dark:bg-slate-700/30 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition" onclick="openMemberDetail(\'' + u.id + '\')">'
             + avatar + ' '
             + '<span class="flex-1 text-sm text-slate-700 dark:text-slate-300">' + escapeHtml(u.display_name || u.username) + '</span>'
@@ -385,15 +387,22 @@
           var isYou = currentUser && u.id === currentUser.id;
           var badge = u.role === 'admin'
             ? '<span class="text-xs px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-300">admin</span>'
-            : '<span class="text-xs px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400">user</span>';
+            : u.role === 'kw_editor'
+              ? '<span class="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300">kw_editor</span>'
+              : '<span class="text-xs px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400">user</span>';
           var avatar = u.avatar
             ? '<img src="https://cdn.discordapp.com/avatars/' + u.id + '/' + u.avatar + '.png?size=32" class="w-6 h-6 rounded-full inline-block">'
             : '<span class="w-6 h-6 rounded-full bg-slate-500 inline-flex items-center justify-center text-xs text-white">' + escapeHtml((u.display_name || u.username)[0]) + '</span>';
           var actions = '';
           if (u.role === 'user') {
-            actions += '<button class="text-xs text-indigo-500 hover:text-indigo-400 transition" onclick="changeRole(\'' + u.id + '\',\'admin\')">Promouvoir</button>';
+            actions += '<button class="text-xs text-amber-500 hover:text-amber-400 transition" onclick="changeRole(\'' + u.id + '\',\'kw_editor\')">+ KW Editor</button> ';
+            actions += '<button class="text-xs text-indigo-500 hover:text-indigo-400 transition" onclick="changeRole(\'' + u.id + '\',\'admin\')">+ Admin</button>';
+          } else if (u.role === 'kw_editor') {
+            actions += '<button class="text-xs text-indigo-500 hover:text-indigo-400 transition" onclick="changeRole(\'' + u.id + '\',\'admin\')">+ Admin</button> ';
+            if (!isYou) actions += '<button class="text-xs text-amber-500 hover:text-amber-400 transition" onclick="changeRole(\'' + u.id + '\',\'user\')">- KW Editor</button>';
           } else if (!isYou) {
-            actions += '<button class="text-xs text-amber-500 hover:text-amber-400 transition" onclick="changeRole(\'' + u.id + '\',\'user\')">Retrograder</button>';
+            actions += '<button class="text-xs text-amber-500 hover:text-amber-400 transition" onclick="changeRole(\'' + u.id + '\',\'kw_editor\')">Rétrograder (KW Editor)</button> ';
+            actions += '<button class="text-xs text-rose-500 hover:text-rose-400 transition" onclick="changeRole(\'' + u.id + '\',\'user\')">Rétrograder (user)</button>';
           }
           if (!isYou) {
             actions += ' <button class="text-xs text-rose-500 hover:text-rose-400 transition" onclick="deleteUser(\'' + u.id + '\')">Supprimer</button>';

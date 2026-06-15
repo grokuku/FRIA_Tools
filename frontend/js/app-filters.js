@@ -159,7 +159,7 @@
       switchSettingsTab('provider', providerBtn || m.querySelector('.tab-btn'));
       loadPresets();
       loadApiKeySettings();
-      if (currentUser && currentUser.role === 'admin') {
+      if (currentUser && (currentUser.role === 'admin' || currentUser.role === 'kw_editor')) {
         document.getElementById('preset-global-label').style.display = '';
       }
     }
@@ -207,7 +207,7 @@
           var name = s.name || '?';
           var author = s.owner_name || '?';
           var pub = s.is_public ? ' 🌐' : ' 🔒';
-          var canEdit = s.user_id === (currentUser ? currentUser.id : '') || (currentUser && currentUser.role === 'admin' && !s.user_id);
+          var canEdit = s.user_id === (currentUser ? currentUser.id : '') || (currentUser && (currentUser.role === 'admin' || currentUser.role === 'kw_editor') && !s.user_id);
           var canClone = canEdit || (s.is_public && currentUser && s.user_id !== currentUser.id);
           html += '<div class="fria-style-row flex flex-col px-2 py-1.5 rounded-md bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-700' +
             (canEdit || canClone ? ' cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700' : '') +
@@ -282,7 +282,7 @@
       if (!presets.length) { el.innerHTML = '<p class="text-xs text-slate-400">Aucun preset. Creez-en un !</p>'; return; }
       var html = '';
       presets.forEach(function(p) {
-        var canEdit = (!p.is_global && p.user_id === (currentUser ? currentUser.id : '')) || (currentUser && currentUser.role === 'admin');
+        var canEdit = (!p.is_global && p.user_id === (currentUser ? currentUser.id : '')) || (currentUser && (currentUser.role === 'admin' || currentUser.role === 'kw_editor'));
         html += '<div class="flex items-center justify-between py-1 px-2 rounded text-xs ' + (p.is_global ? 'bg-indigo-50 dark:bg-indigo-900/20' : 'bg-slate-50 dark:bg-slate-800/50') + '">';
         html += '<div><span class="font-medium text-slate-700 dark:text-slate-200">' + p.name + '</span>';
         if (p.is_global) html += ' <span class="text-indigo-500">🌐 global</span>';
