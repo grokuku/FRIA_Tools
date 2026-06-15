@@ -33,7 +33,7 @@ def ideogram_prep():
     data = request.get_json() or {}
 
     # Forcer validation_passes=0 (le client gere la passe 2)
-    # prompt_type reste celui envoye par le client (template selectionne)
+    # template_id reste celui envoye par le client (template selectionne)
     data['validation_passes'] = 0
 
     import logging
@@ -82,7 +82,7 @@ def ideogram_prep():
             'model': prepared['model'],
         })
     except Exception as e:
-        logging.exception(f"[ideogram/prep] ERROR user={user_id} prompt_type={data.get('prompt_type')} width={data.get('width')} height={data.get('height')}")
+        logging.exception(f"[ideogram/prep] ERROR user={user_id} template_id={data.get('template_id')} width={data.get('width')} height={data.get('height')}")
         return jsonify({'error': f'Erreur serveur: {e}'}), 500
 
 

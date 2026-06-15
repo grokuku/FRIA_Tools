@@ -28,7 +28,7 @@ class FRIAEnhanceNode:
             "required": {
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
                 "base_prompt": ("STRING", {"multiline": True, "default": ""}),
-                "prompt_type": ("STRING", {"default": "sdxl"}),
+                "template_id": ("INT", {"default": 0, "min": 0}),
                 "preset_id": ("INT", {"default": 0, "min": 0}),
                 "style_id": ("INT", {"default": 0, "min": 0}),
                 "special_instructions": ("STRING", {"default": ""}),
@@ -42,7 +42,7 @@ class FRIAEnhanceNode:
     RETURN_TYPES = ("STRING", "STRING")
     RETURN_NAMES = ("prompt", "negative_prompt")
 
-    def enhance(self, seed=0, base_prompt="", prompt_type="sdxl",
+    def enhance(self, seed=0, base_prompt="", template_id=0,
                 preset_id=0, style_id=0, special_instructions="",
                 elements="[]"):
         # api_key et api_url lus depuis le fichier de credentials
@@ -81,7 +81,7 @@ class FRIAEnhanceNode:
         payload = {
             "text": combined_text,
             "seed": seed if seed > 0 else None,
-            "prompt_type": prompt_type,
+            "template_id": template_id if template_id > 0 else None,
             "preset_id": preset_id if preset_id > 0 else None,
             "style_id": style_id if style_id > 0 else None,
             "special_instructions": special_instructions,

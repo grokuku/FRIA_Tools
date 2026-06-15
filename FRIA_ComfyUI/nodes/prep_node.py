@@ -19,7 +19,7 @@ de widgets).
 Entrées :
   - seed (INT)
   - base_prompt (STRING multiligne)
-  - prompt_type (STRING)
+  - template_id (INT)
   - style_id (INT, widget natif ou piloté par le DOM widget)
   - special_instructions (STRING)
   - elements (STRING, optionnel) — JSON du Elements Picker
@@ -47,7 +47,7 @@ class FRIAPromptPrepNode:
             "required": {
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
                 "base_prompt": ("STRING", {"multiline": True, "default": ""}),
-                "prompt_type": ("STRING", {"default": "sdxl"}),
+                "template_id": ("INT", {"default": 0, "min": 0}),
                 "style_id": ("INT", {"default": 0, "min": 0}),
                 "special_instructions": ("STRING", {"default": ""}),
             },
@@ -60,7 +60,7 @@ class FRIAPromptPrepNode:
     RETURN_TYPES = ("STRING", "STRING", "STRING")
     RETURN_NAMES = ("llm_prompt", "system_prompt", "neg_prompt")
 
-    def prepare(self, seed=0, base_prompt="", prompt_type="sdxl",
+    def prepare(self, seed=0, base_prompt="", template_id=0,
                 style_id=0, special_instructions="", elements="[]"):
         # api_key et api_url lus depuis le fichier de credentials
         api_url = _credentials.get_api_url()
@@ -100,7 +100,7 @@ class FRIAPromptPrepNode:
         payload = {
             "text": combined_text,
             "seed": seed if seed > 0 else None,
-            "prompt_type": prompt_type,
+            "template_id": template_id if template_id > 0 else None,
             "style_id": style_id if style_id > 0 else None,
             "special_instructions": special_instructions,
         }
@@ -122,7 +122,7 @@ class FRIAPromptPrepNode:
             neg_prompt = data.get("neg_prompt", "")
 
             logging.warning(
-                f"[FR.IA Prep] prompt_type={prompt_type} style_id={style_id} "
+                f"[FR.IA Prep] template_id={template_id} style_id={style_id} "
                 f"model='{data.get('model', '?')}' "
                 f"sys_len={len(system_prompt)} user_len={len(llm_prompt)} neg_len={len(neg_prompt)}"
             )

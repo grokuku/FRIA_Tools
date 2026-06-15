@@ -52,7 +52,7 @@ class FRIAIdeogramPrepNode:
                 "element_4": ("STRING", {"default": ""}),
                 "special_instructions": ("STRING", {"default": ""}),
                 "style_id": ("INT", {"default": 0, "min": 0}),
-                "prompt_type": ("STRING", {"default": "ideogram4"}),
+                "template_id": ("INT", {"default": 0, "min": 0}),
             },
         }
 
@@ -61,9 +61,9 @@ class FRIAIdeogramPrepNode:
 
     def prepare(self, seed=0, width=1024, height=1024, description="",
                 element_1="", element_2="", element_3="", element_4="",
-                special_instructions="", style_id=0, prompt_type="ideogram4"):
+                special_instructions="", style_id=0, template_id=0):
         import logging as _log
-        _log.warning(f"[FR.IA Ideogram Prep PYTHON] prompt_type='{prompt_type}' (type={type(prompt_type).__name__}) style_id={style_id}")
+        _log.warning(f"[FR.IA Ideogram Prep PYTHON] template_id={template_id} style_id={style_id}")
         # api_key et api_url lus depuis le fichier de credentials
         api_url = _credentials.get_api_url()
         api_key = _credentials.get_api_key()
@@ -78,7 +78,7 @@ class FRIAIdeogramPrepNode:
         payload = {
             "text": description.strip(),
             "seed": seed if seed > 0 else None,
-            "prompt_type": prompt_type,
+            "template_id": template_id if template_id > 0 else None,
             "width": width,
             "height": height,
             "ep_elements": ep_elements,

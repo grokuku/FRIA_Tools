@@ -14,7 +14,6 @@ def prompt_templates():
     conn = get_db()
 
     if request.method == 'GET':
-        pt = request.args.get('prompt_type')
         fmt = request.args.get('output_format')
         # Lister les templates visibles : ceux de l'utilisateur + publics + défauts
         query = """
@@ -24,9 +23,6 @@ def prompt_templates():
             WHERE (pt.user_id = ? OR pt.is_public = 1 OR pt.is_default = 1)
         """
         params = [user_id]
-        if pt:
-            query += " AND pt.prompt_type = ?"
-            params.append(pt)
         if fmt:
             query += " AND pt.output_format = ?"
             params.append(fmt)
@@ -48,17 +44,15 @@ def prompt_templates():
         return jsonify({'error': 'name requis'}), 400
 
     name = data['name'].strip()
-    # Le nom du template devient son prompt_type (ex: "patate" → "patate")
-    pt = data.get('prompt_type', '').strip() or name.lower().replace(' ', '_')
     fmt = data.get('output_format', 'text').strip()
     system_prompt = data.get('system_prompt', '').strip()
     examples = json.dumps(data.get('examples', []))
     is_public = 1 if data.get('is_public') else 0
 
     conn.execute("""
-        INSERT OR REPLACE INTO prompt_templates (user_id, name, prompt_type, output_format, system_prompt, examples, is_public, is_default)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-    """, (user_id, name, pt, fmt, system_prompt, examples, is_public))
+        INSERT INTO prompt_templates (user_id, name, output_format, system_prompt, examples, is_public, is_default)
+        VALUES (?, ?, ?, ?, ?, ?, 0)
+    """, (user_id, name, fmt, system_prompt, examples, is_public))
     conn.commit()
     template_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.close()
@@ -84,7 +78,7 @@ def single_template(template_id):
         data = request.get_json()
         if 'name' in data:
             name = data['name'].strip()
-            conn.execute("UPDATE prompt_templates SET name = ?, prompt_type = ? WHERE id = ?", (name, name.lower().replace(' ', '_'), template_id))
+            conn.execute("UPDATE prompt_templates SET name = ? WHERE id = ?", (name, template_id))
         if 'output_format' in data:
             conn.execute("UPDATE prompt_templates SET output_format = ? WHERE id = ?", (data['output_format'].strip(), template_id))
         if 'system_prompt' in data:
@@ -108,7 +102,7 @@ def get_default_templates():
     guard = _login_required()
     if guard: return guard
     conn = get_db()
-    rows = conn.execute("SELECT * FROM prompt_templates WHERE is_default = 1 ORDER BY prompt_type, output_format").fetchall()
+    rows = conn.execute("SELECT * FROM prompt_templates WHERE is_default = 1 ORDER BY name, output_format").fetchall()
     conn.close()
     result = []
     for r in rows:

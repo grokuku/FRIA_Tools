@@ -99,13 +99,13 @@ def member_detail(user_id):
         user['filter_count'] = cur.fetchone()[0]
         cur.execute('SELECT COUNT(*) FROM generated_prompts WHERE user_id = ?', (user_id,))
         user['prompt_count'] = cur.fetchone()[0]
-        cur.execute("""SELECT prompt_type, COUNT(*) as cnt FROM generated_prompts WHERE user_id = ? GROUP BY prompt_type ORDER BY cnt DESC LIMIT 1""", (user_id,))
+        cur.execute("""SELECT t.name, COUNT(*) as cnt FROM generated_prompts gp JOIN prompt_templates t ON t.id = gp.template_id WHERE gp.user_id = ? AND gp.template_id IS NOT NULL GROUP BY gp.template_id ORDER BY cnt DESC LIMIT 1""", (user_id,))
         pt = cur.fetchone()
-        user['favorite_type'] = pt['prompt_type'] if pt else None
+        user['favorite_type'] = pt['name'] if pt else None
         cur.execute("""SELECT s.name, COUNT(*) as cnt FROM generated_prompts gp JOIN styles s ON s.id = gp.style_id WHERE gp.user_id = ? AND gp.style_id IS NOT NULL GROUP BY gp.style_id ORDER BY cnt DESC LIMIT 1""", (user_id,))
         st = cur.fetchone()
         user['favorite_style'] = st['name'] if st else None
-        cur.execute("""SELECT prompt_type, output_text, style_id, created_at FROM generated_prompts WHERE user_id = ? ORDER BY created_at DESC LIMIT 15""", (user_id,))
+        cur.execute("""SELECT t.name as template_name, gp.output_text, gp.style_id, gp.created_at FROM generated_prompts gp LEFT JOIN prompt_templates t ON t.id = gp.template_id WHERE gp.user_id = ? ORDER BY gp.created_at DESC LIMIT 15""", (user_id,))
         user['recent_prompts'] = [dict(r) for r in cur.fetchall()]
         conn.close()
         return jsonify(user)

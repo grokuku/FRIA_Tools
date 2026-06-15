@@ -266,7 +266,7 @@ def enhance_prepare():
                 prepared, result['output'], result['debug_sections']
             )
         final = _build_final_result(
-            result, prepared['prompt_type'], prepared['width'], prepared['height']
+            result, prepared['output_format'], prepared['width'], prepared['height']
         )
         final['status'] = 'done'
         return jsonify(final)
@@ -304,7 +304,7 @@ def enhance_prompts():
     logging.warning(
         f"[enhance/prompts] REQUEST user={user_id} "
         f"keys={list(data.keys())} style_id={data.get('style_id')} "
-        f"prompt_type={data.get('prompt_type')} text_len={len(data.get('text', ''))}"
+        f"template_id={data.get('template_id') or data.get('prompt_type')} text_len={len(data.get('text', ''))}"
     )
 
     prepared = _prepare_enhance(user_id, data)
@@ -410,7 +410,7 @@ def enhance_finish():
                 prepared, pass1_result['output'], pass1_result['debug_sections']
             )
         result = _build_final_result(
-            pass1_result, prepared['prompt_type'], prepared['width'], prepared['height']
+            pass1_result, prepared['output_format'], prepared['width'], prepared['height']
         )
         _delete_enhance_session(session_id)
         result['status'] = 'done'
@@ -436,7 +436,7 @@ def enhance_finish():
         if prepared['validation_passes'] <= 1:
             _delete_enhance_session(session_id)
             result = _build_final_result(
-                pass1_result, prepared['prompt_type'], prepared['width'], prepared['height']
+                pass1_result, prepared['output_format'], prepared['width'], prepared['height']
             )
             result['status'] = 'done'
             result['session_id'] = session_id
@@ -469,7 +469,7 @@ def enhance_finish():
                 'conversion_debug': prepared.get('conversion_debug'),
             }
             result = _build_final_result(
-                pass1_result, prepared['prompt_type'], prepared['width'], prepared['height']
+                pass1_result, prepared['output_format'], prepared['width'], prepared['height']
             )
             result['status'] = 'done'
             result['session_id'] = session_id
@@ -547,7 +547,7 @@ def _do_enhance(user_id, data):
     # _do_enhance est appele dans un Thread separe, sans contexte Flask actif.
     # C'est le generator de /api/enhance qui serialise en json.dumps(...).
     return _build_final_result(
-        pass1_result, prepared['prompt_type'], prepared['width'], prepared['height']
+        pass1_result, prepared['output_format'], prepared['width'], prepared['height']
     )
 
 
@@ -665,7 +665,7 @@ def _prepare_enhance(user_id, data):
     ou un tuple (jsonify, status) en cas d'erreur.
 
     Le payload est le format OpenAI standard envoye a /chat/completions.
-    Les metadata (preset, prompt_type, merged_text, etc.) sont stockees
+    Les metadata (preset, template_id, merged_text, etc.) sont stockees
     dans le dict pour etre reutilisees par _finish_enhance.
     """
     import logging
@@ -674,30 +674,20 @@ def _prepare_enhance(user_id, data):
 
     preset_id = data.get('preset_id')
     text = data.get('text', '').strip()
-    prompt_type = data.get('prompt_type', 'sdxl').strip()
-    # Si prompt_type_id est fourni, resoudre le prompt_type reel depuis la BDD
-    # (meme pattern que style_id) — permet au DOM widget ComfyUI d'envoyer un INT
-    prompt_type_id = data.get('prompt_type_id')
-    if prompt_type_id:
+    template_id = data.get('template_id')
+    # Accepter aussi 'prompt_type' comme ancien alias le temps de la transition
+    if not template_id and data.get('prompt_type'):
         try:
-            conn = get_db()
-            row = conn.execute("SELECT prompt_type FROM prompt_templates WHERE id = ?", (int(prompt_type_id),)).fetchone()
-            conn.close()
-            if row:
-                resolved_pt = row['prompt_type'] if hasattr(row, 'keys') else row[0]
-                if resolved_pt:
-                    prompt_type = resolved_pt
-        except Exception as e:
-            import logging as _log
-            _log.warning(f"[enhance] prompt_type_id={prompt_type_id} resolution failed: {e}")
-    if not prompt_type:
-        prompt_type = 'sdxl'  # fallback si vide
-    # Debug : tracer les params reçus
-    logging.warning(f"[enhance] REQUEST user={user_id} preset_id={preset_id} prompt_type='{prompt_type}' prompt_type_id={prompt_type_id} text_len={len(text)}")
-    # Format de sortie : si non fourni, déduit du type de prompt.
-    # Par défaut tout est en 'text'. L'editeur de templates peut surcharger
-    # par type en creant un template avec un format different.
-    output_format = (data.get('output_format') or '').strip() or _default_format_for_type(prompt_type)
+            template_id = int(data.get('prompt_type'))
+        except (ValueError, TypeError):
+            pass
+    if not template_id:
+        return jsonify({'error': 'template_id requis'}), 400
+    try:
+        template_id = int(template_id)
+    except (ValueError, TypeError):
+        return jsonify({'error': 'template_id invalide'}), 400
+
     style_id = data.get('style_id')
     style_text = data.get('style_text', '').strip()
     special_instructions = data.get('special_instructions', '').strip()
@@ -705,6 +695,25 @@ def _prepare_enhance(user_id, data):
     random_count = int(data.get('random_count', 0))
     width = int(data.get('width') or 0)
     height = int(data.get('height') or 0)
+
+    # Resoudre le template selectionne
+    conn = get_db()
+    template_row = conn.execute(
+        "SELECT id, name, output_format, system_prompt, examples FROM prompt_templates WHERE id = ? AND (is_public = 1 OR is_default = 1 OR user_id = ?)",
+        (template_id, user_id)
+    ).fetchone()
+    conn.close()
+    if not template_row:
+        return jsonify({'error': f"Template {template_id} introuvable ou inaccessible."}), 404
+    output_format = template_row['output_format'] or 'text'
+    template_system_prompt = template_row['system_prompt'] or ''
+    template_name = template_row['name'] or ''
+    try:
+        template_examples = json.loads(template_row['examples']) if template_row['examples'] else []
+    except Exception:
+        template_examples = []
+
+    logging.warning(f"[enhance] REQUEST user={user_id} preset_id={preset_id} template_id={template_id} name='{template_name}' output_format='{output_format}' text_len={len(text)}")
 
     # Resoudre le style si style_id fourni
     negative_prompt = ''
@@ -836,67 +845,8 @@ def _prepare_enhance(user_id, data):
     # Debug temporaire : tracer le preset utilise
     logging.warning(f"[enhance] user={user_id} preset_id={preset['id']} name='{preset['name']}' is_global={preset['is_global']} model='{model}' base_url='{base_url}' api_key_len={len(api_key) if api_key else 0}")
 
-    # Construire le prompt systeme
-    type_formats = {
-        'liste': 'Liste de tags separes par des virgules, ordonnes par importance (exemple: "masterpiece, 1girl, blue sky, city street, long hair").',
-        'sdxl': 'Prompt SDXL optimise avec Natural Language + tags Danbooru, bien equilibre. Format: qualite + sujet principal + description scene + details techniques.',
-        'sd15': 'Prompt Stable Diffusion 1.5 avec tags Danbooru. Format court et dense, priorite aux tags essentiels.',
-        'flux': 'Prompt Flux, description longue et naturelle en anglais.',
-        'anima': 'Prompt Anime/Manga, tags Danbooru avec suffixes specifiques (pixel art, lineart, flat color, etc.).',
-        'qwen': 'Prompt Qwen, format optimise pour modele Qwen2-VL / image generation.',
-    }
-
-    format_instruction = type_formats.get(prompt_type, type_formats['sdxl'])
-
-    # Recuperer les top 5 examples pour ce type
-    conn = get_db()
-    examples = conn.execute(
-        "SELECT prompt_text FROM prompt_examples WHERE type = ? ORDER BY rating DESC LIMIT 5",
-        (prompt_type,)
-    ).fetchall()
-    conn.close()
-
-    examples_text = ''
-    if examples:
-        examples_text = '\nExemples de prompts ' + prompt_type + ' :\n'
-        for ex in examples:
-            examples_text += '- ' + ex['prompt_text'] + '\n'
-
-    # Regles de format de sortie par defaut (utilisees SEULEMENT si pas de
-    # template en BDD). Ces regles sont GENERIQUES — les templates Ideogram 4
-    # en BDD contiennent leur propre regle stricte.
-    format_rules = {
-        'text': 'Output ONLY the final prompt — no quotes, no code blocks, no explanations, no introduction.',
-        'markdown': 'Output in clean Markdown (no ``` code blocks). The prompt is the main content.',
-        'json': 'Output raw JSON (no ```json). The JSON structure depends on the prompt type — follow the schema described in the documentation above.',
-    }
-
-    # Resoudre le template personnalise depuis prompt_templates
-    # Resoudre le template personnalise depuis prompt_templates
-    # On ne filtre PAS par output_format — le matching se fait uniquement
-    # sur prompt_type. output_format sera utilise plus tard pour la validation.
-    template_examples = []
-    template_system_prompt = None
-    conn = get_db()
-    try:
-        cur = conn.execute(
-            "SELECT system_prompt, examples FROM prompt_templates WHERE prompt_type = ? AND (is_public = 1 OR is_default = 1 OR user_id = ?) ORDER BY is_default DESC LIMIT 1",
-            (prompt_type, user_id)
-        )
-        tmpl = cur.fetchone()
-        if tmpl:
-            template_system_prompt = tmpl['system_prompt']
-            try:
-                template_examples = json.loads(tmpl['examples']) if tmpl['examples'] else []
-            except:
-                template_examples = []
-    except Exception as e:
-        import logging as _log2
-        _log2.warning(f"[enhance] template resolution failed for prompt_type='{prompt_type}': {e}")
-    conn.close()
-
-    import logging as _log_tmpl
-    _log_tmpl.warning(f"[enhance] user={user_id} prompt_type='{prompt_type}' template_found={'yes' if template_system_prompt else 'no'} sys_len={len(template_system_prompt or '')}")
+    # Construire le prompt systeme a partir du template selectionne
+    logging.warning(f"[enhance] template_id={template_id} name='{template_name}' output_format='{output_format}' found={'yes' if template_system_prompt else 'no'} sys_len={len(template_system_prompt)}")
 
     system_parts = []
 
@@ -913,7 +863,7 @@ This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summari
     if template_system_prompt and template_system_prompt.strip():
         system_parts.append(template_system_prompt.strip())
     else:
-        return jsonify({'error': f"Aucun template trouve pour prompt_type='{prompt_type}'. Cree un template dans l'onglet Templates."}), 400
+        return jsonify({'error': f"Aucun template trouve pour template_id={template_id}. Cree un template dans l'onglet Templates."}), 400
 
     # 3) EXAMPLES — injectes depuis le champ examples du template
     if template_examples:
@@ -983,7 +933,8 @@ Here are well-structured examples for reference — study them but do NOT copy v
         # Indique si le preset est marque client-side (= appel LLM deleste au client).
         # Utilise par /api/enhance/prepare pour decider du routage.
         'is_client_side': bool(_row_get(preset, 'is_client_side', 0)),
-        'prompt_type': prompt_type,
+        'template_id': template_id,
+        'template_name': template_name,
         'output_format': output_format,
         'width': width,
         'height': height,
@@ -1073,7 +1024,8 @@ def _finish_enhance_pass1(user_id, prepared, llm_response):
     output = clean_output(output)
 
     # Metadata
-    prompt_type = prepared['prompt_type']
+    template_id = prepared['template_id']
+    template_name = prepared.get('template_name', '')
     merged_text = prepared['merged_text']
     width = prepared['width']
     height = prepared['height']
@@ -1083,9 +1035,9 @@ def _finish_enhance_pass1(user_id, prepared, llm_response):
     try:
         conn2 = get_db()
         conn2.execute(
-            """INSERT INTO generated_prompts (user_id, preset_id, prompt_type, input_text, output_text, style_id, model_used)
+            """INSERT INTO generated_prompts (user_id, preset_id, template_id, input_text, output_text, style_id, model_used)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (user_id, prepared['preset_id'], prompt_type, merged_text, output, prepared['style_id'], model)
+            (user_id, prepared['preset_id'], template_id, merged_text, output, prepared['style_id'], model)
         )
         conn2.commit()
         conn2.close()
@@ -1105,7 +1057,7 @@ def _finish_enhance_pass1(user_id, prepared, llm_response):
     }
 
 
-def _build_final_result(pass1_result, prompt_type, width, height):
+def _build_final_result(pass1_result, output_format, width, height):
     """
     Assemble le dict final a partir des resultats de _finish_enhance_pass1
     et des sections de debug (qui peuvent inclure les passes de validation).

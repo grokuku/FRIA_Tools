@@ -42,10 +42,10 @@
         var found = false;
         list.forEach(function(t) {
           var opt = document.createElement('option');
-          opt.value = t.prompt_type;
-          opt.textContent = t.name || t.prompt_type.toUpperCase();
+          opt.value = t.id;
+          opt.textContent = t.name || ('Template ' + t.id);
           sel.appendChild(opt);
-          if (t.prompt_type === currentVal) found = true;
+          if (String(t.id) === currentVal) found = true;
         });
         if (found) sel.value = currentVal;
       } catch {
@@ -258,7 +258,7 @@
             var text = p.output_text || '';
             var date = p.created_at ? new Date(p.created_at).toLocaleDateString('fr-FR') : '';
             promptsHtml += '<div class="text-xs p-2 rounded bg-slate-50 dark:bg-slate-700/30 border border-slate-200 dark:border-slate-700">'
-              + '<span class="text-indigo-500 font-medium">' + (p.prompt_type || '').toUpperCase() + '</span>'
+              + '<span class="text-indigo-500 font-medium">' + escapeHtml(p.template_name || '') + '</span>'
               + ' <span class="text-slate-400">' + date + '</span><br>'
               + '<span class="text-slate-600 dark:text-slate-400" style="word-break:break-word;">' + escapeHtml(text) + '</span></div>';
           });

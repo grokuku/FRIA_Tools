@@ -494,7 +494,7 @@
         if (!Array.isArray(list)) { el.innerHTML = '<p class="text-xs text-slate-400">Aucun template</p>'; return; }
         var html = '';
         list.forEach(function(t){
-          var name = t.name || t.prompt_type || '?';
+          var name = t.name || ('Template ' + t.id);
           var author = t.owner_name || '—';
           var pub = t.is_public ? ' 🌐' : ' 🔒';
           var isDefault = !!t.is_default;
@@ -1001,7 +1001,7 @@
      * Ollama local et on appelle /api/enhance/finish. Le backend peut
      * retourner awaiting_validation si une autre passe est necessaire.
      *
-     * params: { text, preset_id, prompt_type, style_id, style_text,
+     * params: { text, preset_id, template_id, style_id, style_text,
      *           ep_elements, random_count, base_url, onProgress }
      * Retourne: { output, negative_prompt, model_used, debug_md }
      */
@@ -1014,7 +1014,7 @@
       var prepareBody = {
         text: params.text,
         preset_id: params.preset_id,
-        prompt_type: params.prompt_type,
+        template_id: params.template_id,
         style_id: params.style_id,
         style_text: params.style_text,
         ep_elements: params.ep_elements || [],
@@ -1098,6 +1098,7 @@
       var text = document.getElementById('enhance-input').value.trim();
       var presetId = document.getElementById('enhance-preset').value;
       var promptType = document.getElementById('enhance-type').value;
+      var templateId = promptType ? parseInt(promptType) : null;
       var styleId = document.getElementById('enhance-style').value;
       var useEP = document.getElementById('enhance-ep').checked;
       var useRandom = document.getElementById('enhance-random').checked;
@@ -1173,7 +1174,7 @@
           data = await callEnhanceLocalLLM({
             text: text,
             preset_id: presetId ? parseInt(presetId) : null,
-            prompt_type: promptType,
+            template_id: templateId,
             style_id: styleId ? parseInt(styleId) : null,
             style_text: styleText,
             ep_elements: epItems,
@@ -1186,7 +1187,7 @@
           var body = {
             text: text,
             preset_id: presetId ? parseInt(presetId) : null,
-            prompt_type: promptType,
+            template_id: templateId,
             style_id: styleId ? parseInt(styleId) : null,
             style_text: styleText,
             ep_elements: epItems,

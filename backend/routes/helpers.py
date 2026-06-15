@@ -25,24 +25,6 @@ def _row_get(row, key, default=None):
         return default
 
 
-# Format de sortie par défaut selon le type de prompt.
-# Le frontend ne demande plus le format : il est determiné par le type.
-# L'editeur de templates peut surcharger en creant un template avec un
-# format different (text/markdown/json) pour un (prompt_type, output_format) donné.
-# Exemple: 'z-image' -> 'json' quand on aura des modeles JSON-only.
-_DEFAULT_FORMAT_BY_TYPE = {
-    'sdxl':  'text',
-    'sd15':  'text',
-    'flux':  'text',
-    'anima': 'text',
-    'qwen':  'text',
-    'liste': 'text',
-}
-
-def _default_format_for_type(prompt_type):
-    return _DEFAULT_FORMAT_BY_TYPE.get(prompt_type, 'text')
-
-
 def _get_encryption_key():
     """Recupere ou genere la cle de chiffrement."""
     conn = sqlite3.connect(str(DB_PATH))
@@ -176,11 +158,12 @@ def _init_db():
     conn.execute("""
         CREATE TABLE IF NOT EXISTS prompt_examples (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            type TEXT NOT NULL DEFAULT 'sdxl',
+            template_id INTEGER,
             prompt_text TEXT NOT NULL,
             author_id TEXT NOT NULL,
             rating INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (template_id) REFERENCES prompt_templates(id),
             FOREIGN KEY (author_id) REFERENCES users(id)
         )
     """)
@@ -200,7 +183,7 @@ def _init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT NOT NULL,
             preset_id INTEGER,
-            prompt_type TEXT DEFAULT 'sdxl',
+            template_id INTEGER,
             input_text TEXT NOT NULL DEFAULT '',
             output_text TEXT NOT NULL DEFAULT '',
             negative_prompt TEXT DEFAULT '',
@@ -209,6 +192,7 @@ def _init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (preset_id) REFERENCES ai_presets(id),
+            FOREIGN KEY (template_id) REFERENCES prompt_templates(id),
             FOREIGN KEY (style_id) REFERENCES styles(id)
         )
     """)
@@ -217,15 +201,15 @@ def _init_db():
         CREATE TABLE IF NOT EXISTS prompt_templates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT,
-            prompt_type TEXT NOT NULL,
+            name TEXT NOT NULL,
             output_format TEXT NOT NULL DEFAULT 'text',
             system_prompt TEXT NOT NULL DEFAULT '',
             examples TEXT NOT NULL DEFAULT '[]',
             is_default INTEGER DEFAULT 0,
+            is_public INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id),
-            UNIQUE(user_id, prompt_type, output_format)
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
 
@@ -253,6 +237,88 @@ def _init_db():
         conn.execute("ALTER TABLE prompt_templates ADD COLUMN name TEXT DEFAULT ''")
     if "is_public" not in cols_tmpl:
         conn.execute("ALTER TABLE prompt_templates ADD COLUMN is_public INTEGER DEFAULT 0")
+
+    # Migration : suppression de prompt_type dans prompt_templates (passage a l'ID unique)
+    if "prompt_type" in cols_tmpl:
+        conn.execute("UPDATE prompt_templates SET name = prompt_type WHERE name IS NULL OR name = ''")
+        conn.execute("""
+            CREATE TABLE _prompt_templates_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT,
+                name TEXT NOT NULL,
+                output_format TEXT NOT NULL DEFAULT 'text',
+                system_prompt TEXT NOT NULL DEFAULT '',
+                examples TEXT NOT NULL DEFAULT '[]',
+                is_default INTEGER DEFAULT 0,
+                is_public INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
+        conn.execute("""
+            INSERT INTO _prompt_templates_new
+                (id, user_id, name, output_format, system_prompt, examples, is_default, is_public, created_at, updated_at)
+            SELECT id, user_id, COALESCE(NULLIF(name, ''), prompt_type),
+                   output_format, system_prompt, examples, is_default, is_public, created_at, updated_at
+            FROM prompt_templates
+        """)
+        conn.execute("DROP TABLE prompt_templates")
+        conn.execute("ALTER TABLE _prompt_templates_new RENAME TO prompt_templates")
+
+    # Migration : suppression de prompt_type dans generated_prompts (template_id)
+    cols_gp = [r[1] for r in conn.execute("PRAGMA table_info(generated_prompts)").fetchall()]
+    if "prompt_type" in cols_gp:
+        conn.execute("""
+            CREATE TABLE _generated_prompts_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                preset_id INTEGER,
+                template_id INTEGER,
+                input_text TEXT NOT NULL DEFAULT '',
+                output_text TEXT NOT NULL DEFAULT '',
+                negative_prompt TEXT DEFAULT '',
+                style_id INTEGER,
+                model_used TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (preset_id) REFERENCES ai_presets(id),
+                FOREIGN KEY (template_id) REFERENCES prompt_templates(id),
+                FOREIGN KEY (style_id) REFERENCES styles(id)
+            )
+        """)
+        conn.execute("""
+            INSERT INTO _generated_prompts_new
+                (id, user_id, preset_id, template_id, input_text, output_text, negative_prompt, style_id, model_used, created_at)
+            SELECT id, user_id, preset_id, NULL, input_text, output_text, negative_prompt, style_id, model_used, created_at
+            FROM generated_prompts
+        """)
+        conn.execute("DROP TABLE generated_prompts")
+        conn.execute("ALTER TABLE _generated_prompts_new RENAME TO generated_prompts")
+
+    # Migration : suppression de type dans prompt_examples (template_id)
+    cols_pe = [r[1] for r in conn.execute("PRAGMA table_info(prompt_examples)").fetchall()]
+    if "type" in cols_pe:
+        conn.execute("""
+            CREATE TABLE _prompt_examples_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                template_id INTEGER,
+                prompt_text TEXT NOT NULL,
+                author_id TEXT NOT NULL,
+                rating INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (template_id) REFERENCES prompt_templates(id),
+                FOREIGN KEY (author_id) REFERENCES users(id)
+            )
+        """)
+        conn.execute("""
+            INSERT INTO _prompt_examples_new
+                (id, template_id, prompt_text, author_id, rating, created_at)
+            SELECT id, NULL, prompt_text, author_id, rating, created_at
+            FROM prompt_examples
+        """)
+        conn.execute("DROP TABLE prompt_examples")
+        conn.execute("ALTER TABLE _prompt_examples_new RENAME TO prompt_examples")
 
     # Migration : filter_type pour les filtres composés (union)
     cols_filters = [r[1] for r in conn.execute("PRAGMA table_info(saved_filters)").fetchall()]
@@ -295,24 +361,6 @@ def _init_db():
         _insert_default_templates(conn)
     conn.commit()
     conn.close()
-
-    # Migration : mise à jour des templates vers l'anglais (connexion séparée)
-    _migrate_templates_to_english()
-
-
-def _migrate_templates_to_english():
-    """Migrate default templates from French to English if needed."""
-    try:
-        mconn = sqlite3.connect(str(DB_PATH))
-        mconn.execute("PRAGMA foreign_keys = ON")
-        cur = mconn.cursor()
-        existing = cur.execute("SELECT COUNT(*) FROM prompt_templates WHERE is_default = 1").fetchone()[0]
-        if existing > 0:
-            # Ne plus écraser les templates existants — la migration manuelle est faite
-            pass
-        mconn.close()
-    except Exception as e:
-        print(f"[migration] Erreur templates anglais: {e}")
 
 
 def _insert_default_templates(conn):
@@ -540,17 +588,21 @@ Mandatory rules:
         ]),
     }
 
-    # ---- Insert templates ----
-    for pt in ["sdxl", "sd15", "flux", "anima", "qwen", "liste", "ideogram4"]:
-        doc = DOCS.get(pt, "")
+    # ---- Insert default templates ----
+    # Chaque template est identifie par son ID unique. Le `name` est
+    # l'affichage humain ; `output_format` est le format de sortie attendu.
+    for pt, doc in DOCS.items():
         examples = EXAMPLES.get(pt, "[]")
-        for fmt in ["text", "markdown", "json"]:
-            # Ideogram 4 a son propre schema JSON defini dans DOC_IDEOGRAM4,
-            # donc on n'ajoute pas de regle de format generique.
+        # Ideogram 4 est forcement JSON ; les autres types ont 3 formats.
+        formats = ["json"] if pt == "ideogram4" else ["text", "markdown", "json"]
+        for fmt in formats:
             if pt == "ideogram4":
                 fmt_rule = "Follow the EXACT JSON schema described above. Output PURE JSON, NO code block, NO commentary, NO markdown."
             else:
                 fmt_rule = FORMAT_RULES.get(fmt, FORMAT_RULES["text"])
+            name = pt.upper()
+            if fmt != "text":
+                name = f"{pt.upper()} {fmt.capitalize()}"
             system_prompt = f"""You are an expert assistant for image prompt generation.
 Your task: transform the provided content into an optimized {pt.upper()} prompt.
 
@@ -570,9 +622,9 @@ Here are examples of well-structured {pt.upper()} prompts:
 
             conn.execute("""
                 INSERT INTO prompt_templates
-                    (user_id, prompt_type, output_format, system_prompt, examples, is_default)
+                    (user_id, name, output_format, system_prompt, examples, is_default)
                 VALUES (NULL, ?, ?, ?, ?, 1)
-            """, (pt, fmt, system_prompt.strip(), examples))
+            """, (name, fmt, system_prompt.strip(), examples))
 
     conn.commit()
     conn.close()
