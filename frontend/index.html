@@ -624,8 +624,9 @@
       <div id="tab-styles" class="hidden w-full flex-1 flex flex-row overflow-hidden relative">
         <!-- Gauche : liste des styles -->
         <div id="styles-left" class="flex flex-col overflow-hidden" style="width: 35%; min-width: 200px;">
-          <div class="px-4 pt-4 pb-2 shrink-0">
+          <div class="px-4 pt-4 pb-2 shrink-0 flex items-center justify-between">
             <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Styles</h2>
+            <button onclick="newStyleTab()" class="px-2 py-1 text-xs font-medium bg-emerald-600 text-white rounded-md hover:bg-emerald-500 transition">+ Add Style</button>
           </div>
           <div id="styles-tab-list" class="flex-1 overflow-y-auto space-y-1 px-4 pb-4">
             <p class="text-xs text-slate-400">Chargement...</p>
@@ -656,8 +657,9 @@
       <div id="tab-templates" class="hidden w-full flex-1 flex flex-row overflow-hidden relative">
         <!-- Gauche : liste des templates -->
         <div id="templates-left" class="flex flex-col overflow-hidden" style="width: 30%; min-width: 200px;">
-          <div class="px-4 pt-4 pb-2 shrink-0">
+          <div class="px-4 pt-4 pb-2 shrink-0 flex items-center justify-between">
             <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Templates</h2>
+            <button onclick="newTemplateTab()" class="px-2 py-1 text-xs font-medium bg-emerald-600 text-white rounded-md hover:bg-emerald-500 transition">+ Add Template</button>
           </div>
           <div id="templates-tab-list" class="flex-1 overflow-y-auto space-y-1 px-4 pb-4">
             <p class="text-xs text-slate-400">Chargement...</p>

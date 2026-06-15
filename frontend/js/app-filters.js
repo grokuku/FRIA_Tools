@@ -855,6 +855,11 @@
       }).catch(function(){});
     }
 
+    function newStyleTab() {
+      clearStyleFormTab();
+      document.getElementById('t-style-form-name').focus();
+    }
+
     async function saveStyleTab() {
       var name = document.getElementById('t-style-form-name').value.trim();
       var text = document.getElementById('t-style-form-text').value.trim();
