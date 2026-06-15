@@ -51,7 +51,7 @@ def decrypt_api_key(encrypted):
 # ──────────────────────────────────────────────────────────────────────
 
 def get_db():
-    _init_db()
+    # _init_db() est appele une fois au demarrage dans extensions.py
     conn = sqlite3.connect(str(DB_PATH), timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -731,7 +731,7 @@ def is_admin(user_id: str) -> bool:
         return row is not None and row["role"] == "admin"
     except Exception as e:
         print(f"[is_admin] Erreur: {e}")
-        return True  # Fail safe : accès admin par défaut
+        return False  # Fail secure : refuser admin en cas d'erreur
 
 
 def _get_ollama_config() -> dict:

@@ -272,9 +272,20 @@ async function checkServerStatus(el) {
         const headers = {};
         if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
+        // Compat : AbortSignal.timeout() n'existe pas dans tous les navigateurs
+        const makeTimeoutSignal = (ms) => {
+            if (typeof AbortSignal !== "undefined" && AbortSignal.timeout) {
+                return AbortSignal.timeout(ms);
+            }
+            const ctrl = new AbortController();
+            setTimeout(() => ctrl.abort(), ms);
+            return ctrl.signal;
+        };
+        const timeoutSignal = makeTimeoutSignal(5000);
+
         const [statsResp, meResp] = await Promise.all([
-            fetch(`${baseUrl}/api/stats`, { method: "GET", headers, signal: AbortSignal.timeout(5000) }).catch(() => null),
-            fetch(`${baseUrl}/api/auth/me`, { method: "GET", headers, signal: AbortSignal.timeout(5000) }).catch(() => null),
+            fetch(`${baseUrl}/api/stats`, { method: "GET", headers, signal: timeoutSignal }).catch(() => null),
+            fetch(`${baseUrl}/api/auth/me`, { method: "GET", headers, signal: timeoutSignal }).catch(() => null),
         ]);
 
         const serverOk = statsResp && statsResp.ok;

@@ -7,11 +7,11 @@
  *   - L'utilisateur branche son propre node LLM (LM Studio, Ollama, etc.)
  *   - Puis le FR.IA Ideogram Parse parse la réponse
  *
- * DOM widget : grille 2 colonnes (Type fixé à ideogram4 + Style).
+ * DOM widget : grille 2 colonnes (Template + Style).
  *
  * Les widgets natifs ComfyUI (seed, description, element_1..4, special_instructions,
- * width, height, style_id) sont restaurés automatiquement par ComfyUI au
- * rechargement. Le DOM widget pilote juste style_id.
+ * width, height, style_id, template_id) sont restaurés automatiquement par ComfyUI
+ * au rechargement. Le DOM widget pilote style_id et template_id.
  */
 (function waitForApp() {
     const app = window.app || window.comfyAPI?.app?.app;
@@ -28,34 +28,28 @@
                 const node = this;
                 let _friaRestored = false;
 
-                // ---- Cacher les widgets natifs pilotes par le DOM ----
-                // On utilise UNIQUEMENT w.hidden = true (pas de computeSize negatif
-                // qui empeche ComfyUI de serialiser la valeur du widget)
                 const styleWidget = node.widgets?.find(x => x.name === "style_id");
+                const templateIdWidget = node.widgets?.find(x => x.name === "template_id");
                 if (styleWidget) {
                     styleWidget.hidden = true;
                     if (styleWidget.inputEl) styleWidget.inputEl.style.display = "none";
                     if (styleWidget.parentEl) styleWidget.parentEl.style.display = "none";
                 }
-                const promptTypeWidget = node.widgets?.find(x => x.name === "prompt_type");
-                if (promptTypeWidget) {
-                    promptTypeWidget.hidden = true;
-                    if (promptTypeWidget.inputEl) promptTypeWidget.inputEl.style.display = "none";
-                    if (promptTypeWidget.parentEl) promptTypeWidget.parentEl.style.display = "none";
+                if (templateIdWidget) {
+                    templateIdWidget.hidden = true;
+                    if (templateIdWidget.inputEl) templateIdWidget.inputEl.style.display = "none";
+                    if (templateIdWidget.parentEl) templateIdWidget.parentEl.style.display = "none";
                 }
-                // Supprimer les sockets d'entrée
-                for (const inputName of ["style_id", "prompt_type"]) {
+                for (const inputName of ["style_id", "template_id"]) {
                     const slot = node.findInputSlot?.(inputName);
                     if (slot !== undefined && slot !== -1) {
                         node.removeInput(slot);
                     }
                 }
 
-                // ---- Cache de rafraîchissement ----
-                const _cache = (window.__FRIA_cache = window.__FRIA_cache || { styles: 0 });
+                const _cache = (window.__FRIA_cache = window.__FRIA_cache || { styles: 0, tmpl: 0 });
                 const CACHE_TTL = 15000;
 
-                // URL API pour recuperer la liste des styles
                 const getApiUrl = () => {
                     try {
                         const cfg = JSON.parse(localStorage.getItem("FRIA_config") || "{}");
@@ -84,12 +78,14 @@
                 function syncStyleWidget() {
                     if (!_friaRestored) return;
                     if (styleWidget) {
-                        styleWidget.value = parseInt(styleSelect.value) || 0;
-                        if (styleWidget.callback) styleWidget.callback(parseInt(styleSelect.value) || 0);
+                        const val = parseInt(styleSelect.value) || 0;
+                        styleWidget.value = val;
+                        if (styleWidget.callback) styleWidget.callback(val);
                     }
-                    if (promptTypeWidget) {
-                        promptTypeWidget.value = typeSelect.value;
-                        if (promptTypeWidget.callback) promptTypeWidget.callback(typeSelect.value);
+                    if (templateIdWidget) {
+                        const val = parseInt(typeSelect.value) || 0;
+                        templateIdWidget.value = val;
+                        if (templateIdWidget.callback) templateIdWidget.callback(val);
                     }
                 }
 
@@ -100,12 +96,17 @@
                         if (sid > 0 && [...styleSelect.options].some(o => o.value === String(sid))) {
                             styleSelect.value = String(sid);
                             restored = true;
+                        } else if (sid === 0) {
+                            styleSelect.value = "0";
                         }
                     }
-                    if (promptTypeWidget && promptTypeWidget.value) {
-                        if ([...typeSelect.options].some(o => o.value === String(promptTypeWidget.value))) {
-                            typeSelect.value = String(promptTypeWidget.value);
+                    if (templateIdWidget) {
+                        const tid = parseInt(templateIdWidget.value) || 0;
+                        if (tid > 0 && [...typeSelect.options].some(o => o.value === String(tid))) {
+                            typeSelect.value = String(tid);
                             restored = true;
+                        } else if (tid === 0) {
+                            typeSelect.value = "0";
                         }
                     }
                     _friaRestored = true;
@@ -116,14 +117,13 @@
                     styleSelect.innerHTML = `<option value="0">-- Style --</option>`;
                     try {
                         const items = await apiGet("styles");
-                        if (Array.isArray(items)) {
-                            items.forEach(item => {
-                                const o = document.createElement("option");
-                                o.value = item.id;
-                                o.textContent = item.name;
-                                styleSelect.appendChild(o);
-                            });
-                        }
+                        if (!Array.isArray(items)) return;
+                        items.forEach(item => {
+                            const o = document.createElement("option");
+                            o.value = item.id;
+                            o.textContent = item.name;
+                            styleSelect.appendChild(o);
+                        });
                     } catch {}
                 }
 
@@ -138,7 +138,6 @@
                     }
                 }
 
-                // ---- Container (flex column) ----
                 const container = document.createElement("div");
                 Object.assign(container.style, {
                     width: "100%", padding: "8px", boxSizing: "border-box",
@@ -154,7 +153,6 @@
                     return l;
                 };
 
-                // ---- Grille 2 colonnes (Type fixé + Style) ----
                 const grid = document.createElement("div");
                 Object.assign(grid.style, {
                     display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px",
@@ -166,7 +164,6 @@
                     color: "#ccc", fontSize: "11px", cursor: "pointer",
                 };
 
-                // Type (gauche) — peuplé depuis les templates
                 const typeDiv = document.createElement("div");
                 const typeSelect = document.createElement("select");
                 Object.assign(typeSelect.style, selectStyle);
@@ -174,30 +171,34 @@
                 typeDiv.appendChild(typeSelect);
                 grid.appendChild(typeDiv);
 
-                async function loadIdeogramPrepTemplates() {
+                async function populateTemplateSelect() {
                     const current = typeSelect.value;
-                    typeSelect.innerHTML = '<option value="">-- Chargement --</option>';
+                    typeSelect.innerHTML = '<option value="0">-- Chargement --</option>';
                     try {
-                        const apiUrl = getApiUrl();
-                        const resp = await fetch(apiUrl + '/prompts/templates', { headers: apiHeaders() });
-                        const list = resp.ok ? await resp.json() : [];
-                        if (!Array.isArray(list) || list.length === 0) return;
-                        typeSelect.innerHTML = '';
-                        list.forEach(t => {
+                        const items = await apiGet("prompts/templates");
+                        typeSelect.innerHTML = '<option value="0">-- Template --</option>';
+                        if (!Array.isArray(items)) return;
+                        items.forEach(t => {
                             const o = document.createElement("option");
-                    o.value = t.prompt_type;
-                                o.textContent = t.name || t.prompt_type;
-                                o.dataset.promptType = t.prompt_type;
+                            o.value = t.id;
+                            o.textContent = t.name || (`Template ${t.id}`);
                             typeSelect.appendChild(o);
                         });
-                        if (current && [...typeSelect.options].some(o => o.value === current)) {
+                        if (current !== "0" && [...typeSelect.options].some(o => o.value === current)) {
                             typeSelect.value = current;
                         }
-                    } catch {}
+                    } catch {
+                        typeSelect.innerHTML = '<option value="0">-- Template --</option>';
+                    }
                 }
-                typeSelect.addEventListener("mousedown", loadIdeogramPrepTemplates);
+                async function refreshTemplatesIfStale() {
+                    const now = Date.now();
+                    if (now - (_cache.tmpl || 0) < CACHE_TTL) return;
+                    _cache.tmpl = now;
+                    await populateTemplateSelect();
+                }
+                typeSelect.addEventListener("mousedown", refreshTemplatesIfStale);
 
-                // Style (droite)
                 const styleDiv = document.createElement("div");
                 const styleRow = document.createElement("div");
                 Object.assign(styleRow.style, { display: "flex", gap: "4px", alignItems: "center" });
@@ -224,53 +225,56 @@
 
                 container.appendChild(grid);
 
-                // Mini-explication
                 const help = document.createElement("div");
                 help.style.cssText = "font-size:10px;color:#777;margin-top:4px;line-height:1.4;";
                 help.innerHTML = "Sort 3 strings : <b>llm_prompt</b>, <b>system_prompt</b>, <b>context</b>.<br>Branchez un LLM puis la node Parse.";
                 container.appendChild(help);
 
-                // ---- Ajout au node ----
                 const widget = node.addDOMWidget("FRIA_IdeogramPrep", "div", container, {
                     serialize: false,
                     hideOnZoom: false,
                 });
                 widget.computeSize = () => [node.size[0] - 20, 105];
 
-                // ---- Initialisation ----
-                loadIdeogramPrepTemplates().then(() => {
-                    restoreFromNativeWidget();
-                    syncStyleWidget();
-                    let ra = 0;
-                    function delayedRestore() {
-                        if (restoreFromNativeWidget()) return;
-                        if (++ra < 20) setTimeout(delayedRestore, 300);
+                Promise.all([populateTemplateSelect(), populateStyleSelect()]).then(() => {
+                    const restored = restoreFromNativeWidget();
+                    if (restored) syncStyleWidget();
+                    else {
+                        typeSelect.value = String(parseInt(templateIdWidget?.value) || 0);
+                        styleSelect.value = String(parseInt(styleWidget?.value) || 0);
+                        syncStyleWidget();
                     }
-                    setTimeout(delayedRestore, 100);
-                });
-                populateStyleSelect().then(() => {
-                    restoreFromNativeWidget();
-                    syncStyleWidget();
                     let ra = 0;
                     function delayedRestore() {
-                        if (restoreFromNativeWidget()) return;
+                        const r = restoreFromNativeWidget();
+                        if (r) syncStyleWidget();
                         if (++ra < 20) setTimeout(delayedRestore, 300);
                     }
                     setTimeout(delayedRestore, 100);
                 });
 
-                // ---- Resize ----
                 const onResize = node.onResize;
                 node.onResize = function (size) {
                     const r = onResize?.apply(this, arguments);
                     widget.computeSize = () => [size[0] - 20, 105];
+                    container.style.width = (size[0] - 20) + "px";
                     return r;
                 };
+                if (typeof ResizeObserver !== "undefined") {
+                    const ro = new ResizeObserver(entries => {
+                        for (const entry of entries) {
+                            const w = entry.contentRect.width;
+                            if (w > 0) container.style.width = w + "px";
+                        }
+                    });
+                    ro.observe(container);
+                }
 
                 node._friaRestore = function () {
                     let ra = 0;
                     const retry = () => {
                         const restored = restoreFromNativeWidget();
+                        if (restored) syncStyleWidget();
                         if (!restored && ++ra < 20) setTimeout(retry, 300);
                     };
                     retry();

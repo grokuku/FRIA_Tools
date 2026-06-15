@@ -2,8 +2,7 @@
  * FR.IA Ideogram 4 Caption Builder — Widget ComfyUI
  *
  * Widgets natifs ComfyUI (visibles) : seed, width, height, description, element_1..4
- * Widget cache : _api_config (JSON interne)
- * DOM widget : preset IA, style, generate, resultat
+ * Widgets pilotés par le DOM : preset_id, style_id, template_id
  */
 (function waitForApp() {
     const app = window.app || window.comfyAPI?.app?.app;
@@ -20,7 +19,6 @@
                 const node = this;
                 let _friaRestored = false;
 
-                // ---- Helper : cacher un widget natif ----
                 const hideWidget = (n, name) => {
                     const w = n.widgets?.find(x => x.name === name);
                     if (w) {
@@ -32,24 +30,17 @@
                     return null;
                 };
 
-                // ---- Masquer les widgets natifs pilotés par le DOM ----
-                // preset_id et style_id sont des widgets INT natifs que le DOM
-                // pilote via leur .value. On les cache visuellement et on
-                // supprime leur socket d'entrée pour qu'ils n'apparaissent
-                // pas dans l'UI.
                 hideWidget(node, "preset_id");
                 hideWidget(node, "style_id");
-                hideWidget(node, "prompt_type");
+                hideWidget(node, "template_id");
 
-                // ---- Supprimer les sockets d'entrée ----
-                for (const inputName of ["preset_id", "style_id", "prompt_type"]) {
+                for (const inputName of ["preset_id", "style_id", "template_id"]) {
                     const slot = node.findInputSlot?.(inputName);
                     if (slot !== undefined && slot !== -1) {
                         node.removeInput(slot);
                     }
                 }
 
-                // ---- Utilitaires API ----
                 const getApiUrl = () => {
                     try {
                         const cfg = JSON.parse(localStorage.getItem("FRIA_config") || "{}");
@@ -74,16 +65,8 @@
                     if (!resp.ok) return [];
                     return resp.json().catch(() => []);
                 };
-                const apiPost = async (path, body) => {
-                    const resp = await fetch(`${getApiUrl()}/${path.replace(/^\//, "")}`, {
-                        method: "POST", headers: apiHeaders(), body: JSON.stringify(body),
-                    });
-                    if (!resp.ok) { const t = await resp.text().catch(() => ""); throw new Error(`HTTP ${resp.status}: ${t.substring(0, 200)}`); }
-                    return resp.json();
-                };
 
-                // ---- Cache ----
-                const _cache = (window.__FRIA_cache = window.__FRIA_cache || { presets: 0, styles: 0 });
+                const _cache = (window.__FRIA_cache = window.__FRIA_cache || { presets: 0, styles: 0, tmpl: 0 });
                 const CACHE_TTL = 15000;
 
                 async function populateSelect(select, apiPath, placeholder) {
@@ -91,9 +74,6 @@
                     try {
                         const items = await apiGet(apiPath);
                         if (Array.isArray(items)) {
-                            // Stocker la liste des presets dans node._friaPresets pour
-                            // que saveApiConfig puisse lire is_client_side et base_url
-                            // du preset actuellement selectionne.
                             if (apiPath === "presets") {
                                 try { node._friaPresets = items; } catch {}
                             }
@@ -115,10 +95,6 @@
                     if ([...select.options].some(o => o.value === oldVal)) select.value = oldVal;
                 }
 
-                // ========================================
-                // DOM WIDGET
-                // ========================================
-
                 const container = document.createElement("div");
                 Object.assign(container.style, {
                     width: "100%",
@@ -135,7 +111,6 @@
                     return l;
                 }
 
-                // ---- Template + Style ----
                 const tsRow = document.createElement("div");
                 Object.assign(tsRow.style, { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" });
 
@@ -155,7 +130,6 @@
                 tsRow.appendChild(styleDiv);
                 container.appendChild(tsRow);
 
-                // ---- Preset ----
                 const presetDiv = document.createElement("div");
                 const presetSelect = document.createElement("select");
                 Object.assign(presetSelect.style, { width: "100%", padding: "3px 6px", borderRadius: "4px", border: "1px solid #555", background: "#3a3a3e", color: "#ccc", fontSize: "11px", cursor: "pointer" });
@@ -164,28 +138,34 @@
                 presetDiv.appendChild(presetSelect);
                 container.appendChild(presetDiv);
 
-                async function loadTemplates() {
+                async function populateTemplateSelect() {
                     const current = templateSelect.value;
-                    templateSelect.innerHTML = '<option value="">-- Chargement --</option>';
+                    templateSelect.innerHTML = '<option value="0">-- Chargement --</option>';
                     try {
                         const items = await apiGet("prompts/templates");
-                        if (Array.isArray(items) && items.length > 0) {
-                            templateSelect.innerHTML = '';
-                            items.forEach(t => {
-                                const o = document.createElement("option");
-                                o.value = t.prompt_type;
-                                o.textContent = t.name || t.prompt_type;
-                                templateSelect.appendChild(o);
-                            });
-                            if (current && [...templateSelect.options].some(o => o.value === current)) {
-                                templateSelect.value = current;
-                            }
+                        templateSelect.innerHTML = '<option value="0">-- Template --</option>';
+                        if (!Array.isArray(items)) return;
+                        items.forEach(t => {
+                            const o = document.createElement("option");
+                            o.value = t.id;
+                            o.textContent = t.name || (`Template ${t.id}`);
+                            templateSelect.appendChild(o);
+                        });
+                        if (current !== "0" && [...templateSelect.options].some(o => o.value === current)) {
+                            templateSelect.value = current;
                         }
-                    } catch {}
+                    } catch {
+                        templateSelect.innerHTML = '<option value="0">-- Template --</option>';
+                    }
                 }
-                templateSelect.addEventListener("mousedown", loadTemplates);
+                async function refreshTemplatesIfStale() {
+                    const now = Date.now();
+                    if (now - (_cache.tmpl || 0) < CACHE_TTL) return;
+                    _cache.tmpl = now;
+                    await populateTemplateSelect();
+                }
+                templateSelect.addEventListener("mousedown", refreshTemplatesIfStale);
 
-                // ---- Generate ----
                 const generateBtn = document.createElement("button");
                 generateBtn.textContent = "🔄  Generate Ideogram 4 caption";
                 Object.assign(generateBtn.style, {
@@ -197,7 +177,6 @@
                 generateBtn.onmouseleave = () => generateBtn.style.background = "#6366f1";
                 container.appendChild(generateBtn);
 
-                // ---- Resultat ----
                 const resultTextarea = document.createElement("textarea");
                 Object.assign(resultTextarea.style, {
                     width: "100%",
@@ -211,8 +190,6 @@
                 container.appendChild(mkLabel("Resultat"));
                 container.appendChild(resultTextarea);
 
-                // ---- Debug bouton ----
-                // ---- Preview note ----
                 const previewNote = document.createElement("div");
                 Object.assign(previewNote.style, {
                     fontSize: "10px", color: "#888", textAlign: "center",
@@ -221,7 +198,6 @@
                 previewNote.textContent = "💡 Preview = sortie IMAGE | Debug = sortie STRING du node";
                 container.appendChild(previewNote);
 
-                // ---- Debug bouton ----
                 const debugBtn = document.createElement("button");
                 debugBtn.textContent = "🔍 Voir debug LLM";
                 Object.assign(debugBtn.style, {
@@ -232,12 +208,14 @@
                 debugBtn.onclick = () => {
                     const md = node._lastDebugMd || "Aucun debug. Lance un Generate d'abord.";
                     const w = window.open("", "FR.IA Debug", "width=800,height=600");
-                    w.document.write(`<html><head><title>FR.IA Debug</title><style>body{background:#1a1a1e;color:#ccc;font-family:monospace;font-size:12px;padding:16px;}pre{white-space:pre-wrap;background:#2a2a2e;padding:8px;border-radius:4px;}h1,h2,h3{color:#6366f1;}h2{border-bottom:1px solid #444;padding-bottom:4px;}code{background:#3a3a3e;padding:1px 4px;border-radius:2px;}</style></head><body><pre>${md.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre></body></html>`);
+                    w.document.write(`<html><head><title>FR.IA Debug</title><style>body{background:#1a1a1e;color:#ccc;font-family:monospace;font-size:12px;padding:16px;}pre{white-space:pre-wrap;background:#2a2a2e;padding:8px;border-radius:4px;}h1,h2,h3{color:#6366f1;}h2{border-bottom:1px solid #444;padding-bottom:4px;}code{background:#3a3a3e;padding:1px 4px;border-radius:2px;}</style></head><body></body></html>`);
+                    const pre = w.document.createElement("pre");
+                    pre.textContent = md;
+                    w.document.body.appendChild(pre);
                     w.document.close();
                 };
                 container.appendChild(debugBtn);
 
-                // ---- Integration DOM Widget ----
                 const domWidget = node.addDOMWidget("ideogram4_ui", "custom", container, {
                     getValue: () => "",
                     setValue: (v) => {},
@@ -250,23 +228,16 @@
                 node.onResize = function (size) {
                     if (origOnResize) origOnResize.call(this, size);
                     if (size[0] < MIN_WIDTH) size[0] = MIN_WIDTH;
+                    container.style.width = (size[0] - 20) + "px";
                 };
                 requestAnimationFrame(() => {
                     if (node.size && node.size[0] < MIN_WIDTH) node.setSize([MIN_WIDTH, node.size[1]]);
+                    if (node.size) container.style.width = (node.size[0] - 20) + "px";
                 });
 
                 node._resultArea = resultTextarea;
                 node._domWidget = domWidget;
 
-                // ========================================
-                // Sync des widgets natifs (preset_id + style_id)
-                // ========================================
-                // (readApiConfig supprime : on n'utilise plus le widget STRING
-                // _api_config. Les widgets preset_id et style_id sont natifs.)
-
-                // Sync des widgets natifs (preset_id + style_id) au lieu du widget
-                // STRING _api_config qui n'existe plus (api_key/url sont dans le
-                // fichier de credentials, lus cote Python).
                 function syncNativeWidgets() {
                     if (!_friaRestored) return;
                     const set = (name, val) => {
@@ -277,24 +248,18 @@
                     };
                     set("preset_id", parseInt(presetSelect.value) || 0);
                     set("style_id", parseInt(styleSelect.value) || 0);
-                    set("prompt_type", templateSelect.value);
+                    set("template_id", parseInt(templateSelect.value) || 0);
                 }
 
                 presetSelect.onchange = syncNativeWidgets;
                 styleSelect.onchange = syncNativeWidgets;
                 templateSelect.onchange = syncNativeWidgets;
 
-                // ========================================
-                // RESTORE
-                // ========================================
-
                 function restoreFromWidgets(n) {
                     let restored = false;
-                    // Lire les widgets natifs preset_id et style_id (restaures
-                    // par ComfyUI au rechargement de la page).
                     const pw = n.widgets?.find(x => x.name === "preset_id");
                     const sw = n.widgets?.find(x => x.name === "style_id");
-                    const tw = n.widgets?.find(x => x.name === "prompt_type");
+                    const tw = n.widgets?.find(x => x.name === "template_id");
                     try {
                         if (pw && pw.value > 0 && [...presetSelect.options].some(o => o.value === String(pw.value))) {
                             presetSelect.value = String(pw.value);
@@ -304,9 +269,14 @@
                             styleSelect.value = String(sw.value);
                             restored = true;
                         }
-                        if (tw && tw.value && [...templateSelect.options].some(o => o.value === String(tw.value))) {
-                            templateSelect.value = String(tw.value);
-                            restored = true;
+                        if (tw) {
+                            const tid = parseInt(tw.value) || 0;
+                            if (tid > 0 && [...templateSelect.options].some(o => o.value === String(tid))) {
+                                templateSelect.value = String(tid);
+                                restored = true;
+                            } else if (tid === 0) {
+                                templateSelect.value = "0";
+                            }
                         }
                     } catch {}
                     _friaRestored = true;
@@ -316,23 +286,33 @@
                     let ra = 0;
                     const retry = () => {
                         const restored = restoreFromWidgets(node);
+                        if (restored) syncNativeWidgets();
                         if (!restored && ++ra < 20) setTimeout(retry, 300);
                     };
                     retry();
                 };
 
-                populateSelect(presetSelect, "presets", "-- Preset IA --")
-                    .then(() => restoreFromWidgets(node));
-                populateSelect(styleSelect, "styles", "-- Style --")
-                    .then(() => restoreFromWidgets(node));
-                loadTemplates().then(() => {
-                    restoreFromWidgets(node);
-                    syncNativeWidgets();
+                Promise.all([
+                    populateSelect(presetSelect, "presets", "-- Preset IA --"),
+                    populateSelect(styleSelect, "styles", "-- Style --"),
+                    populateTemplateSelect(),
+                ]).then(() => {
+                    const restored = restoreFromWidgets(node);
+                    if (restored) syncNativeWidgets();
+                    else {
+                        const tw = node.widgets?.find(x => x.name === "template_id");
+                        const tid = parseInt(tw?.value) || 0;
+                        templateSelect.value = String(tid);
+                        syncNativeWidgets();
+                    }
+                    let ra = 0;
+                    function delayedRestore() {
+                        const r = restoreFromWidgets(node);
+                        if (r) syncNativeWidgets();
+                        if (++ra < 20) setTimeout(delayedRestore, 300);
+                    }
+                    setTimeout(delayedRestore, 100);
                 });
-
-                // ========================================
-                // GENERATE
-                // ========================================
 
                 generateBtn.onclick = async () => {
                     const get = (name) => node.widgets?.find(w => w.name === name);
@@ -347,7 +327,7 @@
                     const payload = {
                         text: description,
                         seed: seedW > 0 ? seedW : null,
-                        prompt_type: templateSelect.value,
+                        template_id: parseInt(templateSelect.value) || 0,
                         width: widthW || 1024,
                         height: heightW || 1024,
                         ep_elements: elTexts.map(t => ({ type: "text", text: t })),
@@ -362,8 +342,6 @@
 
                     resultTextarea.value = "Generation en cours...";
                     try {
-                        // L'endpoint retourne du ndjson (streaming keepalive).
-                        // On lit les chunks et on garde le dernier status='done'.
                         const resp = await fetch(`${getApiUrl()}/enhance`, {
                             method: "POST", headers: apiHeaders(), body: JSON.stringify(payload),
                         });
@@ -394,10 +372,6 @@
                         resultTextarea.value = "Erreur: " + err.message;
                     }
                 };
-
-                // ========================================
-                // onExecuted
-                // ========================================
 
                 const origExec = node.onExecuted;
                 node.onExecuted = function (output) {

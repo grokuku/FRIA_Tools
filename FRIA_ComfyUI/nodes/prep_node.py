@@ -66,6 +66,16 @@ class FRIAPromptPrepNode:
         api_url = _credentials.get_api_url()
         api_key = _credentials.get_api_key()
 
+        # Defensive : ComfyUI peut envoyer une string vide pour un INT
+        try:
+            template_id = int(template_id) if template_id != "" else 0
+        except (ValueError, TypeError):
+            template_id = 0
+        try:
+            style_id = int(style_id) if style_id != "" else 0
+        except (ValueError, TypeError):
+            style_id = 0
+
         # Parser elements : soit un tableau direct, soit l'objet _elements_json complet
         elems = []
         elems_raw = ""

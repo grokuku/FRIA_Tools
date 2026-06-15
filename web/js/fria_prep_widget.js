@@ -13,7 +13,7 @@
  *
  * Les widgets natifs ComfyUI (seed, base_prompt, special_instructions,
  * elements) sont restaurés automatiquement par ComfyUI au rechargement
- * de la page. Les widgets prompt_type et style_id sont natifs mais caches
+ * de la page. Les widgets template_id et style_id sont natifs mais caches
  * (le DOM les pilote via leur .value).
  *
  * api_key et server_url sont lus depuis ComfyUI/user/default/fria_credentials.json
@@ -89,15 +89,17 @@
                     return resp.json().catch(() => []);
                 };
 
-                function syncNativeWidgets() {
-                    if (!_friaRestored) return;
+                function syncNativeWidgets(force) {
+                    if (!_friaRestored && !force) return;
                     if (templateIdWidget) {
-                        templateIdWidget.value = parseInt(templateSelect.value) || 0;
-                        if (templateIdWidget.callback) templateIdWidget.callback(templateIdWidget.value);
+                        const val = parseInt(typeSelect.value) || 0;
+                        templateIdWidget.value = val;
+                        if (templateIdWidget.callback) templateIdWidget.callback(val);
                     }
                     if (styleWidget) {
-                        styleWidget.value = parseInt(styleSelect.value) || 0;
-                        if (styleWidget.callback) styleWidget.callback(styleWidget.value);
+                        const val = parseInt(styleSelect.value) || 0;
+                        styleWidget.value = val;
+                        if (styleWidget.callback) styleWidget.callback(val);
                     }
                 }
 
@@ -110,6 +112,8 @@
                         if (tid > 0 && [...typeSelect.options].some(o => o.value === String(tid))) {
                             typeSelect.value = String(tid);
                             restored = true;
+                        } else if (tid === 0) {
+                            typeSelect.value = "0";
                         }
                     }
                     if (styleWidget) {
@@ -117,6 +121,8 @@
                         if (sid > 0 && [...styleSelect.options].some(o => o.value === String(sid))) {
                             styleSelect.value = String(sid);
                             restored = true;
+                        } else if (sid === 0) {
+                            styleSelect.value = "0";
                         }
                     }
                     _friaRestored = true;
@@ -191,11 +197,8 @@
                     typeSelect.innerHTML = `<option value="0">-- Chargement --</option>`;
                     try {
                         const items = await apiGet("prompts/templates");
-                        if (!Array.isArray(items) || items.length === 0) {
-                            typeSelect.innerHTML = `<option value="0">-- Template --</option>`;
-                            return;
-                        }
-                        typeSelect.innerHTML = '';
+                        typeSelect.innerHTML = `<option value="0">-- Template --</option>`;
+                        if (!Array.isArray(items)) return;
                         items.forEach(item => {
                             const o = document.createElement("option");
                             o.value = item.id;
@@ -255,22 +258,19 @@
                 widget.computeSize = () => [node.size[0] - 20, 110];
 
                 // ---- Initialisation ----
-                populateTemplateSelect().then(() => {
-                    restoreFromNativeWidgets();
-                    syncNativeWidgets();
-                    let ra = 0;
-                    function delayedRestore() {
-                        restoreFromNativeWidgets();
-                        if (++ra < 20) setTimeout(delayedRestore, 300);
+                Promise.all([populateTemplateSelect(), populateStyleSelect()]).then(() => {
+                    const restored = restoreFromNativeWidgets();
+                    if (restored) syncNativeWidgets(true);
+                    else {
+                        // Premier chargement : forcer les selects sur les widgets natifs
+                        typeSelect.value = String(parseInt(templateIdWidget?.value) || 0);
+                        styleSelect.value = String(parseInt(styleWidget?.value) || 0);
+                        syncNativeWidgets(true);
                     }
-                    setTimeout(delayedRestore, 100);
-                });
-                populateStyleSelect().then(() => {
-                    restoreFromNativeWidgets();
-                    syncNativeWidgets();
                     let ra = 0;
                     function delayedRestore() {
-                        restoreFromNativeWidgets();
+                        const r = restoreFromNativeWidgets();
+                        if (r) syncNativeWidgets(true);
                         if (++ra < 20) setTimeout(delayedRestore, 300);
                     }
                     setTimeout(delayedRestore, 100);
@@ -281,8 +281,18 @@
                 node.onResize = function (size) {
                     const r = onResize?.apply(this, arguments);
                     widget.computeSize = () => [size[0] - 20, 110];
+                    if (container) container.style.width = (size[0] - 20) + "px";
                     return r;
                 };
+                if (typeof ResizeObserver !== "undefined") {
+                    const ro = new ResizeObserver(entries => {
+                        for (const entry of entries) {
+                            const w = entry.contentRect.width;
+                            if (w > 0) container.style.width = w + "px";
+                        }
+                    });
+                    ro.observe(container);
+                }
 
                 node._friaRestore = function () {
                     let ra = 0;
