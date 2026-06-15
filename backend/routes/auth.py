@@ -86,8 +86,7 @@ def discord_callback():
     # Chargement de la config Ollama stockée en BDD
     ollama_cfg = _get_ollama_config()
     if ollama_cfg.get("url") or ollama_cfg.get("model"):
-        from embeddings import set_config
-        set_config(url=ollama_cfg.get("url"), model=ollama_cfg.get("model"))
+        set_config(ollama_url=ollama_cfg.get("url"), ollama_model=ollama_cfg.get("model"))
 
     # Création de la session Flask
     session["user"] = {
