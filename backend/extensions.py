@@ -10,7 +10,6 @@ from flask import Flask
 from flask_cors import CORS
 
 from auth import init_oauth
-from routes.helpers import _init_db
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / 'keywords.db'
@@ -21,6 +20,3 @@ app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24).hex())
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 oauth = init_oauth(app)
-
-# Initialisation unique de la BDD au demarrage (au lieu d'a chaque connexion)
-_init_db()

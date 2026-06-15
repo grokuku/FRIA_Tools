@@ -45,6 +45,10 @@ from routes.generate import *
 from routes.export import *
 from routes.ideogram import *
 
+# Initialisation unique de la BDD (schemas + migrations) au demarrage
+from routes.helpers import _init_db
+_init_db()
+
 # ── Fichiers statiques ────────────────────────────────────────────────
 
 @app.route('/')
