@@ -452,6 +452,29 @@ function kwLoadList() {
                 sel.appendChild(opt);
             });
             sel.value = currentVal;
+
+            // Peupler les datalists section + sous-section
+            var dlSection = document.getElementById('kw-section-list');
+            dlSection.innerHTML = '';
+            sections.forEach(s => {
+                var opt = document.createElement('option');
+                opt.value = s.section_id;
+                opt.textContent = s.section_id + '. ' + s.section_title;
+                dlSection.appendChild(opt);
+            });
+            // Charger les sous-sections pour le datalist
+            fetch(API + '/subsections')
+                .then(r => r.json())
+                .then(subs => {
+                    var dlSub = document.getElementById('kw-subsection-list');
+                    dlSub.innerHTML = '';
+                    subs.forEach(sub => {
+                        var opt = document.createElement('option');
+                        opt.value = sub.subsection_id;
+                        opt.textContent = sub.subsection_id + ' — ' + sub.subsection_title;
+                        dlSub.appendChild(opt);
+                    });
+                }).catch(() => {});
         }).catch(() => {});
 
     const list = document.getElementById('kw-list');
@@ -842,6 +865,7 @@ function _parseAndShowPreview(text) {
             secInput.dataset.rowId = r.id;
             secInput.dataset.field = 'sectionId';
             secInput.oninput = _bulkUpdateRow;
+            secInput.setAttribute('list', 'kw-section-list');
             tdSec.appendChild(secInput);
 
             // Subsection
@@ -854,6 +878,7 @@ function _parseAndShowPreview(text) {
             subInput.dataset.rowId = r.id;
             subInput.dataset.field = 'subsectionId';
             subInput.oninput = _bulkUpdateRow;
+            subInput.setAttribute('list', 'kw-subsection-list');
             tdSub.appendChild(subInput);
 
             // NSFW toggle
