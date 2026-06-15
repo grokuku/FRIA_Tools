@@ -41,12 +41,15 @@ class FRIAIdeogramParseNode:
                 "llm_response": ("STRING", {"forceInput": True, "multiline": True, "default": ""}),
                 "context": ("STRING", {"forceInput": True, "multiline": True, "default": "{}"}),
             },
+            "optional": {
+                "validation_template_id": ("INT", {"default": 0, "min": 0}),
+            },
         }
 
     RETURN_TYPES = ("STRING", "STRING", "STRING", "IMAGE", "STRING")
     RETURN_NAMES = ("prompt", "validation_prompt", "validation_system", "preview", "debug")
 
-    def parse(self, llm_response, context):
+    def parse(self, llm_response, context, validation_template_id=0):
         # api_key et api_url lus depuis le fichier de credentials
         api_url = _credentials.get_api_url()
         api_key = _credentials.get_api_key()
@@ -63,6 +66,8 @@ class FRIAIdeogramParseNode:
             "llm_response": llm_response,
             "context": context,
         }
+        if validation_template_id > 0:
+            payload["validation_template_id"] = validation_template_id
 
         headers = {"Content-Type": "application/json"}
         if api_key:

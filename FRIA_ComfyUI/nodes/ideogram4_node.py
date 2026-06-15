@@ -38,6 +38,7 @@ class FRIAIdeogram4Node:
                 "preset_id": ("INT", {"default": 0, "min": 0}),
                 "style_id": ("INT", {"default": 0, "min": 0}),
                 "template_id": ("INT", {"default": 0, "min": 0}),
+                "validation_template_id": ("INT", {"default": 0, "min": 0}),
             },
         }
 
@@ -47,7 +48,8 @@ class FRIAIdeogram4Node:
     def build_caption(self, seed=0, width=1024, height=1024,
                       description="", element_1="", element_2="",
                       element_3="", element_4="",
-                      preset_id=0, style_id=0, template_id=0):
+                      preset_id=0, style_id=0, template_id=0,
+                      validation_template_id=0):
         import logging
         # Defensive : ComfyUI peut envoyer une string vide pour un INT
         try:
@@ -76,12 +78,15 @@ class FRIAIdeogram4Node:
             "text": description.strip(),
             "seed": seed if seed > 0 else None,
             "template_id": template_id if template_id > 0 else None,
+            "validation_template_id": validation_template_id if validation_template_id > 0 else None,
             "width": width,
             "height": height,
             "ep_elements": ep_elements,
             "preset_id": preset_id if preset_id > 0 else None,
             "style_id": style_id if style_id > 0 else None,
         }
+        if validation_template_id > 0:
+            payload['validation_passes'] = 1
 
         headers = {"Content-Type": "application/json"}
         if api_key:

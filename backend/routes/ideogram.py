@@ -156,52 +156,30 @@ def ideogram_parse():
         else:
             prompt_out = json.dumps(converted, ensure_ascii=False, indent=2)
 
-    # 4) Construire le validation_prompt (toujours, c'est instantane)
-    #    Le user decide de l'utiliser ou pas selon son branchement.
+    # 4) Construire le validation_prompt (optionnel, si validation_template_id fourni)
+    #    Le client decide s'il veut l'utiliser ou pas.
     validation_prompt = ''
     validation_system = ''
-    if is_valid and ctx:
-        elements = (parsed.get('compositional_deconstruction') or {}).get('elements') or []
-        element_list = []
-        for i, el in enumerate(elements):
-            bbox = el.get('bbox', '?')
-            desc = (el.get('desc') or el.get('text') or '?')[:120]
-            element_list.append(f"  {i+1}. {desc} | bbox: {bbox}")
-        elements_text = '\n'.join(element_list) if element_list else "  (none)"
+    if is_valid:
+        val_tmpl_id = ctx.get('validation_template_id') or data.get('validation_template_id')
+        if val_tmpl_id:
+            try:
+                val_conn = get_db()
+                val_row = val_conn.execute(
+                    "SELECT system_prompt FROM prompt_templates WHERE id = ?",
+                    (int(val_tmpl_id),)
+                ).fetchone()
+                if val_row:
+                    validation_system = val_row['system_prompt'] or ''
+                val_conn.close()
+            except Exception:
+                validation_system = ''
 
-        original_input = ctx.get('original_input', '')
-        style_text = ctx.get('style_text', '')
+        if not validation_system:
+            validation_system = 'You are a spatial composition expert. You output ONLY corrected JSON with properly placed bounding boxes.'
 
-        from math import gcd
-        g = gcd(width, height) if width and height else 1
-        aspect = f"{width//g}:{height//g}"
-
-        validation_prompt = f"""Fix the bounding boxes in this Ideogram 4 caption.
-
-USER SCENE: {original_input}
-
-ELEMENTS (each one is a separate subject that needs a bbox):
-{elements_text}
-
-IMAGE: {width}x{height} (aspect ratio: {aspect})
-
-Your ONLY task: imagine a photograph of this scene, then assign each element a bounding box that matches WHERE that person/object would actually be in the photo.
-
-bbox format: [y_min, x_min, y_max, x_max] in pixel coordinates matching the image dimensions. Origin top-left.
-
-Rules:
-- Each element gets its own NON-OVERLAPPING zone
-- A bbox SURROUNDS the subject: standing person = tall narrow (y_span > x_span), diving person = wide short (x_span > y_span). NEVER make a standing person's bbox wider than tall.
-- LAYOUT depends on aspect ratio: landscape ({aspect}) = spread elements side by side horizontally. Portrait = stack elements vertically with less horizontal room.
-- The first element is the main subject (largest, centered)
-- Never remove or add elements
-
-Current JSON:
-{llm_response_raw}
-
-Output ONLY the corrected JSON. No code fences."""
-
-        validation_system = 'You are a spatial composition expert. You output ONLY corrected JSON with properly placed bounding boxes.'
+        # User prompt = la sortie brute du LLM (passe 1)
+        validation_prompt = llm_response_raw
 
     # 5) Debug
     debug_md = f"### Ideogram Parse\n\n"

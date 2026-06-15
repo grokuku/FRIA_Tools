@@ -33,8 +33,9 @@
                 hideWidget(node, "preset_id");
                 hideWidget(node, "style_id");
                 hideWidget(node, "template_id");
+                hideWidget(node, "validation_template_id");
 
-                for (const inputName of ["preset_id", "style_id", "template_id"]) {
+                for (const inputName of ["preset_id", "style_id", "template_id", "validation_template_id"]) {
                     const slot = node.findInputSlot?.(inputName);
                     if (slot !== undefined && slot !== -1) {
                         node.removeInput(slot);
@@ -112,7 +113,7 @@
                 }
 
                 const tsRow = document.createElement("div");
-                Object.assign(tsRow.style, { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" });
+                Object.assign(tsRow.style, { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" });
 
                 const templateDiv = document.createElement("div");
                 const templateSelect = document.createElement("select");
@@ -128,6 +129,14 @@
                 styleDiv.appendChild(mkLabel("Style"));
                 styleDiv.appendChild(styleSelect);
                 tsRow.appendChild(styleDiv);
+
+                const valTmplDiv = document.createElement("div");
+                const valTmplSelect = document.createElement("select");
+                Object.assign(valTmplSelect.style, { width: "100%", padding: "3px 6px", borderRadius: "4px", border: "1px solid #555", background: "#3a3a3e", color: "#ccc", fontSize: "11px", cursor: "pointer" });
+                valTmplDiv.appendChild(mkLabel("Validation"));
+                valTmplDiv.appendChild(valTmplSelect);
+                valTmplSelect.addEventListener("mousedown", refreshTemplatesIfStale);
+                tsRow.appendChild(valTmplDiv);
                 container.appendChild(tsRow);
 
                 const presetDiv = document.createElement("div");
@@ -249,17 +258,20 @@
                     set("preset_id", parseInt(presetSelect.value) || 0);
                     set("style_id", parseInt(styleSelect.value) || 0);
                     set("template_id", parseInt(templateSelect.value) || 0);
+                    set("validation_template_id", parseInt(valTmplSelect.value) || 0);
                 }
 
                 presetSelect.onchange = syncNativeWidgets;
                 styleSelect.onchange = syncNativeWidgets;
                 templateSelect.onchange = syncNativeWidgets;
+                valTmplSelect.onchange = syncNativeWidgets;
 
                 function restoreFromWidgets(n) {
                     let restored = false;
                     const pw = n.widgets?.find(x => x.name === "preset_id");
                     const sw = n.widgets?.find(x => x.name === "style_id");
                     const tw = n.widgets?.find(x => x.name === "template_id");
+                    const vw = n.widgets?.find(x => x.name === "validation_template_id");
                     try {
                         if (pw && pw.value > 0 && [...presetSelect.options].some(o => o.value === String(pw.value))) {
                             presetSelect.value = String(pw.value);
@@ -276,6 +288,15 @@
                                 restored = true;
                             } else if (tid === 0) {
                                 templateSelect.value = "0";
+                            }
+                        }
+                        if (vw) {
+                            const vid = parseInt(vw.value) || 0;
+                            if (vid > 0 && [...valTmplSelect.options].some(o => o.value === String(vid))) {
+                                valTmplSelect.value = String(vid);
+                                restored = true;
+                            } else if (vid === 0) {
+                                valTmplSelect.value = "0";
                             }
                         }
                     } catch {}
@@ -296,6 +317,7 @@
                     populateSelect(presetSelect, "presets", "-- Preset IA --"),
                     populateSelect(styleSelect, "styles", "-- Style --"),
                     populateTemplateSelect(),
+                    populateSelect(valTmplSelect, "prompts/templates", "-- Pas de validation --"),
                 ]).then(() => {
                     const restored = restoreFromWidgets(node);
                     if (restored) syncNativeWidgets();
@@ -328,6 +350,7 @@
                         text: description,
                         seed: seedW > 0 ? seedW : null,
                         template_id: parseInt(templateSelect.value) || 0,
+                        validation_template_id: parseInt(valTmplSelect.value) || 0,
                         width: widthW || 1024,
                         height: heightW || 1024,
                         ep_elements: elTexts.map(t => ({ type: "text", text: t })),

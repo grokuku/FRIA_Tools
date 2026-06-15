@@ -636,6 +636,11 @@ Here are examples of well-structured {pt.upper()} prompts:
                 VALUES (NULL, ?, ?, ?, ?, 1)
             """, (name, fmt, system_prompt.strip(), examples))
 
+    # ── Template de validation Ideogram 4 (template standard) ────────
+    # (optionnel, n'est pas créé automatiquement)
+    # Le template peut être créé manuellement dans l'onglet Templates.
+    # Son system_prompt sera utilisé pour la passe 2 si validation_template_id est fourni.
+
     conn.commit()
     conn.close()
 

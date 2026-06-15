@@ -498,7 +498,9 @@ def _prepare_next_validation_pass(session_id, user_id, prepared, next_pass_idx, 
     llm_request, _ = _prepare_validation_pass(
         current_output, prepared['merged_text'], prepared['style_text'],
         prepared['width'], prepared['height'],
-        prepared['llm_config']['model'], next_pass_idx - 1
+        prepared['llm_config']['model'], next_pass_idx - 1,
+        validation_system_prompt=prepared.get('validation_system_prompt', ''),
+        validation_examples=prepared.get('validation_examples')
     )
     # Note : on NE sauve pas le llm_request en BDD (regenerable a partir de current_output)
     return jsonify({
@@ -918,6 +920,26 @@ Here are well-structured examples for reference — study them but do NOT copy v
     validation_passes = int(data.get('validation_passes', 0))
     validation_passes = max(0, min(validation_passes, 3))  # borne 0..3
 
+    # Charger le template de validation (optionnel, pour Ideogram 4 passe 2)
+    # Si validation_template_id est fourni, utilise son system_prompt.
+    # Sinon, garde le hardcodé (backward compatible).
+    validation_template_id = data.get('validation_template_id')
+    validation_system_prompt = ''
+    validation_examples = []
+    if validation_passes > 0 and validation_template_id:
+        conn = get_db()
+        val_row = conn.execute(
+            "SELECT system_prompt, examples FROM prompt_templates WHERE id = ?",
+            (int(validation_template_id),)
+        ).fetchone()
+        if val_row:
+            validation_system_prompt = val_row['system_prompt'] or ''
+            try:
+                validation_examples = json.loads(val_row['examples']) if val_row['examples'] else []
+            except Exception:
+                validation_examples = []
+        conn.close()
+
     return {
         # Identifiant unique de cette session de generation.
         # En mode local (client-side), le caller doit conserver ce session_id
@@ -944,6 +966,9 @@ Here are well-structured examples for reference — study them but do NOT copy v
         'merged_text': merged_text,
         'model': model,
         'validation_passes': validation_passes,
+        'validation_template_id': validation_template_id,
+        'validation_system_prompt': validation_system_prompt,
+        'validation_examples': validation_examples,
         'debug_sections': debug_sections,
     }
 
@@ -1091,7 +1116,9 @@ def _run_validation_passes_internal(prepared, output, debug_sections):
             corrected, val_debug = _do_validation_pass(
                 output, prepared['merged_text'], prepared['style_text'],
                 prepared['width'], prepared['height'],
-                prepared['llm_config'], pass_idx
+                prepared['llm_config'], pass_idx,
+                validation_system_prompt=prepared.get('validation_system_prompt', ''),
+                validation_examples=prepared.get('validation_examples')
             )
             debug_sections.append(val_debug)
             if corrected:
@@ -1102,79 +1129,36 @@ def _run_validation_passes_internal(prepared, output, debug_sections):
     return output
 
 
-def _prepare_validation_pass(current_output, original_input, style_text, width, height, model, pass_idx):
+def _prepare_validation_pass(current_output, original_input, style_text, width, height, model, pass_idx, validation_system_prompt='', validation_examples=None):
     """
     Etape 1 d'une passe de validation (Ideogram 4).
-    Construit le payload LLM a envoyer au modele pour corriger les bboxes.
+    Construit le payload LLM.
 
-    Retourne (llm_request, debug_dict) :
-    - llm_request : payload OpenAI standard a poster sur /chat/completions
-    - debug_dict : dict de debug (sera complete par _finish_validation_pass)
+    - system prompt : le template de validation (ou hardcodé si vide)
+      + les exemples du template (si fournis)
+    - user prompt   : le JSON brut de la passe 1 (current_output)
+
+    Retourne (llm_request, debug_dict).
     """
     debug = {'pass': pass_idx + 1, 'api_calls': []}
-    import re as _re
 
-    # Tenter de parser le JSON
-    try:
-        s = current_output.strip()
-        m = _re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", s)
-        if m:
-            s = m.group(1)
-        parsed = json.loads(s)
-        parsed_ok = True
-    except Exception:
-        parsed_ok = False
-        parsed = None
+    system_content = validation_system_prompt
+    if not system_content:
+        system_content = 'You are a spatial composition expert. You output ONLY corrected JSON with properly placed bounding boxes.'
 
-    if not parsed_ok:
-        critique_prompt = ("The previous Ideogram 4 caption is NOT valid JSON. "
-                           "Regenerate it as a valid JSON object matching the schema. "
-                           "Output ONLY the JSON, no commentary.")
-    else:
-        # Extraire les elements
-        elements = (parsed.get('compositional_deconstruction') or {}).get('elements') or []
-        element_list = []
-        for i, el in enumerate(elements):
-            bbox = el.get('bbox', '?')
-            desc = (el.get('desc') or el.get('text') or '?')[:120]
-            element_list.append(f"  {i+1}. {desc} | bbox: {bbox}")
-        elements_text = '\n'.join(element_list) if element_list else "  (none)"
+    # Ajouter les exemples du template au system prompt
+    if validation_examples and isinstance(validation_examples, list):
+        ex_list = '\n'.join(f'- {ex}' for ex in validation_examples)
+        system_content += f"\n\n## Examples\nHere are examples of well-structured Ideogram 4 captions — study the bbox placement:\n{ex_list}"
 
-        from math import gcd
-        g = gcd(width, height) if width and height else 1
-        aspect = f"{width//g}:{height//g}"
-
-        # Prompt simple et direct : le LLM sait deja ce qu'est une personne debout
-        critique_prompt = f"""Fix the bounding boxes in this Ideogram 4 caption.
-
-USER SCENE: {original_input}
-
-ELEMENTS (each one is a separate subject that needs a bbox):
-{elements_text}
-
-IMAGE: {width}x{height} (aspect ratio: {aspect})
-
-Your ONLY task: imagine a photograph of this scene, then assign each element a bounding box that matches WHERE that person/object would actually be in the photo.
-
-bbox format: [y_min, x_min, y_max, x_max] in pixel coordinates matching the image dimensions. Origin top-left.
-
-Rules:
-- Each element gets its own NON-OVERLAPPING zone
-- A bbox SURROUNDS the subject: standing person = tall narrow (y_span > x_span), diving person = wide short (x_span > y_span). NEVER make a standing person's bbox wider than tall.
-- LAYOUT depends on aspect ratio: landscape ({aspect}) = spread elements side by side horizontally. Portrait = stack elements vertically with less horizontal room.
-- The first element is the main subject (largest, centered)
-- Never remove or add elements
-
-Current JSON:
-{current_output}
-
-Output ONLY the corrected JSON. No code fences."""
+    # User prompt = la sortie brute de la passe 1
+    user_content = current_output
 
     llm_request = {
         'model': model,
         'messages': [
-            {'role': 'system', 'content': 'You are a spatial composition expert. You output ONLY corrected JSON with properly placed bounding boxes.'},
-            {'role': 'user', 'content': critique_prompt},
+            {'role': 'system', 'content': system_content},
+            {'role': 'user', 'content': user_content},
         ],
         'temperature': 0.1,
         'frequency_penalty': 0.0,
@@ -1225,7 +1209,7 @@ def _finish_validation_pass(llm_response, debug):
         return None, debug
 
 
-def _do_validation_pass(current_output, original_input, style_text, width, height, llm_config, pass_idx):
+def _do_validation_pass(current_output, original_input, style_text, width, height, llm_config, pass_idx, validation_system_prompt='', validation_examples=None):
     """
     Helper retro-compatible : prepare + appel LLM interne + finish d'une passe.
     Utilise uniquement par le flow cloud (mode local delegue au client).
@@ -1234,7 +1218,9 @@ def _do_validation_pass(current_output, original_input, style_text, width, heigh
     import requests as _req
     llm_request, debug = _prepare_validation_pass(
         current_output, original_input, style_text, width, height,
-        llm_config['model'], pass_idx
+        llm_config['model'], pass_idx,
+        validation_system_prompt=validation_system_prompt,
+        validation_examples=validation_examples
     )
     base_url = llm_config['base_url']
     api_key = llm_config.get('api_key', '')
