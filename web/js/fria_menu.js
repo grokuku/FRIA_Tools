@@ -220,10 +220,11 @@ async function openMembers() {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const members = await resp.json();
 
-        // Trier : admin en premier, puis par nom
+        // Trier : admin en premier, puis kw_editor, puis par nom
         members.sort((a, b) => {
-            if (a.role === "admin" && b.role !== "admin") return -1;
-            if (a.role !== "admin" && b.role === "admin") return 1;
+            const rank = (r) => r === "admin" ? 0 : r === "kw_editor" ? 1 : 2;
+            const diff = rank(a.role) - rank(b.role);
+            if (diff !== 0) return diff;
             return (a.display_name || a.username || "").localeCompare(b.display_name || b.username || "");
         });
 
@@ -242,7 +243,9 @@ async function openMembers() {
             const avatarUrl = m.avatar_url || (m.avatar && m.id ? `https://cdn.discordapp.com/avatars/${m.id}/${m.avatar}.png?size=32` : null);
             const roleBadge = m.role === "admin"
                 ? '<span style="background:#6366f1;color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;">admin</span>'
-                : '<span style="color:#888;font-size:11px;">membre</span>';
+                : m.role === "kw_editor"
+                  ? '<span style="background:#d97706;color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;">kw_editor</span>'
+                  : '<span style="color:#888;font-size:11px;">membre</span>';
 
             html += `<tr style="border-bottom:1px solid #333;">
                 <td style="padding:6px 8px;display:flex;align-items:center;gap:8px;">
