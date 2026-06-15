@@ -669,6 +669,58 @@ function closeBulkImport() {
     document.getElementById('modal-bulk-import').classList.remove('flex');
 }
 
+function kwCopyAIPrompt() {
+    const prompt = `Tu es un assistant spécialisé dans la conversion de fichiers en mots-clés pour un générateur d\'images IA.
+
+J\'ai besoin que tu convertisses mon fichier (Markdown, CSV, JSON, ou texte brut) au format suivant :
+
+\`\`\`
+keyword | description | section_id | subsection_id | nsfw
+\`\`\`
+
+Chaque ligne = un mot-clé. Les champs sont séparés par \`|\` (pipe).
+
+**Règles :**
+- \`keyword\` : un identifiant court en snake_case ou kebab-case, en anglais. Ex: \`dragon_fire\`, \`elven_queen\`
+- \`description\` : description détaillée en français (ou anglais), prête à être utilisée dans un prompt. Ex: \"Un dragon rouge crachant du feu, ailes déployées, ciel d\'orage\"
+- \`section_id\` : optionnel. Identifiant numérique de la section (ex: 01, 05)
+- \`subsection_id\` : optionnel. Identifiant de la sous-section (ex: 01.01, 05.02)
+- \`nsfw\` : 0 (SFW) ou 1 (NSFW), optionnel, défaut 0
+
+**Exemples valides :**
+\`\`\`
+dragon_fire | Un dragon rouge crachant du feu dans un ciel d\'orage | 05 | 05.02 | 1
+elven_queen | Une reine elfe majestueuse dans une clairière enchantée | 02 | 02.01 | 0
+sunset_beach | Plage au coucher du soleil, vagues douces, ciel orange et rose | 03 | 03.01 | 0
+cyberpunk_city | Rue de ville cyberpunk la nuit, néons, pluie, reflets | 08 | 08.03 | 0
+\`\`\`
+
+**Important :**
+1. Conserve le sens original de chaque entrée — ne résume pas, ne coupe pas
+2. Si une entrée n\'a pas de section, laisse les champs vides (ex: \`keyword | description | | | 0\`)
+3. Garde les descriptions riches et détaillées (1-2 phrases), pas de simples tags
+4. Le NSFW doit être 1 si le contenu est explicitement adulte, 0 sinon
+5. Ignore les entrées qui ne sont pas des mots-clés (titres, séparateurs, métadonnées)
+6. Produit UNIQUEMENT le tableau, sans explications ni commentaires avant/après
+
+Convertis mon fichier ci-dessous :`;
+
+    navigator.clipboard.writeText(prompt)
+        .then(() => showModal('✅ Copié', 'Le prompt AI a été copié. Colle-le dans Gemini, DeepSeek, Claude, etc. avec ton fichier à convertir.', 'success'))
+        .catch(() => {
+            // Fallback pour contexte non-HTTPS
+            var ta = document.createElement('textarea');
+            ta.value = prompt;
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            showModal('✅ Copié', 'Le prompt AI a été copié. Colle-le dans Gemini, DeepSeek, Claude, etc. avec ton fichier à convertir.', 'success');
+        });
+}
+
 async function doBulkImport() {
     const text = document.getElementById('bi-text').value.trim();
     const privacy = document.getElementById('bi-privacy').value;
