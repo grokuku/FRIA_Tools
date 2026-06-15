@@ -277,21 +277,28 @@
                 });
 
                 // ---- Resize au resize du node ----
+                // NOTE : pas de ResizeObserver sur le container : il observe la
+                // grille 2 colonnes et, apres le release de la souris, sa
+                // contentRect.width peut refleter une largeur effondree
+                // (grid 1fr 1fr qui passe a 1 colonne), ce qui ecrase la
+                // largeur fixee par onResize avec une valeur trop petite.
+                // On se fie uniquement a onResize ci-dessous.
                 const onResize = node.onResize;
                 node.onResize = function (size) {
                     const r = onResize?.apply(this, arguments);
                     widget.computeSize = () => [size[0] - 20, 110];
                     if (container) container.style.width = (size[0] - 20) + "px";
+                    // Forcer la grille 2 colonnes a rester en 2 colonnes
+                    // (evite que le grid s'effondre si la largeur devient
+                    // trop petite).
+                    if (grid) {
+                        grid.style.gridTemplateColumns = "1fr 1fr";
+                    }
                     return r;
                 };
-                if (typeof ResizeObserver !== "undefined") {
-                    const ro = new ResizeObserver(entries => {
-                        for (const entry of entries) {
-                            const w = entry.contentRect.width;
-                            if (w > 0) container.style.width = w + "px";
-                        }
-                    });
-                    ro.observe(container);
+                // Forcer la grille 2 colonnes au demarrage.
+                if (grid) {
+                    grid.style.gridTemplateColumns = "1fr 1fr";
                 }
 
                 node._friaRestore = function () {
