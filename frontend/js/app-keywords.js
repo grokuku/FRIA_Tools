@@ -1045,13 +1045,17 @@ async function kwBulkConfirm() {
 // ── Scan des doublons ─────────────────────────────────────────
 
 async function kwOpenDuplicateScan() {
-    showModal('🔍 Scan en cours', 'Analyse de la base à la recherche de doublons...', 'info');
+    showModal('🔍 Scan en cours', 'Analyse de la base à la recherche de doublons...<br><span style="font-size:11px;color:#888;">Cela peut prendre quelques secondes.</span>', 'info');
 
     try {
-        const res = await fetch(API + '/keywords/scan-duplicates');
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000); // 30s max
+        const res = await fetch(API + '/keywords/scan-duplicates', { signal: controller.signal });
+        clearTimeout(timeout);
+        
         const data = await safeJson(res);
         if (!res.ok) {
-            showModal('Erreur', data.error || 'Erreur de scan', 'error');
+            showModal('Erreur', data.error || 'Erreur de scan (HTTP ' + res.status + ')', 'error');
             return;
         }
 
