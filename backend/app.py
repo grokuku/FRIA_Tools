@@ -26,9 +26,6 @@ def _load_ollama_config_at_startup():
     except Exception:
         pass
 
-_load_ollama_config_at_startup()
-
-
 # Import route modules
 from routes.helpers import *
 from routes.auth import *
@@ -48,6 +45,9 @@ from routes.ideogram import *
 # Initialisation unique de la BDD (schemas + migrations) au demarrage
 from routes.helpers import _init_db
 _init_db()
+
+# Chargement de la config Ollama stockée en BDD (doit arriver APRES _init_db)
+_load_ollama_config_at_startup()
 
 # ── Fichiers statiques ────────────────────────────────────────────────
 
