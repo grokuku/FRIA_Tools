@@ -22,7 +22,7 @@ def _load_ollama_config_at_startup():
         conn.close()
         cfg = {r[0]: r[1] for r in rows}
         if cfg:
-            set_config(url=cfg.get('ollama_url'), model=cfg.get('ollama_model'))
+            set_config(ollama_url=cfg.get('ollama_url'), ollama_model=cfg.get('ollama_model'))
     except Exception:
         pass
 

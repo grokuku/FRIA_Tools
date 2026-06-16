@@ -166,7 +166,7 @@ def admin_ollama_settings():
             conn.commit()
             conn.close()
             from embeddings import set_config
-            set_config(url=url, model=model)
+            set_config(ollama_url=url, ollama_model=model)
             return jsonify({'status': 'ok'})
         cfg = _get_ollama_config()
         return jsonify(cfg)
