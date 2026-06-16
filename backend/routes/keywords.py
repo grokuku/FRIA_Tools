@@ -559,7 +559,7 @@ def scan_keyword_duplicates():
         SELECT LOWER(keyword) as kw_lower, GROUP_CONCAT(id) as ids,
                GROUP_CONCAT(keyword) as keywords,
                COUNT(*) as cnt
-        FROM keywords
+        FROM keywords k
         WHERE {privacy_where}
         GROUP BY LOWER(keyword)
         HAVING COUNT(*) > 1
