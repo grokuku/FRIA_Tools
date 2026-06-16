@@ -1107,8 +1107,11 @@ function kwExport() {
     window.open(API + '/keywords/export?scope=' + scope, '_blank');
 }
 
-// ── Moderation (KW editors) ─────────────────────────────────────
+// ── Moderation (KW editors) — Multi-selection ──────────────────
 
+let _pendingSelected = new Set();
+let _pendingLastClicked = null;
+let _pendingData = [];
 let isKwEditor = false;
 
 async function checkKwEditorStatus() {
@@ -1128,16 +1131,137 @@ async function checkKwEditorStatus() {
     }
 }
 
+function _pendingUpdateButtons() {
+    var count = _pendingSelected.size;
+    var appBtn = document.getElementById('kw-pending-approve-btn');
+    var rejBtn = document.getElementById('kw-pending-reject-btn');
+    if (appBtn) { appBtn.textContent = '✅ Valider (' + count + ')'; appBtn.disabled = count === 0; }
+    if (rejBtn) { rejBtn.textContent = '❌ Rejeter (' + count + ')'; rejBtn.disabled = count === 0; }
+}
+
+function _pendingToggle(id, e) {
+    var tr = document.getElementById('kw-pending-row-' + id);
+    if (!tr) return;
+
+    if (e.shiftKey && _pendingLastClicked !== null) {
+        var ids = _pendingData.map(function(x) { return x.id; });
+        var startIdx = ids.indexOf(_pendingLastClicked);
+        var endIdx = ids.indexOf(id);
+        if (startIdx !== -1 && endIdx !== -1) {
+            var from = Math.min(startIdx, endIdx);
+            var to = Math.max(startIdx, endIdx);
+            if (!e.ctrlKey && !e.metaKey) _pendingSelected.clear();
+            for (var i = from; i <= to; i++) _pendingSelected.add(ids[i]);
+        }
+    } else if (e.ctrlKey || e.metaKey) {
+        if (_pendingSelected.has(id)) _pendingSelected.delete(id);
+        else _pendingSelected.add(id);
+    } else {
+        _pendingSelected.clear();
+        _pendingSelected.add(id);
+    }
+    _pendingLastClicked = id;
+    _pendingRenderRows();
+    _pendingUpdateButtons();
+}
+
+function _pendingRenderRows() {
+    _pendingData.forEach(function(kw) {
+        var tr = document.getElementById('kw-pending-row-' + kw.id);
+        if (!tr) return;
+        var selected = _pendingSelected.has(kw.id);
+        tr.classList.toggle('ring-2', selected);
+        tr.classList.toggle('ring-indigo-400', selected);
+        tr.classList.toggle('bg-indigo-50', selected);
+        tr.classList.toggle('dark:bg-indigo-900/30', selected);
+        tr.classList.toggle('bg-amber-50', !selected);
+        tr.classList.toggle('dark:bg-amber-900/20', !selected);
+        var cb = tr.querySelector('.kw-pending-cb');
+        if (cb) cb.checked = selected;
+    });
+}
+
+function _pendingSelectAll() {
+    _pendingSelected = new Set(_pendingData.map(function(x) { return x.id; }));
+    _pendingRenderRows();
+    _pendingUpdateButtons();
+}
+
+function _pendingSelectNone() {
+    _pendingSelected.clear();
+    _pendingRenderRows();
+    _pendingUpdateButtons();
+}
+
+function _pendingSelectInvert() {
+    var all = _pendingData.map(function(x) { return x.id; });
+    _pendingSelected = new Set(all.filter(function(id) { return !_pendingSelected.has(id); }));
+    _pendingRenderRows();
+    _pendingUpdateButtons();
+}
+
+async function _pendingBulkReview(action) {
+    if (_pendingSelected.size === 0) return;
+
+    var ids = [..._pendingSelected];
+    var notes = '';
+    if (action === 'reject') {
+        notes = await new Promise(function(resolve) {
+            showPrompt('Rejeter', 'Raison du rejet (optionnelle) :', '', function(n) { resolve(n || ''); });
+        });
+    }
+
+    var done = 0;
+    var errors = 0;
+    for (var i = 0; i < ids.length; i++) {
+        try {
+            var res = await fetch(API + '/keywords/' + ids[i] + '/review', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({action: action, notes: notes})
+            });
+            var data = await safeJson(res);
+            if (res.ok) {
+                done++;
+                var tr = document.getElementById('kw-pending-row-' + ids[i]);
+                if (tr) {
+                    tr.style.transition = 'opacity 0.3s';
+                    tr.style.opacity = '0';
+                    setTimeout(function() { if (tr.parentNode) tr.remove(); }, 300);
+                }
+            } else {
+                errors++;
+            }
+        } catch(e) {
+            errors++;
+        }
+    }
+
+    _pendingSelected.clear();
+    _pendingData = _pendingData.filter(function(kw) { return !ids.includes(kw.id); });
+    _pendingUpdateButtons();
+    kwLoadList();
+
+    var list = document.getElementById('kw-pending-list');
+    if (list.children.length === 0) {
+        list.innerHTML = '<p class="text-xs text-slate-400">Rien en attente ✅</p>';
+    }
+
+    showModal('Terminé', done + '/' + ids.length + ' traités' + (errors > 0 ? ', ' + errors + ' erreur(s)' : ''), errors > 0 ? 'warning' : 'success');
+}
+
 async function kwLoadPending() {
     if (!isKwEditor) return;
-    const section = document.getElementById('kw-pending-section');
-    const list = document.getElementById('kw-pending-list');
+    var section = document.getElementById('kw-pending-section');
+    var list = document.getElementById('kw-pending-list');
     section.classList.remove('hidden');
     list.innerHTML = '<p class="text-xs text-slate-400">Chargement...</p>';
+    _pendingSelected.clear();
+    _pendingLastClicked = null;
 
     try {
-        const res = await fetch(API + '/keywords/pending');
-        const data = await safeJson(res);
+        var res = await fetch(API + '/keywords/pending');
+        var data = await safeJson(res);
         if (!res.ok || !Array.isArray(data)) {
             list.innerHTML = '<p class="text-xs text-rose-400">Erreur</p>';
             return;
@@ -1146,72 +1270,91 @@ async function kwLoadPending() {
             list.innerHTML = '<p class="text-xs text-slate-400">Rien en attente ✅</p>';
             return;
         }
-        list.innerHTML = '';
-        data.forEach(kw => {
-            const row = document.createElement('div');
-            row.className = 'flex items-center gap-1.5 p-1.5 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-xs';
-            row.innerHTML = '<span class="flex-1"><strong>' + esc(kw.keyword) + '</strong> <span class="text-slate-400">par ' + esc(kw.creator_name || '?') + '</span></span>';
 
-            const editBtn = document.createElement('button');
+        _pendingData = data;
+        list.innerHTML = '';
+
+        // Toolbar : select all/none/invert + bulk actions
+        var toolbar = document.createElement('div');
+        toolbar.className = 'flex items-center gap-1.5 mb-2 flex-wrap';
+
+        function mkBtn(text, cls, fn) {
+            var b = document.createElement('button');
+            b.textContent = text;
+            b.className = 'px-2 py-0.5 text-xs rounded ' + cls;
+            b.onclick = fn;
+            return b;
+        }
+
+        toolbar.appendChild(mkBtn('☐ All', 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200', _pendingSelectAll));
+        toolbar.appendChild(mkBtn('☐ None', 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200', _pendingSelectNone));
+        toolbar.appendChild(mkBtn('🔄 Invert', 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200', _pendingSelectInvert));
+
+        var approveBtn = mkBtn('✅ Valider (0)', 'bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-40', function() { _pendingBulkReview('approve'); });
+        approveBtn.id = 'kw-pending-approve-btn';
+        approveBtn.disabled = true;
+        toolbar.appendChild(approveBtn);
+
+        var rejectBtn = mkBtn('❌ Rejeter (0)', 'bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-40', function() { _pendingBulkReview('reject'); });
+        rejectBtn.id = 'kw-pending-reject-btn';
+        rejectBtn.disabled = true;
+        toolbar.appendChild(rejectBtn);
+
+        list.appendChild(toolbar);
+
+        // Lignes
+        data.forEach(function(kw) {
+            var row = document.createElement('div');
+            row.id = 'kw-pending-row-' + kw.id;
+            row.className = 'flex items-center gap-1.5 p-1.5 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-xs cursor-pointer select-none';
+            row.onclick = function(e) { _pendingToggle(kw.id, e); };
+
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.className = 'kw-pending-cb shrink-0';
+            cb.onclick = function(e) { e.stopPropagation(); _pendingToggle(kw.id, e); };
+
+            var label = document.createElement('span');
+            label.className = 'flex-1';
+            label.innerHTML = '<strong>' + esc(kw.keyword) + '</strong> <span class="text-slate-400">par ' + esc(kw.creator_name || '?') + '</span>';
+
+            var editBtn = document.createElement('button');
             editBtn.textContent = '✎';
             editBtn.className = 'px-1.5 py-0.5 text-xs border border-slate-300 rounded hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700';
             editBtn.title = 'Voir/Modifier';
-            editBtn.onclick = () => {
-                // Ouvrir dans l'éditeur
+            editBtn.onclick = function(e) {
+                e.stopPropagation();
                 kwEdit(kw);
-                // Scroll vers le formulaire
                 document.getElementById('kw-form-keyword').scrollIntoView({behavior: 'smooth'});
             };
 
-            const approveBtn = document.createElement('button');
-            approveBtn.textContent = '✅ Valider';
+            var approveBtn = document.createElement('button');
+            approveBtn.textContent = '✅';
             approveBtn.className = 'px-1.5 py-0.5 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-500';
-            approveBtn.onclick = () => kwReview(kw.id, 'approve', row);
-
-            const rejectBtn = document.createElement('button');
-            rejectBtn.textContent = '❌ Rejeter';
-            rejectBtn.className = 'px-1.5 py-0.5 text-xs bg-rose-600 text-white rounded hover:bg-rose-500';
-            rejectBtn.onclick = () => {
-                showPrompt('Rejeter', 'Raison du rejet (optionnelle) :', '', (notes) => {
-                    kwReview(kw.id, 'reject', row, notes);
-                });
+            approveBtn.title = 'Valider';
+            approveBtn.onclick = function(e) {
+                e.stopPropagation();
+                _pendingSelected.clear();
+                _pendingSelected.add(kw.id);
+                _pendingBulkReview('approve');
             };
 
-            row.appendChild(editBtn);
-            row.appendChild(approveBtn);
-            row.appendChild(rejectBtn);
+            var rejectBtn = document.createElement('button');
+            rejectBtn.textContent = '❌';
+            rejectBtn.className = 'px-1.5 py-0.5 text-xs bg-rose-600 text-white rounded hover:bg-rose-500';
+            rejectBtn.title = 'Rejeter';
+            rejectBtn.onclick = function(e) {
+                e.stopPropagation();
+                _pendingSelected.clear();
+                _pendingSelected.add(kw.id);
+                _pendingBulkReview('reject');
+            };
+
+            row.append(cb, label, editBtn, approveBtn, rejectBtn);
             list.appendChild(row);
         });
     } catch (e) {
         list.innerHTML = '<p class="text-xs text-rose-400">Erreur: ' + e.message + '</p>';
-    }
-}
-
-async function kwReview(id, action, rowEl, notes) {
-    try {
-        const res = await fetch(API + '/keywords/' + id + '/review', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({action, notes: notes || ''})
-        });
-        const data = await safeJson(res);
-        if (!res.ok) {
-            showModal('Erreur', data.error || 'Erreur', 'error');
-            return;
-        }
-        // Animation de retrait
-        rowEl.style.transition = 'opacity 0.3s';
-        rowEl.style.opacity = '0';
-        setTimeout(() => {
-            rowEl.remove();
-            const list = document.getElementById('kw-pending-list');
-            if (list.children.length === 0) {
-                list.innerHTML = '<p class="text-xs text-slate-400">Rien en attente ✅</p>';
-            }
-        }, 300);
-        kwLoadList(); // Recharger la liste
-    } catch (e) {
-        showModal('Erreur', e.message, 'error');
     }
 }
 
