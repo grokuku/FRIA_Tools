@@ -1045,62 +1045,84 @@ async function kwBulkConfirm() {
 // ── Scan des doublons ─────────────────────────────────────────
 
 async function kwOpenDuplicateScan() {
-    showModal('🔍 Scan en cours', 'Analyse de la base à la recherche de doublons...<br><span style="font-size:11px;color:#888;">Cela peut prendre quelques secondes.</span>', 'info');
+    // Afficher la progression inline
+    var progressDiv = document.getElementById('kw-scan-progress');
+    var statusEl = document.getElementById('kw-scan-status');
+    var barEl = document.getElementById('kw-scan-bar');
+    var timerEl = document.getElementById('kw-scan-timer');
+    
+    progressDiv.classList.remove('hidden');
+    statusEl.textContent = 'Scan en cours...';
+    barEl.style.width = '10%';
+    
+    var startTime = Date.now();
+    var timerInterval = setInterval(function() {
+        var elapsed = Math.floor((Date.now() - startTime) / 1000);
+        timerEl.textContent = elapsed + 's';
+        var pct = Math.min(80, 10 + elapsed * 3);
+        barEl.style.width = pct + '%';
+    }, 500);
 
     try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 30000); // 30s max
-        const res = await fetch(API + '/keywords/scan-duplicates', { signal: controller.signal });
+        var controller = new AbortController();
+        var timeout = setTimeout(function() { controller.abort(); }, 60000);
+        var res = await fetch(API + '/keywords/scan-duplicates', { signal: controller.signal });
         clearTimeout(timeout);
         
-        const data = await safeJson(res);
+        barEl.style.width = '95%';
+        statusEl.textContent = 'Analyse des resultats...';
+        
+        var data = await safeJson(res);
+        clearInterval(timerInterval);
+        
         if (!res.ok) {
+            progressDiv.classList.add('hidden');
             showModal('Erreur', data.error || 'Erreur de scan (HTTP ' + res.status + ')', 'error');
             return;
         }
-
-        let html = '';
-
-        // Stats
-        html += '<div class="text-xs mb-3">';
-        html += '<p>🔍 <b>' + data.exact_count + '</b> groupe(s) de doublons exacts trouvés';
-        if (data.semantic_count > 0) {
-            html += ' · <b>' + data.semantic_count + '</b> groupe(s) de doublons sémantiques (≥85%)';
-        }
-        html += '</p></div>';
+        
+        barEl.style.width = '100%';
+        
+        var html = '';
+        html += '<p>🔍 <b>' + data.exact_count + '</b> groupe(s) de doublons exacts';
+        if (data.semantic_count > 0) html += ' · <b>' + data.semantic_count + '</b> groupe(s) semantiques';
+        html += '</p>';
 
         if (data.exact_count === 0 && data.semantic_count === 0) {
-            html = '<p class="text-emerald-600 dark:text-emerald-400 text-sm">✅ Aucun doublon trouvé dans la base !</p>';
+            html += '<p class="text-emerald-600 dark:text-emerald-400 mt-2">✅ Aucun doublon trouve !</p>';
         } else {
-            // Exact duplicates
             if (data.exact_duplicates && data.exact_duplicates.length > 0) {
-                html += '<h4 class="text-xs font-semibold text-rose-600 dark:text-rose-400 mb-1">⚠️ Doublons exacts</h4>';
-                data.exact_duplicates.forEach(g => {
-                    html += '<div class="mb-1.5 p-1.5 bg-rose-50 dark:bg-rose-900/20 rounded border border-rose-200 dark:border-rose-800 text-xs">';
-                    html += '<span class="font-medium">' + esc(g.normalized) + '</span> ×' + g.count;
-                    html += '<div class="text-slate-500">' + g.keywords.map(k => esc(k)).join(' · ') + '</div>';
-                    html += '</div>';
+                html += '<h4 class="text-xs font-semibold text-rose-600 dark:text-rose-400 mb-1 mt-2">⚠️ Doublons exacts</h4>';
+                data.exact_duplicates.forEach(function(g) {
+                    html += '<div class="mb-1 p-1.5 bg-rose-50 dark:bg-rose-900/20 rounded border border-rose-200 dark:border-rose-800 text-xs">';
+                    html += '<span class="font-medium">' + esc(g.normalized) + '</span> x' + g.count;
+                    html += '<div class="text-slate-500">' + g.keywords.map(function(k) { return esc(k); }).join(' . ') + '</div></div>';
                 });
             }
-
-            // Semantic duplicates
             if (data.semantic_groups && data.semantic_groups.length > 0) {
-                html += '<h4 class="text-xs font-semibold text-amber-600 dark:text-amber-400 mb-1 mt-3">🔍 Doublons sémantiques (≥85%)</h4>';
-                data.semantic_groups.forEach(group => {
-                    html += '<div class="mb-1.5 p-1.5 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-800 text-xs">';
-                    group.forEach((item, idx) => {
-                        const simPct = (item.similarity * 100).toFixed(0);
-                        const label = idx === 0 ? '🎯 Référence' : '🔗 ' + simPct + '% similaire';
-                        html += '<div>' + label + ' : <b>' + esc(item.keyword) + '</b> <span class="text-slate-400">' + esc(item.description.substring(0, 60)) + '</span></div>';
+                html += '<h4 class="text-xs font-semibold text-amber-600 dark:text-amber-400 mb-1 mt-2">🔍 Similaires (>=85%)</h4>';
+                data.semantic_groups.forEach(function(group) {
+                    html += '<div class="mb-1 p-1.5 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-800 text-xs">';
+                    group.forEach(function(item, idx) {
+                        var label = idx === 0 ? '🎯' : '🔗 ' + (item.similarity * 100).toFixed(0) + '%';
+                        html += '<div>' + label + ' <b>' + esc(item.keyword) + '</b></div>';
                     });
                     html += '</div>';
                 });
             }
         }
-
-        showModal('🔍 Résultat du scan des doublons', html, data.exact_count > 0 ? 'warning' : 'success');
+        
+        progressDiv.classList.add('hidden');
+        showModal('🔍 Resultat du scan', html, data.exact_count > 0 ? 'warning' : 'success');
+        
     } catch (e) {
-        showModal('Erreur', e.message || 'Erreur de scan', 'error');
+        clearInterval(timerInterval);
+        progressDiv.classList.add('hidden');
+        if (e.name === 'AbortError') {
+            showModal('Erreur', 'Le scan a pris trop de temps (60s). Reessaie ou reduis le nombre de mots-cles.', 'error');
+        } else {
+            showModal('Erreur', e.message || 'Erreur de scan', 'error');
+        }
     }
 }
 
