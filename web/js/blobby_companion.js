@@ -727,6 +727,99 @@ const Blobby = {
 
 // ─── Chat modal ────────────────────────────────────────────────
 
+    _openChatSettings() {
+        var existing = document.getElementById('blobby-chat-settings');
+        if (existing) { existing.style.display = 'flex'; return; }
+
+        var _self = this;
+        var modal = document.createElement('div');
+        modal.id = 'blobby-chat-settings';
+        Object.assign(modal.style, {
+            position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
+            width: '340px', background: '#1e1e24', borderRadius: '12px',
+            boxShadow: '0 12px 40px rgba(0,0,0,0.5)', zIndex: '100000',
+            border: '1px solid #333', overflow: 'hidden', fontSize: '13px',
+        });
+
+        var header = document.createElement('div');
+        Object.assign(header.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '8px 12px', borderBottom: '1px solid #333', background: '#2a2a2e',
+        });
+        var title = document.createElement('span');
+        title.textContent = '⚙️ Blobby Settings';
+        title.style.color = '#e2e8f0';
+        title.style.fontWeight = '600';
+        var closeBtn = document.createElement('button');
+        closeBtn.textContent = '✕';
+        Object.assign(closeBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '16px', padding: '0 4px' });
+        closeBtn.onmouseenter = () => closeBtn.style.color = '#f87171';
+        closeBtn.onmouseleave = () => closeBtn.style.color = '#888';
+        closeBtn.onclick = () => modal.style.display = 'none';
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+
+        var body = document.createElement('div');
+        Object.assign(body.style, { padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' });
+
+        // Preset dropdown
+        var label = document.createElement('label');
+        label.textContent = 'Provider LLM';
+        Object.assign(label.style, { fontSize: '12px', color: '#94a3b8', fontWeight: '600' });
+
+        var select = document.createElement('select');
+        select.id = 'blobby-chat-preset';
+        Object.assign(select.style, {
+            width: '100%', padding: '8px 10px', borderRadius: '6px',
+            border: '1px solid #555', background: '#1a1a1e', color: '#fff',
+            fontSize: '12px', outline: 'none',
+        });
+        select.innerHTML = '<option value="">Chargement...</option>';
+
+        // Charger les presets
+        (async function() {
+            try {
+                var cfg = {};
+                try { cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {}; } catch {}
+                var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
+                var headers = { 'Content-Type': 'application/json' };
+                if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
+                var res = await fetch(baseUrl + '/api/presets', { headers });
+                if (!res.ok) { select.innerHTML = '<option value="">Erreur chargement</option>'; return; }
+                var presets = await res.json();
+                var savedPreset = cfg.blobbyPreset || '';
+                select.innerHTML = '<option value="">-- Provider LLM --</option>';
+                presets.forEach(function(p) {
+                    var opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.textContent = p.name + (p.is_global ? ' 🌐' : '') + (p.is_client_side ? ' 🖥️' : '');
+                    if (String(p.id) === String(savedPreset)) opt.selected = true;
+                    select.appendChild(opt);
+                });
+            } catch (e) { select.innerHTML = '<option value="">Erreur: ' + (e.message || '') + '</option>'; }
+        })();
+
+        select.onchange = function() {
+            try {
+                var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+                cfg.blobbyPreset = select.value;
+                localStorage.setItem('FRIA_config', JSON.stringify(cfg));
+            } catch {}
+        };
+
+        // Note explicative
+        var note = document.createElement('p');
+        note.textContent = 'Le chat Blobby utilise ce provider pour repondre. Configure les providers dans FR.IA > Parametres > Provider LLM.';
+        Object.assign(note.style, { fontSize: '11px', color: '#64748b', lineHeight: '1.4', margin: '0' });
+
+        body.appendChild(label);
+        body.appendChild(select);
+        body.appendChild(note);
+        modal.appendChild(header);
+        modal.appendChild(body);
+        document.body.appendChild(modal);
+    },
+
     _saveChatHistory() {
         var msgs = document.getElementById('blobby-chat-msgs');
         if (!msgs) return;
@@ -773,16 +866,26 @@ const Blobby = {
             borderBottom: '1px solid #333', background: '#2a2a2e',
         });
         var title = document.createElement('span');
-        title.innerHTML = '🧡 <b>Blobby</b> <span style="color:#888;font-size:11px;">(test concept)</span>';
+        title.innerHTML = '🧡 <b>Blobby</b>';
         title.style.color = '#FF8F00';
+        var headerRight = document.createElement('div');
+        Object.assign(headerRight.style, { display: 'flex', alignItems: 'center', gap: '6px' });
+        var settingsBtn = document.createElement('button');
+        settingsBtn.innerHTML = '⚙️';
+        Object.assign(settingsBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '14px', padding: '0 4px' });
+        settingsBtn.onmouseenter = () => settingsBtn.style.color = '#fff';
+        settingsBtn.onmouseleave = () => settingsBtn.style.color = '#888';
+        settingsBtn.onclick = (e) => { e.stopPropagation(); modal.style.display = 'none'; _self._openChatSettings(); };
         var closeBtn = document.createElement('button');
         closeBtn.textContent = '✕';
         Object.assign(closeBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '16px', padding: '0 4px' });
         closeBtn.onmouseenter = () => closeBtn.style.color = '#f87171';
         closeBtn.onmouseleave = () => closeBtn.style.color = '#888';
         closeBtn.onclick = () => { modal.style.display = 'none'; };
+        headerRight.appendChild(settingsBtn);
+        headerRight.appendChild(closeBtn);
         header.appendChild(title);
-        header.appendChild(closeBtn);
+        header.appendChild(headerRight);
 
         // Messages area
         var messages = document.createElement('div');
@@ -953,11 +1056,11 @@ const Blobby = {
             // Recuperer le preset LLM depuis FRIA_config
             var cfg = {};
             try { cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {}; } catch {}
-            var presetId = cfg.biGenPreset || '';
+            var presetId = cfg.blobbyPreset || '';
 
             if (!presetId) {
                 this._addChatMessage(container, 'blobby',
-                    '⚠️ Configure d\'abord un provider LLM dans FR.IA &gt; Paramètres &gt; Provider LLM, puis réessaie !');
+                    '⚠️ Configure d\'abord un provider LLM dans les ☰ Paramètres &gt; Provider LLM, ou clique sur ⚙️ dans le chat.');
                 return;
             }
 

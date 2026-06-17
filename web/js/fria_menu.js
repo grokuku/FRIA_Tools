@@ -204,6 +204,8 @@ function initMenu(appInstance) {
         if (chatDiv) chatDiv.style.display = active ? "flex" : "none";
     }
     updateBlobbyUI();
+    // Rattraper si Blobby s'active apres l'init du menu
+    setTimeout(updateBlobbyUI, 1000);
 
     blobbyDiv.onclick = () => {
         if (window.BlobbyCompanion && window.BlobbyCompanion.toggle) {
