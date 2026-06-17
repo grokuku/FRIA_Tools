@@ -682,7 +682,6 @@ async function kwCheckDuplicates() {
 function kwOpenBulkImport() {
     document.getElementById('modal-bulk-import').classList.remove('hidden');
     document.getElementById('modal-bulk-import').classList.add('flex');
-    document.getElementById('bi-text').value = '';
     document.getElementById('bi-result').classList.add('hidden');
     makeModalDraggable('bi-modal-header', 'bi-modal');
     // Reset to import tab
