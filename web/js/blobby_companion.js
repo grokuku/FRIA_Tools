@@ -1098,6 +1098,15 @@ window.BlobbyCompanion = {
         cfg.blobbyActive = newState;
         _setFRIAConfig(cfg);
         return newState;
+    },
+    openChat: () => {
+        if (Blobby.isActive()) {
+            Blobby._openChatModal();
+        }
+    },
+    chatVisible: () => {
+        var m = document.getElementById('blobby-chat-modal');
+        return m && m.style.display !== 'none';
     }
 };
 

@@ -200,6 +200,8 @@ function initMenu(appInstance) {
         blobbyStatus.textContent = active ? "ON" : "OFF";
         blobbyStatus.style.background = active ? "#166534" : "#555";
         blobbyStatus.style.color = active ? "#86efac" : "#aaa";
+        // Afficher/cacher le chat selon l'etat de Blobby
+        if (chatDiv) chatDiv.style.display = active ? "flex" : "none";
     }
     updateBlobbyUI();
 
@@ -215,6 +217,22 @@ function initMenu(appInstance) {
     blobbyDiv.appendChild(blobbyLabel);
     blobbyDiv.appendChild(blobbyStatus);
     dd.appendChild(blobbyDiv);
+
+    // ── Blobby Chat (visible seulement quand Blobby est actif) ──
+    const chatDiv = document.createElement("div");
+    chatDiv.textContent = "💬  Chat";
+    Object.assign(chatDiv.style, {
+        padding: "10px 16px", cursor: "pointer", fontSize: "13px",
+        borderBottom: "1px solid #444", display: "none",
+    });
+    chatDiv.onmouseenter = () => { if (chatDiv.style.display !== 'none') chatDiv.style.background = "#3a3a3e"; };
+    chatDiv.onmouseleave = () => chatDiv.style.background = "";
+    chatDiv.onclick = () => {
+        if (window.BlobbyCompanion && window.BlobbyCompanion.openChat) {
+            window.BlobbyCompanion.openChat();
+        }
+    };
+    dd.appendChild(chatDiv);
 
     // Statut serveur
     const statusDiv = document.createElement("div");
