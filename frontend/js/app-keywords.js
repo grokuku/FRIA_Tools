@@ -747,7 +747,11 @@ function biToggleLLM() {
 async function loadBiPresets() {
     try {
         var res = await fetch(API + '/presets');
-        if (!res.ok) return;
+        if (!res.ok) {
+            var txt = await res.text().catch(function(){ return ''; });
+            console.error('[loadBiPresets] failed:', res.status, txt.substring(0,200));
+            return;
+        }
         var presets = await res.json();
         [
             document.getElementById('bi-llm-preset'),
@@ -759,12 +763,14 @@ async function loadBiPresets() {
             presets.forEach(function(p) {
                 var opt = document.createElement('option');
                 opt.value = p.id;
-                opt.textContent = p.name + (p.is_global ? ' 🌐' : '');
+                opt.textContent = p.name + (p.is_global ? ' 🌐' : '') + (p.is_client_side ? ' 🖥️' : '');
                 sel.appendChild(opt);
             });
             sel.value = val;
         });
-    } catch (e) {}
+    } catch (e) {
+        console.error('[loadBiPresets] exception:', e);
+    }
 }
 
 function _nsfwLevelLabel(level) {
