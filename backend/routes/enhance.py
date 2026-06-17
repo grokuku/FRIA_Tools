@@ -1233,3 +1233,84 @@ def _do_validation_pass(current_output, original_input, style_text, width, heigh
         debug['api_calls'][-1]['error'] = str(e)
         return None, debug
     return _finish_validation_pass(result, debug)
+
+
+# ── LLM utilitaire pour keywords (bulk import / generation) ─────────────
+
+@app.route('/api/keywords/llm-process', methods=['POST'])
+def keywords_llm_process():
+    """
+    Appel LLM simple pour les operations sur les mots-cles.
+    Corps : {preset_id, instruction, input_text?}
+    - instruction : le prompt / instruction utilisateur
+    - input_text (optionnel) : texte a reformater (bulk import conversion)
+    Retourne : {output: str}
+    """
+    guard = _login_required()
+    if guard:
+        return guard
+    user_id = _get_current_user_id()
+
+    data = request.get_json() or {}
+    preset_id = data.get('preset_id')
+    instruction = (data.get('instruction') or '').strip()
+    input_text = (data.get('input_text') or '').strip()
+
+    if not preset_id:
+        return jsonify({'error': 'preset_id requis'}), 400
+    if not instruction:
+        return jsonify({'error': 'instruction requise'}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM ai_presets WHERE id = ? AND (user_id = ? OR is_global = 1)",
+        (preset_id, user_id)
+    )
+    preset = cur.fetchone()
+    conn.close()
+
+    if not preset:
+        return jsonify({'error': 'Preset introuvable'}), 404
+
+    api_key = decrypt_api_key(preset['api_key_encrypted'])
+    base_url = preset['base_url'].rstrip('/')
+    model = preset['model']
+
+    # Construire le message systeme
+    system_msg = "Tu es un assistant specialise dans la gestion de mots-cles pour un outil de generation de prompt d'images."
+    if input_text:
+        messages = [
+            {'role': 'system', 'content': system_msg},
+            {'role': 'user', 'content': f"{instruction}\n\nVoici le texte a traiter :\n\n{input_text}"}
+        ]
+    else:
+        messages = [
+            {'role': 'system', 'content': system_msg},
+            {'role': 'user', 'content': instruction}
+        ]
+
+    llm_request = {
+        'model': model,
+        'messages': messages,
+        'temperature': 0.3,
+    }
+    llm_config = {
+        'base_url': base_url,
+        'api_key': api_key,
+    }
+
+    try:
+        llm_response = _call_llm_internal(llm_request, llm_config)
+    except Exception as e:
+        msg = str(e)
+        import logging
+        logging.warning(f"[keywords/llm-process] LLM EXCEPTION: {msg!r}")
+        if '429' in msg:
+            return jsonify({'error': 'Rate limite atteint sur le serveur LLM. Attends un peu et reessaye.'}), 429
+        if 'connect' in msg.lower() or 'refused' in msg.lower():
+            return jsonify({'error': f'Serveur LLM inaccessible : verifie l\'URL ({base_url})'}), 502
+        return jsonify({'error': f'Erreur LLM: {msg}'}), 502
+
+    output = llm_response['choices'][0]['message']['content'].strip()
+    return jsonify({'output': output})

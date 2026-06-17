@@ -685,6 +685,9 @@ function kwOpenBulkImport() {
     document.getElementById('bi-text').value = '';
     document.getElementById('bi-result').classList.add('hidden');
     makeModalDraggable('bi-modal-header', 'bi-modal');
+    // Reset to import tab
+    switchBiTab('import');
+    loadBiPresets();
 }
 
 let _bulkParsedLines = null;
@@ -703,9 +706,169 @@ function closeBulkImport() {
     document.getElementById('bi-filename').textContent = '';
     document.getElementById('btn-bi-confirm').classList.add('hidden');
     document.getElementById('bi-file').value = '';
+    document.getElementById('bi-gen-preview').classList.add('hidden');
+    document.getElementById('bi-gen-preview').innerHTML = '';
+    document.getElementById('bi-gen-status').classList.add('hidden');
     _bulkParsedLines = null;
     _bulkFileContent = '';
     _bulkExistingSet = null;
+}
+
+// ── Tabs Import / Generation IA ────────────────────────────────
+
+function switchBiTab(tab) {
+    document.querySelectorAll('.bi-tab-btn').forEach(function(btn) {
+        btn.style.borderColor = 'transparent';
+        btn.style.color = '#888';
+    });
+    document.getElementById('bi-tab-content-import').classList.add('hidden');
+    document.getElementById('bi-tab-content-generate').classList.add('hidden');
+
+    if (tab === 'import') {
+        document.getElementById('bi-tab-import').style.borderColor = '#6366f1';
+        document.getElementById('bi-tab-import').style.color = '#fff';
+        document.getElementById('bi-tab-content-import').classList.remove('hidden');
+    } else {
+        document.getElementById('bi-tab-generate').style.borderColor = '#6366f1';
+        document.getElementById('bi-tab-generate').style.color = '#fff';
+        document.getElementById('bi-tab-content-generate').classList.remove('hidden');
+    }
+}
+
+function biToggleLLM() {
+    var cb = document.getElementById('bi-llm-convert');
+    var preset = document.getElementById('bi-llm-preset');
+    var nsfw = document.getElementById('bi-llm-nsfw');
+    var show = cb.checked;
+    preset.classList.toggle('hidden', !show);
+    nsfw.classList.toggle('hidden', !show);
+}
+
+async function loadBiPresets() {
+    try {
+        var res = await fetch(API + '/presets');
+        if (!res.ok) return;
+        var presets = await res.json();
+        [
+            document.getElementById('bi-llm-preset'),
+            document.getElementById('bi-gen-preset')
+        ].forEach(function(sel) {
+            if (!sel) return;
+            var val = sel.value;
+            sel.innerHTML = '<option value="">-- Provider LLM --</option>';
+            presets.forEach(function(p) {
+                var opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = p.name + (p.is_global ? ' 🌐' : '');
+                sel.appendChild(opt);
+            });
+            sel.value = val;
+        });
+    } catch (e) {}
+}
+
+function _nsfwLevelLabel(level) {
+    var labels = {sfw: 'SFW uniquement', sexy: 'Sexy inclus', erotic: 'Érotique inclus', porno: 'Porno inclus (tout)'};
+    return labels[level] || 'SFW';
+}
+
+async function biGenerateKeywords() {
+    var instruction = document.getElementById('bi-gen-instruction').value.trim();
+    var presetId = document.getElementById('bi-gen-preset').value;
+    var nsfwLevel = document.getElementById('bi-gen-nsfw').value || 'sfw';
+
+    if (!instruction) {
+        showModal('Erreur', 'Donne des instructions à l\'IA', 'error');
+        return;
+    }
+    if (!presetId) {
+        showModal('Erreur', 'Choisis un provider LLM', 'error');
+        return;
+    }
+
+    // Enrichir l'instruction avec le niveau NSFW
+    var nsfwDirective = '\n\nImportant - Niveau NSFW : ' + _nsfwLevelLabel(nsfwLevel) + '.';
+    switch (nsfwLevel) {
+        case 'sfw': nsfwDirective += ' Aucun contenu suggestive ou explicite. Tous les mots-cles doivent etre marques nsfw=0.'; break;
+        case 'sexy': nsfwDirective += ' Les mots-cles a caractere sexy/suggestif sont autorises (nsfw=1). Pas d\'erotisme ni de pornographie.'; break;
+        case 'erotic': nsfwDirective += ' Les mots-cles sexy et erotiques sont autorises (nsfw=1). Pas de pornographie explicite.'; break;
+        case 'porno': nsfwDirective += ' Tous les niveaux sont autorises, y compris la pornographie explicite (nsfw=1).'; break;
+    }
+    nsfwDirective += ' Tu dois marquer chaque mot-cle avec nsfw=0 ou nsfw=1 dans le format de sortie.';
+
+    var statusEl = document.getElementById('bi-gen-status');
+    var previewEl = document.getElementById('bi-gen-preview');
+    var btn = document.getElementById('btn-bi-generate');
+
+    statusEl.classList.remove('hidden');
+    statusEl.textContent = '🤖 Generation en cours...';
+    previewEl.classList.add('hidden');
+    btn.disabled = true;
+    btn.textContent = '⏳...';
+
+    try {
+        var res = await fetch(API + '/keywords/llm-process', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                preset_id: parseInt(presetId),
+                instruction: instruction + nsfwDirective
+            })
+        });
+        var data = await safeJson(res);
+        if (!res.ok) {
+            statusEl.textContent = '❌ ' + (data.error || 'Erreur LLM');
+            return;
+        }
+
+        statusEl.textContent = '✅ Resultat recu !';
+        previewEl.classList.remove('hidden');
+
+        // Afficher le resultat : on tente de le parser comme du bulk import
+        var rawText = data.output || '';
+        _bulkFileContent = _parseGenToBulkFormat(rawText);
+        _parseAndShowPreview(_bulkFileContent);
+
+        // Basculer sur l'onglet Import pour confirmer
+        setTimeout(function() {
+            switchBiTab('import');
+        }, 500);
+
+    } catch (e) {
+        statusEl.textContent = '❌ Erreur: ' + (e.message || '');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🤖 Générer';
+    }
+}
+
+function _parseGenToBulkFormat(rawText) {
+    // Tenter d'extraire les lignes au format keyword | description
+    var lines = rawText.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l; });
+    var result = [];
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (line.startsWith('```') || line.startsWith('#')) continue;
+        line = line.replace(/^[\s*-]+/, '').trim();
+        if (line.includes('|')) {
+            result.push(line);
+            continue;
+        }
+        var m = line.match(/^\*\*([^\*]+)\*\*\s*[:–—]\s*(.+)/);
+        if (m) {
+            result.push(m[1].trim() + ' | ' + m[2].trim());
+            continue;
+        }
+        m = line.match(/^([^:–—]+)\s*[:–—]\s*(.+)/);
+        if (m) {
+            result.push(m[1].trim() + ' | ' + m[2].trim());
+            continue;
+        }
+        if (line.includes(' ') && line.length > 3) {
+            result.push(line);
+        }
+    }
+    return result.join('\n');
 }
 
 function kwBulkFileSelected(event) {
@@ -718,10 +881,71 @@ function kwBulkFileSelected(event) {
     document.getElementById('bi-result').classList.add('hidden');
 
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
         const text = e.target.result;
-        _bulkFileContent = text;
-        _parseAndShowPreview(text);
+
+        // Si la conversion LLM est activee
+        var llmCb = document.getElementById('bi-llm-convert');
+        if (llmCb && llmCb.checked) {
+            var presetId = document.getElementById('bi-llm-preset').value;
+            var nsfwLevel = document.getElementById('bi-llm-nsfw').value || 'sfw';
+
+            if (!presetId) {
+                showModal('Erreur', 'Choisis un provider LLM pour la conversion', 'error');
+                llmCb.checked = false;
+                biToggleLLM();
+                _bulkFileContent = text;
+                _parseAndShowPreview(text);
+                return;
+            }
+
+            var statusEl = document.getElementById('bi-gen-status');
+            if (statusEl) {
+                statusEl.classList.remove('hidden');
+                statusEl.textContent = '🤖 Conversion LLM en cours...';
+            }
+
+            var nsfwDirective = '\nNiveau NSFW : ' + _nsfwLevelLabel(nsfwLevel) + '.';
+            switch (nsfwLevel) {
+                case 'sfw': nsfwDirective += ' Aucun contenu suggestif. Tout marquer nsfw=0.'; break;
+                case 'sexy': nsfwDirective += ' Contenu sexy/suggestif → nsfw=1. Pas d\'erotisme ni porno.'; break;
+                case 'erotic': nsfwDirective += ' Contenu sexy/erotique → nsfw=1. Pas de porno.'; break;
+                case 'porno': nsfwDirective += ' Seul le porno explicite → nsfw=1.'; break;
+            }
+
+            var instruction = "Reformate le texte suivant au format 'keyword | description | section | subsection | nsfw(0/1)', un mot-cle par ligne. Conserve le sens original, nettoie la ponctuation."
+                + nsfwDirective;
+
+            try {
+                var res = await fetch(API + '/keywords/llm-process', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        preset_id: parseInt(presetId),
+                        instruction: instruction,
+                        input_text: text
+                    })
+                });
+                var data = await safeJson(res);
+                if (!res.ok) {
+                    if (statusEl) statusEl.textContent = '❌ ' + (data.error || 'Erreur LLM');
+                    _bulkFileContent = text;
+                    _parseAndShowPreview(text);
+                    return;
+                }
+                var converted = data.output || '';
+                _bulkFileContent = converted;
+                _parseAndShowPreview(converted);
+                if (statusEl) statusEl.textContent = '✅ Conversion terminee !';
+            } catch (err) {
+                if (statusEl) statusEl.textContent = '❌ Erreur: ' + (err.message || '');
+                _bulkFileContent = text;
+                _parseAndShowPreview(text);
+            }
+        } else {
+            _bulkFileContent = text;
+            _parseAndShowPreview(text);
+        }
     };
     reader.onerror = function() {
         showModal('Erreur', 'Impossible de lire le fichier', 'error');
@@ -1050,10 +1274,12 @@ async function kwOpenDuplicateScan() {
     var statusEl = document.getElementById('kw-scan-status');
     var barEl = document.getElementById('kw-scan-bar');
     var timerEl = document.getElementById('kw-scan-timer');
+    var cancelBtn = document.getElementById('kw-scan-cancel');
     
     progressDiv.classList.remove('hidden');
     statusEl.textContent = 'Scan en cours...';
     barEl.style.width = '10%';
+    cancelBtn.disabled = false;
     
     var startTime = Date.now();
     var timerInterval = setInterval(function() {
@@ -1063,11 +1289,16 @@ async function kwOpenDuplicateScan() {
         barEl.style.width = pct + '%';
     }, 500);
 
+    var controller = new AbortController();
+    
+    cancelBtn.onclick = function() {
+        controller.abort();
+        cancelBtn.disabled = true;
+        cancelBtn.textContent = '✕ Annulation...';
+    };
+
     try {
-        var controller = new AbortController();
-        var timeout = setTimeout(function() { controller.abort(); }, 60000);
         var res = await fetch(API + '/keywords/scan-duplicates', { signal: controller.signal });
-        clearTimeout(timeout);
         
         barEl.style.width = '95%';
         statusEl.textContent = 'Analyse des resultats...';
@@ -1119,7 +1350,7 @@ async function kwOpenDuplicateScan() {
         clearInterval(timerInterval);
         progressDiv.classList.add('hidden');
         if (e.name === 'AbortError') {
-            showModal('Erreur', 'Le scan a pris trop de temps (60s). Reessaie ou reduis le nombre de mots-cles.', 'error');
+            showModal('Info', 'Scan annule par l\'utilisateur.', 'info');
         } else {
             showModal('Erreur', e.message || 'Erreur de scan', 'error');
         }
