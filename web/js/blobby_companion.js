@@ -145,22 +145,24 @@ const Blobby = {
 
         canvas.processMouseDown = (e) => {
             if (this._origMD) this._origMD.apply(canvas, arguments);
-            const gm = this._getGM(canvas);
-            if (gm) this.onMouseDown(gm);
+            // Clic droit sur Blobby → ouvre le tchat
+            if (e.button === 2) {
+                const gm = this._getGM(canvas);
+                if (gm && this.hitTest(gm[0], gm[1])) {
+                    this._openChatModal();
+                    this.mood = "happy"; this.moodTimer = 0;
+                    for (let i = 0; i < 3; i++) this.addParticle(this.x + (Math.random() - 0.5) * 20, this.y + (Math.random() - 0.5) * 20, "sparkle");
+                    e.preventDefault();
+                }
+            }
         };
 
         canvas.processMouseMove = (e) => {
             if (this._origMM) this._origMM.apply(canvas, arguments);
-            if (this.isDragging) {
-                const gm = this._getGM(canvas);
-                if (gm) this.onMouseMove(gm);
-            }
         };
 
         canvas.processMouseUp = (e) => {
             if (this._origMU) this._origMU.apply(canvas, arguments);
-            const gm = this._getGM(canvas);
-            if (gm) this.onMouseUp(gm);
         };
 
         const loop = (t) => {
