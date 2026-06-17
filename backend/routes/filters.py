@@ -39,7 +39,7 @@ def filters():
             if filter_type == 'union':
                 config['filter_type'] = 'union'
                 config['union_member_ids'] = data.get('union_member_ids', [])
-            _rebuild_filter_cache(cur, filter_id, config)
+            _rebuild_filter_cache(cur, filter_id, config, user_id)
         conn.commit()
         conn.close()
         return jsonify({'id': filter_id, 'count': _count_filter_cache(filter_id)}), 201
@@ -125,7 +125,7 @@ def single_filter(filter_id):
             config['union_member_ids'] = data.get('union_member_ids', [])
         cur.execute("UPDATE saved_filters SET config = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (json.dumps(config), filter_id))
         cur.execute("DELETE FROM filter_cache WHERE filter_id = ?", (filter_id,))
-        _rebuild_filter_cache(cur, filter_id, config)
+        _rebuild_filter_cache(cur, filter_id, config, user_id)
     conn.commit(); conn.close()
     return jsonify({'status': 'ok'})
 
@@ -152,12 +152,12 @@ def refresh_filter_cache(filter_id):
         cur.execute("SELECT member_filter_id FROM filter_unions WHERE union_filter_id = ?", (filter_id,))
         config['union_member_ids'] = [r['member_filter_id'] for r in cur.fetchall()]
     cur.execute("DELETE FROM filter_cache WHERE filter_id = ?", (filter_id,))
-    _rebuild_filter_cache(cur, filter_id, config)
+    _rebuild_filter_cache(cur, filter_id, config, user_id)
     conn.commit(); conn.close()
     return jsonify({'status': 'ok', 'count': _count_filter_cache(filter_id)})
 
 
-def _rebuild_filter_cache(cur, filter_id, config):
+def _rebuild_filter_cache(cur, filter_id, config, user_id=None):
     # Si c'est un filtre composé (union), merger les caches des membres
     filter_type = config.get('filter_type', 'simple')
     if filter_type == 'union':
@@ -173,8 +173,9 @@ def _rebuild_filter_cache(cur, filter_id, config):
         return
 
     # Filtre simple : construction de la requête
-    conditions = ["k.privacy_status = 'public'"]
-    params = []
+    privacy_where, privacy_params = _privacy_filter(user_id) if user_id else ("k.privacy_status = 'public'", [])
+    conditions = [privacy_where]
+    params = privacy_params[:]
     section = config.get('section', '').strip()
     subsection = config.get('subsection', '').strip()
     search_text = config.get('search_text', '').strip()
@@ -212,8 +213,9 @@ def _rebuild_filter_cache(cur, filter_id, config):
             from embeddings import generate_embedding, cosine_similarity
             qe = generate_embedding(semantic_text)
             # Pré-filtrer section/nsfw/subsection dans la requête SQL (hidden_ids appliqué APRES la limite)
-            sem_conds = ["k.privacy_status = 'public'"]
-            sem_params = []
+            sem_privacy_where, sem_privacy_params = _privacy_filter(user_id) if user_id else ("k.privacy_status = 'public'", [])
+            sem_conds = [sem_privacy_where]
+            sem_params = sem_privacy_params[:]
             if section:
                 sem_conds.append("k.section_id = ?")
                 sem_params.append(section)
