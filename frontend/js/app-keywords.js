@@ -861,19 +861,18 @@ async function biGenerateKeywords() {
             return;
         }
 
-        statusEl.textContent = '✅ Resultat recu ! Utilise l\'onglet Import pour confirmer.';
-        previewEl.classList.remove('hidden');
+        statusEl.textContent = '✅ ' + data.output.split('\n').length + ' ligne(s) detectees. Bascule vers Import...';
 
-        // Afficher le resultat brut dans la preview de l'onglet Generation
         var rawText = data.output || '';
         var formatted = _parseGenToBulkFormat(rawText);
-        previewEl.innerHTML = '<div class="p-2 text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">' +
-            '<b>' + formatted.split('\n').length + '</b> ligne(s) detectees. ' +
-            '<button onclick="switchBiTab(\'import\')" class="text-indigo-500 hover:underline">Aller a l\'onglet Import</button>' +
-            '</div>' +
-            '<pre class="p-2 text-xs text-slate-600 dark:text-slate-300 whitespace-pre-wrap" style="word-break:break-word;">' + esc(formatted) + '</pre>';
-        // Stocker pour confirmation via l'onglet Import
         _bulkFileContent = formatted;
+        _parseAndShowPreview(formatted);
+
+        // Basculer sur l'onglet Import (le prompt reste dans l'onglet Generation)
+        setTimeout(function() {
+            switchBiTab('import');
+            statusEl.textContent = '✅ Pret pour confirmation dans l\'onglet Import.';
+        }, 600);
 
     } catch (e) {
         statusEl.textContent = '❌ Erreur: ' + (e.message || '');
