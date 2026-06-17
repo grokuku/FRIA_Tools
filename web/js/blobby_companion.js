@@ -192,7 +192,7 @@ const Blobby = {
         this._animInterval = setInterval(function() {
             if (!Blobby._active) return;
             if (canvas.setDirty) canvas.setDirty(false, true);
-        }, 200);
+        }, 33);
 
         console.log("%c🧡 Blobby activé !", "font-size: 16px; color: #FF8F00; font-weight: bold;");
     },
