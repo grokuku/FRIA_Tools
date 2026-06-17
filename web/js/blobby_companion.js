@@ -691,7 +691,7 @@ const Blobby = {
     hitTest(mx, my) {
         for (const p of this.bodyParticles) {
             const dx = mx - p.x, dy = my - p.y;
-            if (dx * dx + dy * dy < (p.radius * 1.5) ** 2) return true;
+            if (dx * dx + dy * dy < (p.radius * 2.5) ** 2) return true;
         }
         return false;
     },

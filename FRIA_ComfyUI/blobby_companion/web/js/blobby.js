@@ -868,7 +868,7 @@ const Blobby = {
         for (const p of this.bodyParticles) {
             const dx = mx - p.x;
             const dy = my - p.y;
-            if (dx * dx + dy * dy < (p.radius * 1.5) ** 2) {
+            if (dx * dx + dy * dy < (p.radius * 2.5) ** 2) {
                 return true;
             }
         }
