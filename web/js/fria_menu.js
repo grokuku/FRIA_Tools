@@ -196,7 +196,7 @@ function initMenu(appInstance) {
 
     function updateBlobbyUI() {
         const active = window.BlobbyCompanion && window.BlobbyCompanion.isActive();
-        blobbyLabel.textContent = active ? "Blobby (test concept)" : "Activer Blobby";
+        blobbyLabel.textContent = active ? "Blobby (test)" : "Activer Blobby";
         blobbyStatus.textContent = active ? "ON" : "OFF";
         blobbyStatus.style.background = active ? "#166534" : "#555";
         blobbyStatus.style.color = active ? "#86efac" : "#aaa";
@@ -219,7 +219,8 @@ function initMenu(appInstance) {
     dd.appendChild(blobbyDiv);
 
     // ── Blobby Chat (visible seulement quand Blobby est actif) ──
-    const chatDiv = document.createElement("div");
+    // Declaree avant updateBlobbyUI pour eviter la temporal dead zone
+    var chatDiv = document.createElement("div");
     chatDiv.textContent = "💬  Chat";
     Object.assign(chatDiv.style, {
         padding: "10px 16px", cursor: "pointer", fontSize: "13px",
