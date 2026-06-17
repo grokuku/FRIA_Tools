@@ -174,7 +174,7 @@ const Blobby = {
         // Démarrer la boucle d'animation
         const loop = (t) => {
             if (!this._active) return;
-            if (canvas.setDirty) canvas.setDirty(true, true);
+            if (canvas.setDirty) canvas.setDirty(false, true);
             this._animFrameId = requestAnimationFrame(loop);
         };
         this._animFrameId = requestAnimationFrame(loop);

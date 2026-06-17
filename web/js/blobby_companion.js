@@ -195,7 +195,7 @@ const Blobby = {
             // Limiter le rafraichissement a ~10fps pour ne pas bloquer les autres nodes
             // Redessiner le canvas a ~30fps
             if (this._animFrameCount % 2 === 0 && canvas.setDirty) {
-                canvas.setDirty(true, true);
+                canvas.setDirty(false, true);
             }
             this._animFrameId = requestAnimationFrame(loop);
         };
