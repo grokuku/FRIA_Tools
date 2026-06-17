@@ -696,11 +696,9 @@ const Blobby = {
 
     onMouseDown(pos) {
         if (this.hitTest(pos[0], pos[1])) {
-            this.isDragging = true;
-            this.dragPrevX = pos[0]; this.dragPrevY = pos[1];
-            this.throwVx = 0; this.throwVy = 0;
-            this.dragDistance = 0;
-            this.x = pos[0]; this.y = pos[1];
+            this._openChatModal();
+            this.mood = "happy"; this.moodTimer = 0;
+            for (let i = 0; i < 3; i++) this.addParticle(this.x + (Math.random() - 0.5) * 20, this.y + (Math.random() - 0.5) * 20, "sparkle");
             return true;
         }
         return false;
@@ -708,27 +706,367 @@ const Blobby = {
 
     onMouseMove(pos) {},
 
-    onMouseUp() {
-        if (this.isDragging) {
-            this.isDragging = false;
-            if (this.dragDistance < 8) {
-                this.followMouse = !this.followMouse;
-                if (this.followMouse) {
-                    this.mood = "happy"; this.moodTimer = 0;
-                    for (let i = 0; i < 5; i++) this.addParticle(this.x + (Math.random() - 0.5) * 30, this.y + (Math.random() - 0.5) * 30, "sparkle");
-                }
-            } else {
-                const spd = Math.hypot(this.throwVx, this.throwVy);
-                if (spd > 0.5) {
-                    const sc = Math.min(12 / spd, 1);
-                    this.vx = this.throwVx * sc; this.vy = this.throwVy * sc;
-                    this.mood = "surprised"; this.moodTimer = 0;
-                } else { this.vx = 0; this.vy = 0; }
-            }
-            return true;
+    onMouseUp() {},
+
+// ─── Chat modal ────────────────────────────────────────────────
+
+    _saveChatHistory() {
+        var msgs = document.getElementById('blobby-chat-msgs');
+        if (!msgs) return;
+        var history = [];
+        msgs.querySelectorAll('.blobby-msg').forEach(function(el) {
+            history.push({ role: el.dataset.role, text: el.innerHTML });
+        });
+        // Garder les 50 derniers messages
+        if (history.length > 50) history = history.slice(-50);
+        try {
+            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+            cfg.blobbyChatHistory = history;
+            localStorage.setItem('FRIA_config', JSON.stringify(cfg));
+        } catch {}
+    },
+
+    _openChatModal() {
+        // Si deja ouverte, la ramener au premier plan
+        var existing = document.getElementById('blobby-chat-modal');
+        if (existing) {
+            existing.style.display = 'flex';
+            existing.style.zIndex = '99999';
+            existing.querySelector('.blobby-chat-input')?.focus();
+            return;
         }
-        return false;
-    }
+
+        var modal = document.createElement('div');
+        modal.id = 'blobby-chat-modal';
+        Object.assign(modal.style, {
+            position: 'fixed', left: '20px', bottom: '20px',
+            width: '360px', height: '420px',
+            background: '#1e1e24', borderRadius: '12px',
+            boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
+            zIndex: '99999', display: 'flex', flexDirection: 'column',
+            border: '1px solid #333', overflow: 'hidden',
+            fontSize: '13px',
+        });
+
+        // Header
+        var header = document.createElement('div');
+        Object.assign(header.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '8px 12px', cursor: 'grab', userSelect: 'none',
+            borderBottom: '1px solid #333', background: '#2a2a2e',
+        });
+        var title = document.createElement('span');
+        title.innerHTML = '🧡 <b>Blobby</b> <span style="color:#888;font-size:11px;">(test concept)</span>';
+        title.style.color = '#FF8F00';
+        var closeBtn = document.createElement('button');
+        closeBtn.textContent = '✕';
+        Object.assign(closeBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '16px', padding: '0 4px' });
+        closeBtn.onmouseenter = () => closeBtn.style.color = '#f87171';
+        closeBtn.onmouseleave = () => closeBtn.style.color = '#888';
+        closeBtn.onclick = () => { modal.style.display = 'none'; };
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+
+        // Messages area
+        var messages = document.createElement('div');
+        messages.id = 'blobby-chat-msgs';
+        Object.assign(messages.style, {
+            flex: '1', overflowY: 'auto', padding: '10px 12px',
+            display: 'flex', flexDirection: 'column', gap: '8px',
+        });
+
+        // Restaurer l'historique
+        try {
+            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+            var history = cfg.blobbyChatHistory || [];
+            history.forEach(function(msg) {
+                var div = document.createElement('div');
+                div.className = 'blobby-msg';
+                div.dataset.role = msg.role;
+                Object.assign(div.style, {
+                    padding: '6px 10px', borderRadius: '8px', fontSize: '12px',
+                    lineHeight: '1.4', maxWidth: '85%', wordBreak: 'break-word',
+                    whiteSpace: 'pre-wrap',
+                });
+                if (msg.role === 'user') {
+                    div.style.background = '#6366f1'; div.style.color = '#fff';
+                    div.style.alignSelf = 'flex-end';
+                    div.textContent = msg.text;
+                } else if (msg.role === 'blobby') {
+                    div.style.background = '#2a2a2e'; div.style.color = '#e2e8f0';
+                    div.style.alignSelf = 'flex-start'; div.style.border = '1px solid #444';
+                    div.innerHTML = msg.text;
+                } else if (msg.role === 'system') {
+                    div.style.background = 'transparent'; div.style.color = '#888';
+                    div.style.alignSelf = 'center'; div.style.fontSize = '11px';
+                    div.textContent = msg.text;
+                } else if (msg.role === 'action') {
+                    div.style.background = '#1a3a1a'; div.style.color = '#86efac';
+                    div.style.alignSelf = 'center'; div.style.fontSize = '11px';
+                    div.style.border = '1px solid #166534';
+                    div.innerHTML = '⚡ ' + msg.text;
+                }
+                messages.appendChild(div);
+            });
+        } catch {}
+
+        if (messages.children.length === 0) {
+            // Message de bienvenue si aucun historique
+            this._addChatMessage(messages, 'blobby', '👋 Salut ! Clique sur un nœud ou pose-moi une question sur le workflow.');
+        }
+        messages.scrollTop = messages.scrollHeight;
+
+        // Input area
+        var inputArea = document.createElement('div');
+        Object.assign(inputArea.style, {
+            display: 'flex', gap: '6px', padding: '8px 10px',
+            borderTop: '1px solid #333', background: '#2a2a2e',
+        });
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'blobby-chat-input';
+        Object.assign(input.style, {
+            flex: '1', padding: '6px 10px', borderRadius: '6px',
+            border: '1px solid #555', background: '#1a1a1e', color: '#fff',
+            fontSize: '12px', outline: 'none',
+        });
+        input.placeholder = 'Parle a Blobby...';
+
+        var sendBtn = document.createElement('button');
+        sendBtn.textContent = '➤';
+        Object.assign(sendBtn.style, {
+            padding: '6px 12px', borderRadius: '6px', border: 'none',
+            background: '#6366f1', color: '#fff', cursor: 'pointer',
+            fontSize: '14px', fontWeight: '600',
+        });
+        sendBtn.onmouseenter = () => sendBtn.style.background = '#4f46e5';
+        sendBtn.onmouseleave = () => sendBtn.style.background = '#6366f1';
+
+        var _self = this;
+        function sendMessage() {
+            var text = input.value.trim();
+            if (!text) return;
+            input.value = '';
+            _self._addChatMessage(messages, 'user', text);
+            _self._handleChatMessage(messages, text);
+        }
+
+        input.onkeydown = (e) => { if (e.key === 'Enter') sendMessage(); };
+        sendBtn.onclick = sendMessage;
+
+        inputArea.appendChild(input);
+        inputArea.appendChild(sendBtn);
+
+        modal.appendChild(header);
+        modal.appendChild(messages);
+        modal.appendChild(inputArea);
+        document.body.appendChild(modal);
+        input.focus();
+
+        // Drag
+        (function(header, modal) {
+            var drag = { active: false, startX: 0, startY: 0, origX: 0, origY: 0 };
+            header.addEventListener('mousedown', (e) => {
+                if (e.target === closeBtn) return;
+                drag.active = true;
+                var rect = modal.getBoundingClientRect();
+                drag.startX = e.clientX; drag.startY = e.clientY;
+                drag.origX = rect.left; drag.origY = rect.top;
+                header.style.cursor = 'grabbing';
+                e.preventDefault();
+            });
+            document.addEventListener('mousemove', (e) => {
+                if (!drag.active) return;
+                modal.style.left = (drag.origX + e.clientX - drag.startX) + 'px';
+                modal.style.top = (drag.origY + e.clientY - drag.startY) + 'px';
+                modal.style.bottom = 'auto';
+            });
+            document.addEventListener('mouseup', () => {
+                if (drag.active) { drag.active = false; header.style.cursor = 'grab'; }
+            });
+        })(header, modal);
+    },
+
+    _addChatMessage(container, role, text) {
+        var div = document.createElement('div');
+        div.className = 'blobby-msg';
+        div.dataset.role = role;
+        Object.assign(div.style, {
+            padding: '6px 10px', borderRadius: '8px', fontSize: '12px',
+            lineHeight: '1.4', maxWidth: '85%', wordBreak: 'break-word',
+            whiteSpace: 'pre-wrap',
+        });
+        if (role === 'user') {
+            div.style.background = '#6366f1';
+            div.style.color = '#fff';
+            div.style.alignSelf = 'flex-end';
+            div.textContent = text;
+        } else if (role === 'blobby') {
+            div.style.background = '#2a2a2e';
+            div.style.color = '#e2e8f0';
+            div.style.alignSelf = 'flex-start';
+            div.style.border = '1px solid #444';
+            div.innerHTML = text;
+        } else if (role === 'system') {
+            div.style.background = 'transparent';
+            div.style.color = '#888';
+            div.style.alignSelf = 'center';
+            div.style.fontSize = '11px';
+            div.textContent = text;
+        } else if (role === 'action') {
+            div.style.background = '#1a3a1a';
+            div.style.color = '#86efac';
+            div.style.alignSelf = 'center';
+            div.style.fontSize = '11px';
+            div.style.border = '1px solid #166534';
+            div.innerHTML = '⚡ ' + text;
+        }
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+        this._saveChatHistory();
+    },
+
+    async _handleChatMessage(container, userText) {
+        this._addChatMessage(container, 'system', '🤔 Blobby réfléchit...');
+
+        try {
+            // Construire le contexte : workflow actuel
+            var workflowDesc = this._describeWorkflow();
+
+            // Recuperer le preset LLM depuis FRIA_config
+            var cfg = {};
+            try { cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {}; } catch {}
+            var presetId = cfg.biGenPreset || '';
+
+            if (!presetId) {
+                this._addChatMessage(container, 'blobby',
+                    '⚠️ Configure d\'abord un provider LLM dans FR.IA &gt; Paramètres &gt; Provider LLM, puis réessaie !');
+                return;
+            }
+
+            var instruction = 'Tu es Blobby, un assistant IA amical qui vit sur le canvas ComfyUI. '
+                + 'Tu peux analyser les workflows et suggérer des modifications.\n\n'
+                + 'Workflow actuel :\n' + workflowDesc + '\n\n'
+                + 'Instructions :\n'
+                + '- Sois concis et amical.\n'
+                + '- Si l\'utilisateur demande une action, reponds avec la commande entre crochets.\n'
+                + '- Commandes disponibles :\n'
+                + '  [MOVE_TO nom_du_noeud] - Deplace la vue vers un nœud\n'
+                + '  [SET nom_du_noeud parametre valeur] - Modifie un parametre\n'
+                + '  [FOCUS nom_du_noeud] - Met en surbrillance un nœud\n\n'
+                + 'Message de l\'utilisateur : ' + userText;
+
+            var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
+            var headers = { 'Content-Type': 'application/json' };
+            if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
+
+            var res = await fetch(baseUrl + '/api/keywords/llm-process', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({
+                    preset_id: parseInt(presetId),
+                    instruction: instruction
+                })
+            });
+
+            // Enlever le message "réfléchit"
+            var thinking = container.querySelector('div:last-child');
+            if (thinking && thinking.textContent === '🤔 Blobby réfléchit...') thinking.remove();
+
+            var data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                this._addChatMessage(container, 'blobby',
+                    '😅 Désolé, j\'ai eu un problème : ' + (data.error || 'Erreur ' + res.status));
+                return;
+            }
+
+            var reply = data.output || '...';
+            // Executer les commandes dans la reponse
+            reply = this._executeCommands(reply);
+            this._addChatMessage(container, 'blobby', reply);
+
+        } catch (e) {
+            var thinking = container.querySelector('div:last-child');
+            if (thinking && thinking.textContent === '🤔 Blobby réfléchit...') thinking.remove();
+            this._addChatMessage(container, 'system', '❌ Erreur: ' + (e.message || ''));
+        }
+    },
+
+    _describeWorkflow() {
+        var app = window.app || window.comfyAPI?.app?.app;
+        if (!app || !app.graph || !app.graph.nodes) return 'Aucun workflow ouvert.';
+
+        var nodes = app.graph.nodes;
+        var desc = 'Ce workflow contient ' + nodes.length + ' nœud(s) :\n';
+        for (var i = 0; i < nodes.length; i++) {
+            var n = nodes[i];
+            var title = n.title || n.comfyClass || 'Inconnu';
+            var widgets = '';
+            if (n.widgets && n.widgets.length > 0) {
+                widgets = ' [' + n.widgets.map(function(w) {
+                    if (w.type === 'number' || w.type === 'slider') return w.name + '=' + w.value;
+                    if (w.type === 'combo') return w.name + '=' + (w.value || '');
+                    return w.name;
+                }).join(', ') + ']';
+            }
+            desc += '  - ' + title + widgets + '\n';
+        }
+        return desc;
+    },
+
+    _executeCommands(reply) {
+        // Executer les commandes [MOVE_TO ...], [SET ...], [FOCUS ...]
+        var app = window.app || window.comfyAPI?.app?.app;
+        if (!app || !app.graph || !app.graph.nodes) return reply;
+
+        var result = reply;
+        var commandsFound = false;
+
+        // [MOVE_TO nom_du_noeud]
+        result = result.replace(/\[MOVE_TO\s+([^\]]+)\]/gi, (match, nodeName) => {
+            commandsFound = true;
+            var name = nodeName.trim().toLowerCase();
+            for (var i = 0; i < app.graph.nodes.length; i++) {
+                var n = app.graph.nodes[i];
+                var title = (n.title || n.comfyClass || '').toLowerCase();
+                if (title.includes(name)) {
+                    app.canvas.centerOnNode(n);
+                    return '✅ Vue déplacée vers "' + (n.title || n.comfyClass) + '"';
+                }
+            }
+            return '⚠️ Nœud "' + nodeName.trim() + '" introuvable';
+        });
+
+        // [FOCUS nom_du_noeud]
+        result = result.replace(/\[FOCUS\s+([^\]]+)\]/gi, (match, nodeName) => {
+            commandsFound = true;
+            var name = nodeName.trim().toLowerCase();
+            for (var i = 0; i < app.graph.nodes.length; i++) {
+                var n = app.graph.nodes[i];
+                var title = (n.title || n.comfyClass || '').toLowerCase();
+                if (title.includes(name)) {
+                    // Mettre en surbrillance en centrant + animant
+                    n.color = '#FF8F00';
+                    n.bgcolor = '#2a1a00';
+                    app.canvas.centerOnNode(n);
+                    app.graph.setDirtyCanvas(true, true);
+                    setTimeout(() => {
+                        n.color = undefined;
+                        n.bgcolor = undefined;
+                        app.graph.setDirtyCanvas(true, true);
+                    }, 2000);
+                    return '🔍 Focus sur "' + (n.title || n.comfyClass) + '" (2s)';
+                }
+            }
+            return '⚠️ Nœud "' + nodeName.trim() + '" introuvable';
+        });
+
+        if (!commandsFound && reply !== result) {
+            // Au moins une commande a ete executee
+        }
+
+        return result;
+    },
 };
 
 // ─── Exposition publique pour le menu FR.IA ───
