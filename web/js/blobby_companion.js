@@ -72,6 +72,7 @@ const Blobby = {
     _canvas: null,
     _animFrameId: null,
     _animFrameCount: 0,
+    _lastTime: 0,
     _origDraw: null,
     _origMD: null,
     _origMM: null,
@@ -118,20 +119,25 @@ const Blobby = {
         const canvas = this._canvas;
         if (!canvas) return;
 
+        
+        var _self = this;
         canvas.onDrawForeground = (ctx, visibleArea) => {
-            if (this._origDraw) {
-                try { this._origDraw.apply(canvas, arguments); }
+            if (_self._origDraw) {
+                try { _self._origDraw.apply(canvas, arguments); }
                 catch (e) { console.error("[Blobby] Erreur origDraw:", e); }
             }
             try {
+                var now = performance.now();
+                var dt = _self._lastTime ? Math.min((now - _self._lastTime) / 1000, 0.1) : (1 / 60);
+                _self._lastTime = now;
                 let mouseGraph = null;
                 if (canvas.graph_mouse) {
                     mouseGraph = [canvas.graph_mouse[0], canvas.graph_mouse[1]];
                 }
                 const currentVisibleArea = canvas.visible_area || visibleArea;
                 const app = window.app || window.comfyAPI?.app?.app;
-                this.update(1 / 60, app?.graph?.nodes, mouseGraph, currentVisibleArea);
-                this.draw(ctx);
+                _self.update(dt, app?.graph?.nodes, mouseGraph, currentVisibleArea);
+                _self.draw(ctx);
             } catch (e) {
                 console.error("[Blobby] Erreur draw:", e);
             }
@@ -161,7 +167,8 @@ const Blobby = {
             if (!this._active) return;
             this._animFrameCount++;
             // Limiter le rafraichissement a ~10fps pour ne pas bloquer les autres nodes
-            if (this._animFrameCount % 4 === 0 && canvas.setDirty) {
+            // Redessiner le canvas a ~30fps
+            if (this._animFrameCount % 2 === 0 && canvas.setDirty) {
                 canvas.setDirty(true, true);
             }
             this._animFrameId = requestAnimationFrame(loop);
