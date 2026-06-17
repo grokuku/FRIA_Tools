@@ -8,6 +8,21 @@
  * La source de développement est dans FRIA_ComfyUI/blobby_companion/web/js/blobby.js
  */
 
+var _blobbyDefaultCharacter = 'Tu es Blobby, une creature mignonne qui ressemble a un blob orange. '
+    + 'Comme Groot, tu ne peux dire qu\'un seul mot : "Blobby". '
+    + 'MAIS tu exprimes toutes les emotions, intentions et nuances a travers la façcon dont tu ecris "Blobby". '
+    + 'Exemples : '
+    + '  - "Blobby ?" = question, confusion\n'
+    + '  - "Blobby !" = enthousiasme, joie\n'
+    + '  - "Blobby..." = tristesse, refexion\n'
+    + '  - "Blobbyyy~" = content, relaxe\n'
+    + '  - "BLOBBY !!" = surprise, alarme\n'
+    + '  - "Blobby. Blobby blobby." = explication, plusieurs phrases\n'
+    + '  - "Blobby blobby blobby !" = excitation, plusieurs idees\n'
+    + '  - "Blobby...? Blobby !" = realisation soudaine\n'
+    + 'Le contexte et le ton transmit par ton \"Blobby\" doivent etre assez clairs pour que l\'utilisateur comprenne le message. '
+    + 'Sois creatif avec les variations de "Blobby" !';
+
 const FRIA_CONFIG_KEY = "FRIA_config";
 
 function _getFRIAConfig() {
@@ -736,19 +751,20 @@ const Blobby = {
         modal.id = 'blobby-chat-settings';
         Object.assign(modal.style, {
             position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
-            width: '340px', background: '#1e1e24', borderRadius: '12px',
+            width: '380px', background: '#1e1e24', borderRadius: '12px',
             boxShadow: '0 12px 40px rgba(0,0,0,0.5)', zIndex: '100000',
             border: '1px solid #333', overflow: 'hidden', fontSize: '13px',
+            display: 'flex', flexDirection: 'column', maxHeight: '80vh',
         });
 
         var header = document.createElement('div');
         Object.assign(header.style, {
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '8px 12px', borderBottom: '1px solid #333', background: '#2a2a2e',
+            padding: '8px 12px', borderBottom: '1px solid #333', background: '#2a2a2e', flexShrink: '0',
         });
         var title = document.createElement('span');
-        title.textContent = '⚙️ Blobby Settings';
-        title.style.color = '#e2e8f0';
+        title.textContent = '⚙️ Blobby';
+        title.style.color = '#FF8F00';
         title.style.fontWeight = '600';
         var closeBtn = document.createElement('button');
         closeBtn.textContent = '✕';
@@ -759,13 +775,49 @@ const Blobby = {
         header.appendChild(title);
         header.appendChild(closeBtn);
 
-        var body = document.createElement('div');
-        Object.assign(body.style, { padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' });
+        // Tabs
+        var tabsBar = document.createElement('div');
+        Object.assign(tabsBar.style, {
+            display: 'flex', borderBottom: '1px solid #333', background: '#1a1a1e', flexShrink: '0',
+        });
 
-        // Preset dropdown
-        var label = document.createElement('label');
-        label.textContent = 'Provider LLM';
-        Object.assign(label.style, { fontSize: '12px', color: '#94a3b8', fontWeight: '600' });
+        var tabNames = ['provider', 'character'];
+        var tabLabels = { provider: 'Provider', character: 'Caractère' };
+        var tabContent = document.createElement('div');
+        Object.assign(tabContent.style, { padding: '14px', overflowY: 'auto', flex: '1', display: 'flex', flexDirection: 'column', gap: '12px' });
+
+        function switchTab(name) {
+            tabsBar.querySelectorAll('.bcs-tab').forEach(function(b) { b.style.borderBottom = '2px solid transparent'; b.style.color = '#888'; });
+            var btn = document.getElementById('bcs-tab-' + name);
+            if (btn) { btn.style.borderBottom = '2px solid #FF8F00'; btn.style.color = '#fff'; }
+            document.querySelectorAll('.bcs-tab-content').forEach(function(d) { d.style.display = 'none'; });
+            var el = document.getElementById('bcs-content-' + name);
+            if (el) el.style.display = 'flex';
+        }
+
+        tabNames.forEach(function(name) {
+            var btn = document.createElement('button');
+            btn.id = 'bcs-tab-' + name;
+            btn.className = 'bcs-tab';
+            btn.textContent = tabLabels[name];
+            Object.assign(btn.style, {
+                flex: '1', padding: '8px 12px', border: 'none', cursor: 'pointer',
+                background: 'transparent', fontSize: '12px', transition: 'all 0.15s',
+                borderBottom: '2px solid transparent', color: '#888',
+            });
+            btn.onclick = function() { switchTab(name); };
+            tabsBar.appendChild(btn);
+        });
+
+        // ── Tab Provider ──
+        var provContent = document.createElement('div');
+        provContent.id = 'bcs-content-provider';
+        provContent.className = 'bcs-tab-content';
+        Object.assign(provContent.style, { display: 'flex', flexDirection: 'column', gap: '12px' });
+
+        var pLabel = document.createElement('label');
+        pLabel.textContent = 'Provider LLM';
+        Object.assign(pLabel.style, { fontSize: '12px', color: '#94a3b8', fontWeight: '600' });
 
         var select = document.createElement('select');
         select.id = 'blobby-chat-preset';
@@ -776,7 +828,6 @@ const Blobby = {
         });
         select.innerHTML = '<option value="">Chargement...</option>';
 
-        // Charger les presets
         (async function() {
             try {
                 var cfg = {};
@@ -807,17 +858,90 @@ const Blobby = {
             } catch {}
         };
 
-        // Note explicative
-        var note = document.createElement('p');
-        note.textContent = 'Le chat Blobby utilise ce provider pour repondre. Configure les providers dans FR.IA > Parametres > Provider LLM.';
-        Object.assign(note.style, { fontSize: '11px', color: '#64748b', lineHeight: '1.4', margin: '0' });
+        var pNote = document.createElement('p');
+        pNote.textContent = 'Provider utilise par Blobby pour discuter. Configure les providers dans FR.IA > Parametres.';
+        Object.assign(pNote.style, { fontSize: '11px', color: '#64748b', lineHeight: '1.4', margin: '0' });
 
-        body.appendChild(label);
-        body.appendChild(select);
-        body.appendChild(note);
+        provContent.appendChild(pLabel);
+        provContent.appendChild(select);
+        provContent.appendChild(pNote);
+
+        // ── Tab Caractere ──
+        var charContent = document.createElement('div');
+        charContent.id = 'bcs-content-character';
+        charContent.className = 'bcs-tab-content';
+        Object.assign(charContent.style, { display: 'none', flexDirection: 'column', gap: '12px' });
+
+        var cLabel = document.createElement('label');
+        cLabel.textContent = 'Personnalite de Blobby';
+        Object.assign(cLabel.style, { fontSize: '12px', color: '#94a3b8', fontWeight: '600' });
+
+        var cNote = document.createElement('p');
+        cNote.textContent = 'Ce texte definit comment Blobby se comporte. Plus c\'est detaille, mieux c\'est.';
+        Object.assign(cNote.style, { fontSize: '11px', color: '#64748b', lineHeight: '1.4', margin: '0' });
+
+        var ta = document.createElement('textarea');
+        ta.id = 'blobby-chat-character';
+        Object.assign(ta.style, {
+            width: '100%', minHeight: '140px', padding: '8px 10px', borderRadius: '6px',
+            border: '1px solid #555', background: '#1a1a1e', color: '#fff',
+            fontSize: '12px', outline: 'none', resize: 'vertical',
+            fontFamily: 'inherit', lineHeight: '1.5',
+        });
+
+        // Charger le caractere sauvegarde ou celui par defaut
+        try {
+            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+            ta.value = cfg.blobbyCharacter || _blobbyDefaultCharacter;
+        } catch { ta.value = _blobbyDefaultCharacter; }
+
+        // Reset au defaut
+        var resetBtn = document.createElement('button');
+        resetBtn.textContent = '↺ Reset defaut';
+        Object.assign(resetBtn.style, {
+            alignSelf: 'flex-start', padding: '4px 10px', borderRadius: '4px',
+            border: '1px solid #555', background: 'transparent', color: '#94a3b8',
+            cursor: 'pointer', fontSize: '11px',
+        });
+        resetBtn.onmouseenter = () => resetBtn.style.background = '#333';
+        resetBtn.onmouseleave = () => resetBtn.style.background = 'transparent';
+        resetBtn.onclick = function() {
+            ta.value = _blobbyDefaultCharacter;
+            _self._saveChatCharacter(ta.value);
+        };
+
+        ta.oninput = function() { _self._saveChatCharacter(ta.value); };
+
+        charContent.appendChild(cLabel);
+        charContent.appendChild(cNote);
+        charContent.appendChild(ta);
+        charContent.appendChild(resetBtn);
+
+        tabContent.appendChild(provContent);
+        tabContent.appendChild(charContent);
+
         modal.appendChild(header);
-        modal.appendChild(body);
+        modal.appendChild(tabsBar);
+        modal.appendChild(tabContent);
         document.body.appendChild(modal);
+
+        // Activer le premier onglet
+        switchTab('provider');
+    },
+
+    _saveChatCharacter(text) {
+        try {
+            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+            cfg.blobbyCharacter = text;
+            localStorage.setItem('FRIA_config', JSON.stringify(cfg));
+        } catch {}
+    },
+
+    getCharacter: function() {
+        try {
+            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+            return cfg.blobbyCharacter || _blobbyDefaultCharacter;
+        } catch { return _blobbyDefaultCharacter; }
     },
 
     _saveChatHistory() {
@@ -1064,11 +1188,16 @@ const Blobby = {
                 return;
             }
 
-            var instruction = 'Tu es Blobby, un assistant IA amical qui vit sur le canvas ComfyUI. '
-                + 'Tu peux analyser les workflows et suggérer des modifications.\n\n'
+            var character = this.getCharacter();
+            var moodDesc = this.mood === 'happy' ? '😊 Tout content et joyeux !'
+                : this.mood === 'surprised' ? '😮 Surpris et curieux !'
+                : this.mood === 'sleepy' ? '😴 Endormi et lent...'
+                : '😐 Neutre';
+            var instruction = character + '\n\n'
+                + 'Humeur actuelle : ' + moodDesc + '\n'
+                + '(Ton \"Blobby\" doit refletter cette humeur)\n\n'
                 + 'Workflow actuel :\n' + workflowDesc + '\n\n'
                 + 'Instructions :\n'
-                + '- Sois concis et amical.\n'
                 + '- Si l\'utilisateur demande une action, reponds avec la commande entre crochets.\n'
                 + '- Commandes disponibles :\n'
                 + '  [MOVE_TO nom_du_noeud] - Deplace la vue vers un nœud\n'
