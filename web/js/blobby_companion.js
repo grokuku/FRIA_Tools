@@ -283,30 +283,25 @@ const Blobby = {
         }
 
         if (!this.isDragging) {
-            this.x += this.vx;
-            this.y += this.vy;
-            this.vx *= 0.995;
-            this.vy *= 0.995;
-            if (Math.random() < 0.015) {
-                this.vx += (Math.random() - 0.5) * 1.2;
-                this.vy += (Math.random() - 0.5) * 1.2;
+            this.x += this.vx * deltaTime * 60;
+            this.y += this.vy * deltaTime * 60;
+            this.vx *= Math.pow(0.995, deltaTime * 60);
+            this.vy *= Math.pow(0.995, deltaTime * 60);
+            if (Math.random() < 0.015 * deltaTime * 60) {
+                this.vx += (Math.random() - 0.5) * 1.2 * deltaTime * 60;
+                this.vy += (Math.random() - 0.5) * 1.2 * deltaTime * 60;
             }
             const speed = Math.hypot(this.vx, this.vy);
             if (speed > 5) { this.vx = (this.vx / speed) * 5; this.vy = (this.vy / speed) * 5; }
-            if (this.mood === "sleepy") { this.vx *= 0.97; this.vy *= 0.97; }
+            if (this.mood === "sleepy") { this.vx *= Math.pow(0.97, deltaTime * 60); this.vy *= Math.pow(0.97, deltaTime * 60); }
 
-            if (this.mouseActive) {
+            if (this.mouseActive && this.followMouse) {
                 const dx = this.mouseX - this.x;
                 const dy = this.mouseY - this.y;
                 const dist = Math.hypot(dx, dy);
-                if (dist < 80 && dist > 0) {
-                    this.vx -= (dx / dist) * 0.3 * (1 - dist / 80);
-                    this.vy -= (dy / dist) * 0.3 * (1 - dist / 80);
-                    if (this.mood !== "sleepy") this.mood = "surprised";
-                }
-                if (this.followMouse && dist > 10) {
-                    this.vx += (dx / dist) * 0.3;
-                    this.vy += (dy / dist) * 0.3;
+                if (dist > 10) {
+                    this.vx += (dx / dist) * 0.3 * deltaTime * 60;
+                    this.vy += (dy / dist) * 0.3 * deltaTime * 60;
                 }
             }
         }
