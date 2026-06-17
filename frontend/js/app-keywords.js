@@ -684,6 +684,30 @@ function kwOpenBulkImport() {
     document.getElementById('modal-bulk-import').classList.add('flex');
     document.getElementById('bi-result').classList.add('hidden');
     makeModalDraggable('bi-modal-header', 'bi-modal');
+
+    // Restaurer taille et position
+    var modal = document.getElementById('bi-modal');
+    try {
+        var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+        var r = cfg.biModalRect;
+        if (r) {
+            modal.style.position = 'fixed';
+            modal.style.left = r.left + 'px';
+            modal.style.top = r.top + 'px';
+            modal.style.width = r.width + 'px';
+            modal.style.height = r.height + 'px';
+            modal.style.transform = 'none';
+            modal.style.margin = '0';
+        }
+    } catch (e) {}
+
+    // Observer les redimensionnements pour sauvegarder
+    if (!modal._biResizeObs) {
+        var ro = new ResizeObserver(function() { _saveBiModalRect(); });
+        ro.observe(modal);
+        modal._biResizeObs = ro;
+    }
+
     // Reset to import tab
     switchBiTab('import');
     loadBiPresets();
@@ -694,7 +718,19 @@ let _bulkFileContent = '';
 let _bulkRowIdCounter = 0;
 let _bulkExistingSet = null; // Set of LOWER(keyword) from DB
 
+function _saveBiModalRect() {
+    var modal = document.getElementById('bi-modal');
+    if (!modal) return;
+    var rect = modal.getBoundingClientRect();
+    try {
+        var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+        cfg.biModalRect = {left: rect.left, top: rect.top, width: rect.width, height: rect.height};
+        localStorage.setItem('FRIA_config', JSON.stringify(cfg));
+    } catch (e) {}
+}
+
 function closeBulkImport() {
+    _saveBiModalRect();
     document.getElementById('modal-bulk-import').classList.add('hidden');
     document.getElementById('modal-bulk-import').classList.remove('flex');
     document.getElementById('bi-preview').classList.add('hidden');

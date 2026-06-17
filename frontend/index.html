@@ -830,7 +830,7 @@
       </div>
 
       <!-- Tab: Import -->
-      <div id="bi-tab-content-import" class="p-4 space-y-3">
+      <div id="bi-tab-content-import" class="p-4 space-y-3 flex flex-col min-h-0" style="flex: 1 1 auto;">
         <p class="text-xs text-slate-500 dark:text-slate-400">
           Importe un fichier texte. Format attendu : <code class="text-indigo-600 dark:text-indigo-400">keyword | description | section | subsection | nsfw(0/1)</code>
         </p>
@@ -843,7 +843,7 @@
           <p id="bi-dropzone-text" class="text-xs text-slate-500 dark:text-slate-400">Clique pour choisir un fichier</p>
           <p id="bi-filename" class="hidden text-xs text-indigo-600 dark:text-indigo-400 font-medium mt-1"></p>
         </div>
-        <div id="bi-preview" class="hidden max-h-72 overflow-y-auto border border-slate-200 dark:border-slate-600 rounded text-xs mb-2"></div>
+        <div id="bi-preview" class="hidden overflow-y-auto border border-slate-200 dark:border-slate-600 rounded text-xs mb-2" style="flex: 1 1 auto; min-height: 60px;"></div>
         <!-- LLM conversion option -->
         <div class="flex items-center gap-3">
           <label class="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
@@ -872,7 +872,7 @@
       </div>
 
       <!-- Tab: Generation IA -->
-      <div id="bi-tab-content-generate" class="hidden p-4 space-y-3">
+      <div id="bi-tab-content-generate" class="hidden p-4 space-y-3 flex flex-col min-h-0" style="flex: 1 1 auto;">
         <p class="text-xs text-slate-500 dark:text-slate-400">
           Donne des instructions à l'IA pour générer une liste de mots-clés au format
           <code class="text-indigo-600 dark:text-indigo-400">keyword | description | section | subsection | nsfw(0/1)</code>
