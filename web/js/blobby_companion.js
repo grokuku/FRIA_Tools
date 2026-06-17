@@ -71,6 +71,7 @@ const Blobby = {
     _active: false,
     _canvas: null,
     _animFrameId: null,
+    _animFrameCount: 0,
     _origDraw: null,
     _origMD: null,
     _origMM: null,
@@ -158,7 +159,11 @@ const Blobby = {
 
         const loop = (t) => {
             if (!this._active) return;
-            if (canvas.setDirty) canvas.setDirty(true, true);
+            this._animFrameCount++;
+            // Limiter le rafraichissement a ~10fps pour ne pas bloquer les autres nodes
+            if (this._animFrameCount % 4 === 0 && canvas.setDirty) {
+                canvas.setDirty(true, true);
+            }
             this._animFrameId = requestAnimationFrame(loop);
         };
         this._animFrameId = requestAnimationFrame(loop);
