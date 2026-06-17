@@ -791,15 +791,24 @@ async function biGenerateKeywords() {
         return;
     }
 
-    // Enrichir l'instruction avec le niveau NSFW
+    // Enrichir l'instruction avec le niveau NSFW + format strict
     var nsfwDirective = '\n\nImportant - Niveau NSFW : ' + _nsfwLevelLabel(nsfwLevel) + '.';
     switch (nsfwLevel) {
-        case 'sfw': nsfwDirective += ' Aucun contenu suggestive ou explicite. Tous les mots-cles doivent etre marques nsfw=0.'; break;
+        case 'sfw': nsfwDirective += ' Aucun contenu suggestif ou explicite. Tous les mots-cles doivent etre marques nsfw=0.'; break;
         case 'sexy': nsfwDirective += ' Les mots-cles a caractere sexy/suggestif sont autorises (nsfw=1). Pas d\'erotisme ni de pornographie.'; break;
         case 'erotic': nsfwDirective += ' Les mots-cles sexy et erotiques sont autorises (nsfw=1). Pas de pornographie explicite.'; break;
         case 'porno': nsfwDirective += ' Tous les niveaux sont autorises, y compris la pornographie explicite (nsfw=1).'; break;
     }
-    nsfwDirective += ' Tu dois marquer chaque mot-cle avec nsfw=0 ou nsfw=1 dans le format de sortie.';
+    nsfwDirective += ' Tu dois marquer chaque mot-cle avec nsfw=0 ou nsfw=1 dans le champ nsfw.\n';
+    nsfwDirective += '\nIMPORTANT - Regles strictes de formatage :\n';
+    nsfwDirective += '- UNILEMENT des lignes au format : keyword | description | section | subsection | nsfw(0/1)\n';
+    nsfwDirective += '- NE RIEN AJOUTER d\'autre : pas d\'introduction, pas de conclusion, pas de commentaires\n';
+    nsfwDirective += '- Pas de markdown, pas de puces, pas de numerotation, pas de gras\n';
+    nsfwDirective += '- Utilise | comme separateur entre les colonnes\n';
+    nsfwDirective += '- Une seule ligne par mot-cle, rien d\'autre avant ni apres\n';
+    nsfwDirective += '- Exemple valide : Clair de lune | Lumiere douce filtrant a travers les arbres | nature | paysages | 0\n';
+    nsfwDirective += '- Exemple valide : Cuirasse | Armure brillante en acier poli | objets | equipement | 0\n';
+    nsfwDirective += '- Si tu ne connais pas la section/subsection, laisse vide (ex: keyword | description | | | 0)';
 
     var statusEl = document.getElementById('bi-gen-status');
     var previewEl = document.getElementById('bi-gen-preview');
@@ -848,29 +857,64 @@ async function biGenerateKeywords() {
 }
 
 function _parseGenToBulkFormat(rawText) {
-    // Tenter d'extraire les lignes au format keyword | description
     var lines = rawText.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l; });
     var result = [];
+    var skipWords = ['voici', 'cette', 'ces', 'pour', 'avec', 'dans', 'afin', 'nous', 'elles', 'ils', 'je', 'tu'];  // mots d'intro
     for (var i = 0; i < lines.length; i++) {
         var line = lines[i];
+        // Skip code fences, headers, et lignes marquees comme erreur par le LLM
         if (line.startsWith('```') || line.startsWith('#')) continue;
-        line = line.replace(/^[\s*-]+/, '').trim();
+        // Skip les lignes conversationnelles (phrases completes)
+        var firstWord = line.split(/\s+/)[0] || '';
+        firstWord = firstWord.replace(/^['"\*]*/, '').toLowerCase();
+        if ((skipWords.indexOf(firstWord) !== -1) && line.endsWith('.') && line.split(' ').length > 5) continue;
+        // Regex pour reperer les phrases d'intro/conclusion
+        if (/^(voici|j['']ai|merci|ces|cette|pour obtenir|je recommande|n['']hésitez|bonne)/i.test(line)) continue;
+
+        // Nettoyer les artefacts markdown
+        line = line.replace(/^[\s*#\-\d\.]+/g, '').trim();
+        line = line.replace(/\*\*/g, '');  // enlever le gras markdown
+
+        // Deja au bon format avec pipe ?
         if (line.includes('|')) {
-            result.push(line);
+            // S'assurer qu'il y a au moins keyword | description
+            var parts = line.split('|').map(function(p) { return p.trim(); });
+            if (parts.length >= 2 && parts[0] && parts[1]) {
+                result.push(parts.join(' | '));
+            }
             continue;
         }
-        var m = line.match(/^\*\*([^\*]+)\*\*\s*[:–—]\s*(.+)/);
+        // Pattern : **keyword** — description  ou  **keyword** : description
+        var m = line.match(/^\*\*?([^*]+)\*\*?\s*[:–—]\s*(.+)/);
         if (m) {
             result.push(m[1].trim() + ' | ' + m[2].trim());
             continue;
         }
-        m = line.match(/^([^:–—]+)\s*[:–—]\s*(.+)/);
+        // Pattern : keyword : description
+        m = line.match(/^([^:–—]{2,60})\s*[:–—]\s*(.+)/);
         if (m) {
             result.push(m[1].trim() + ' | ' + m[2].trim());
             continue;
         }
-        if (line.includes(' ') && line.length > 3) {
-            result.push(line);
+        // Pattern : keyword (traduction) nsfw=X — tenter de separer
+        m = line.match(/^([A-Za-zéèêëàâäùûüôöîïç]+)\s*\(([^)]+)\)\s*nsfw=(\d)/i);
+        if (m) {
+            result.push(m[1].trim() + ' | ' + m[2].trim() + ' | | | ' + m[3]);
+            continue;
+        }
+        // Pattern : keyword nsfw=X
+        m = line.match(/^([^|]+)\s*nsfw=(\d)/i);
+        if (m) {
+            result.push(m[1].trim() + ' |  | | | ' + m[2]);
+            continue;
+        }
+        // Fallback : si la ligne ressemble a une donnee (pas une phrase)
+        if (line.includes(' ')) {
+            var words = line.split(' ');
+            // Si c'est une phrase (trop de mots courts), on skip
+            if (words.length <= 8) {
+                result.push(line);
+            }
         }
     }
     return result.join('\n');
@@ -918,7 +962,7 @@ function kwBulkFileSelected(event) {
                 case 'porno': nsfwDirective += ' Seul le porno explicite → nsfw=1.'; break;
             }
 
-            var instruction = "Reformate le texte suivant au format 'keyword | description | section | subsection | nsfw(0/1)', un mot-cle par ligne. Conserve le sens original, nettoie la ponctuation."
+            var instruction = "Reformate UNIQUEMENT les mots-cles au format 'keyword | description | section | subsection | nsfw(0/1)', un par ligne. NE RIEN AJOUTER d'autre : pas d'introduction, pas de conclusion, pas de commentaires, pas de markdown. Conserve le sens original. Nettoie la ponctuation. Utilise '|' comme separateur, jamais autre chose."
                 + nsfwDirective;
 
             try {
