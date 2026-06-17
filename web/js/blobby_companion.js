@@ -85,9 +85,8 @@ const Blobby = {
 
     _active: false,
     _canvas: null,
-    _animFrameId: null,
-    _animFrameCount: 0,
     _lastTime: 0,
+    _animInterval: null,
     _origDraw: null,
     _origMD: null,
     _origMM: null,
@@ -189,17 +188,11 @@ const Blobby = {
             if (this._origMU) this._origMU.apply(canvas, arguments);
         };
 
-        const loop = (t) => {
-            if (!this._active) return;
-            this._animFrameCount++;
-            // Limiter le rafraichissement a ~10fps pour ne pas bloquer les autres nodes
-            // Redessiner le canvas a ~30fps
-            if (this._animFrameCount % 2 === 0 && canvas.setDirty) {
-                canvas.setDirty(false, true);
-            }
-            this._animFrameId = requestAnimationFrame(loop);
-        };
-        this._animFrameId = requestAnimationFrame(loop);
+        // Blobby vit en autonomie via setInterval (separe du rAF de ComfyUI)
+        this._animInterval = setInterval(function() {
+            if (!Blobby._active) return;
+            if (canvas.setDirty) canvas.setDirty(false, true);
+        }, 200);
 
         console.log("%c🧡 Blobby activé !", "font-size: 16px; color: #FF8F00; font-weight: bold;");
     },
@@ -222,12 +215,13 @@ const Blobby = {
             this._contextHandler = null;
         }
 
-        if (this._animFrameId) {
-            cancelAnimationFrame(this._animFrameId);
-            this._animFrameId = null;
+        // Nettoyer l'intervalle d'animation
+        if (this._animInterval) {
+            clearInterval(this._animInterval);
+            this._animInterval = null;
         }
 
-        if (canvas.setDirty) canvas.setDirty(true, true);
+        if (canvas.setDirty) canvas.setDirty(false, true);
         console.log("%c🧡 Blobby désactivé.", "font-size: 14px; color: #888;");
     },
 

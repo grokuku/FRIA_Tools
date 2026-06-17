@@ -171,13 +171,12 @@ const Blobby = {
             if (gm) this.onMouseUp(gm);
         };
 
-        // Démarrer la boucle d'animation
-        const loop = (t) => {
-            if (!this._active) return;
+        // Pas de boucle rAF separee : Blobby est dessine via onDrawForeground
+        // qui est deja appele par ComfyUI a chaque interaction utilisateur.
+        this._animInterval = setInterval(function() {
+            if (!Blobby._active) return;
             if (canvas.setDirty) canvas.setDirty(false, true);
-            this._animFrameId = requestAnimationFrame(loop);
-        };
-        this._animFrameId = requestAnimationFrame(loop);
+        }, 200);
 
         console.log("%c🧡 Blobby activé !", "font-size: 16px; color: #FF8F00; font-weight: bold;");
     },
