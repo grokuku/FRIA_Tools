@@ -743,6 +743,17 @@ function biToggleLLM() {
     nsfw.classList.toggle('hidden', !show);
 }
 
+function _saveBiPrefs() {
+    try {
+        var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+        cfg.biLlmPreset = document.getElementById('bi-llm-preset').value;
+        cfg.biLlmNsfw = document.getElementById('bi-llm-nsfw').value;
+        cfg.biGenPreset = document.getElementById('bi-gen-preset').value;
+        cfg.biGenNsfw = document.getElementById('bi-gen-nsfw').value;
+        localStorage.setItem('FRIA_config', JSON.stringify(cfg));
+    } catch (e) {}
+}
+
 async function loadBiPresets() {
     try {
         var res = await fetch(API + '/presets');
@@ -752,10 +763,14 @@ async function loadBiPresets() {
             return;
         }
         var presets = await res.json();
+        var saved;
+        try { saved = JSON.parse(localStorage.getItem('FRIA_config')) || {}; } catch { saved = {}; }
+
         [
-            document.getElementById('bi-llm-preset'),
-            document.getElementById('bi-gen-preset')
-        ].forEach(function(sel) {
+            {sel: 'bi-llm-preset', save: 'biLlmPreset'},
+            {sel: 'bi-gen-preset', save: 'biGenPreset'}
+        ].forEach(function(item) {
+            var sel = document.getElementById(item.sel);
             if (!sel) return;
             var val = sel.value;
             sel.innerHTML = '<option value="">-- Provider LLM --</option>';
@@ -765,7 +780,18 @@ async function loadBiPresets() {
                 opt.textContent = p.name + (p.is_global ? ' 🌐' : '') + (p.is_client_side ? ' 🖥️' : '');
                 sel.appendChild(opt);
             });
-            sel.value = val;
+            // Restaurer la valeur sauvegardee
+            sel.value = saved[item.save] || val;
+            // Sauvegarder au changement
+            sel.onchange = _saveBiPrefs;
+        });
+
+        // Restaurer les niveaux NSFW
+        ['bi-llm-nsfw', 'bi-gen-nsfw'].forEach(function(id) {
+            var sel = document.getElementById(id);
+            if (!sel) return;
+            sel.value = saved[id === 'bi-llm-nsfw' ? 'biLlmNsfw' : 'biGenNsfw'] || 'sfw';
+            sel.onchange = _saveBiPrefs;
         });
     } catch (e) {
         console.error('[loadBiPresets] exception:', e);
@@ -835,18 +861,19 @@ async function biGenerateKeywords() {
             return;
         }
 
-        statusEl.textContent = '✅ Resultat recu !';
+        statusEl.textContent = '✅ Resultat recu ! Utilise l\'onglet Import pour confirmer.';
         previewEl.classList.remove('hidden');
 
-        // Afficher le resultat : on tente de le parser comme du bulk import
+        // Afficher le resultat brut dans la preview de l'onglet Generation
         var rawText = data.output || '';
-        _bulkFileContent = _parseGenToBulkFormat(rawText);
-        _parseAndShowPreview(_bulkFileContent);
-
-        // Basculer sur l'onglet Import pour confirmer
-        setTimeout(function() {
-            switchBiTab('import');
-        }, 500);
+        var formatted = _parseGenToBulkFormat(rawText);
+        previewEl.innerHTML = '<div class="p-2 text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">' +
+            '<b>' + formatted.split('\n').length + '</b> ligne(s) detectees. ' +
+            '<button onclick="switchBiTab(\'import\')" class="text-indigo-500 hover:underline">Aller a l\'onglet Import</button>' +
+            '</div>' +
+            '<pre class="p-2 text-xs text-slate-600 dark:text-slate-300 whitespace-pre-wrap" style="word-break:break-word;">' + esc(formatted) + '</pre>';
+        // Stocker pour confirmation via l'onglet Import
+        _bulkFileContent = formatted;
 
     } catch (e) {
         statusEl.textContent = '❌ Erreur: ' + (e.message || '');
@@ -1393,7 +1420,8 @@ async function kwOpenDuplicateScan() {
         }
         
         progressDiv.classList.add('hidden');
-        showModal('🔍 Resultat du scan', html, data.exact_count > 0 ? 'warning' : 'success');
+        // Afficher dans une modale large et scrollable
+        _showScanResults(html);
         
     } catch (e) {
         clearInterval(timerInterval);
@@ -1404,6 +1432,68 @@ async function kwOpenDuplicateScan() {
             showModal('Erreur', e.message || 'Erreur de scan', 'error');
         }
     }
+}
+
+function _showScanResults(html) {
+    // Modale plein écran scrollable
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,0.6);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
+
+    var modal = document.createElement('div');
+    modal.style.cssText = 'background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.3);width:90%;max-width:700px;max-height:85vh;display:flex;flex-direction:col;overflow:hidden;';
+    if (document.documentElement.classList.contains('dark')) {
+        modal.style.background = '#1e293b';
+        modal.style.border = '1px solid #334155';
+    }
+
+    // Header
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #e2e8f0;flex-shrink:0;';
+    if (document.documentElement.classList.contains('dark')) {
+        header.style.borderColor = '#334155';
+    }
+    var title = document.createElement('span');
+    title.textContent = '🔍 Resultat du scan';
+    title.style.cssText = 'font-size:14px;font-weight:600;color:#1e293b;';
+    if (document.documentElement.classList.contains('dark')) title.style.color = '#e2e8f0';
+    var closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '&times;';
+    closeBtn.style.cssText = 'background:none;border:none;font-size:20px;cursor:pointer;color:#94a3b8;padding:0 4px;';
+    closeBtn.onmouseenter = function() { closeBtn.style.color = '#ef4444'; };
+    closeBtn.onmouseleave = function() { closeBtn.style.color = '#94a3b8'; };
+    closeBtn.onclick = function() { overlay.remove(); };
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    // Body scrollable
+    var body = document.createElement('div');
+    body.style.cssText = 'padding:16px;overflow-y:auto;font-size:12px;color:#475569;line-height:1.5;';
+    if (document.documentElement.classList.contains('dark')) body.style.color = '#cbd5e1';
+    body.innerHTML = html;
+
+    // Footer
+    var footer = document.createElement('div');
+    footer.style.cssText = 'display:flex;justify-content:flex-end;padding:10px 16px;border-top:1px solid #e2e8f0;flex-shrink:0;';
+    if (document.documentElement.classList.contains('dark')) footer.style.borderColor = '#334155';
+    var okBtn = document.createElement('button');
+    okBtn.textContent = 'OK';
+    okBtn.style.cssText = 'padding:6px 16px;font-size:13px;font-weight:600;background:#6366f1;color:#fff;border:none;border-radius:6px;cursor:pointer;';
+    okBtn.onmouseenter = function() { okBtn.style.background = '#4f46e5'; };
+    okBtn.onmouseleave = function() { okBtn.style.background = '#6366f1'; };
+    okBtn.onclick = function() { overlay.remove(); };
+    footer.appendChild(okBtn);
+
+    modal.appendChild(header);
+    modal.appendChild(body);
+    modal.appendChild(footer);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    // Fermer au clic sur l\'overlay (pas sur la modale)
+    overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+    // Fermer avec Escape
+    var keyHandler = function(e) { if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', keyHandler); } };
+    document.addEventListener('keydown', keyHandler);
 }
 
 // ── Export ──────────────────────────────────────────────────────
