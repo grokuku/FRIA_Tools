@@ -174,6 +174,48 @@ function initMenu(appInstance) {
     dd.appendChild(mkItem("Paramètres", "⚙️", () => openSettings()));
     dd.appendChild(mkItem("Update", "🔄", () => openUpdate()));
 
+    // ── Blobby Companion toggle ──
+    const blobbyDiv = document.createElement("div");
+    Object.assign(blobbyDiv.style, {
+        padding: "10px 16px", cursor: "pointer", fontSize: "13px",
+        borderBottom: "1px solid #444",
+        display: "flex", alignItems: "center", gap: "8px",
+    });
+    blobbyDiv.onmouseenter = () => blobbyDiv.style.background = "#3a3a3e";
+    blobbyDiv.onmouseleave = () => blobbyDiv.style.background = "";
+
+    const blobbyIcon = document.createElement("span");
+    blobbyIcon.textContent = "🧡";
+    const blobbyLabel = document.createElement("span");
+    blobbyLabel.style.flex = "1";
+    const blobbyStatus = document.createElement("span");
+    Object.assign(blobbyStatus.style, {
+        fontSize: "10px", padding: "1px 6px", borderRadius: "4px",
+        fontWeight: "600",
+    });
+
+    function updateBlobbyUI() {
+        const active = window.BlobbyCompanion && window.BlobbyCompanion.isActive();
+        blobbyLabel.textContent = active ? "Blobby (test concept)" : "Activer Blobby";
+        blobbyStatus.textContent = active ? "ON" : "OFF";
+        blobbyStatus.style.background = active ? "#166534" : "#555";
+        blobbyStatus.style.color = active ? "#86efac" : "#aaa";
+    }
+    updateBlobbyUI();
+
+    blobbyDiv.onclick = () => {
+        if (window.BlobbyCompanion && window.BlobbyCompanion.toggle) {
+            window.BlobbyCompanion.toggle();
+            updateBlobbyUI();
+        }
+        // Ne pas fermer le menu
+    };
+
+    blobbyDiv.appendChild(blobbyIcon);
+    blobbyDiv.appendChild(blobbyLabel);
+    blobbyDiv.appendChild(blobbyStatus);
+    dd.appendChild(blobbyDiv);
+
     // Statut serveur
     const statusDiv = document.createElement("div");
     statusDiv.id = "fria-server-status";
