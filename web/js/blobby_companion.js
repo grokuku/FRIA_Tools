@@ -77,6 +77,7 @@ const Blobby = {
     _origMD: null,
     _origMM: null,
     _origMU: null,
+    _contextHandler: null,
 
     init(canvas) {
         this._canvas = canvas;
@@ -94,6 +95,24 @@ const Blobby = {
         this._origMD = canvas.processMouseDown;
         this._origMM = canvas.processMouseMove;
         this._origMU = canvas.processMouseUp;
+
+        // Handler DOM pour le clic droit, independant de Litegraph
+        var _self = this;
+        this._contextHandler = function(e) {
+            if (!_self._active) return;
+            // Convertir les coordonnées ecran → graph (inverser zoom/pan)
+            var rect = canvas.canvas.getBoundingClientRect();
+            var mx = (e.clientX - rect.left) / canvas.ds_scale + canvas.ds_translate[0];
+            var my = (e.clientY - rect.top) / canvas.ds_scale + canvas.ds_translate[1];
+            if (_self.hitTest(mx, my)) {
+                e.preventDefault();
+                e.stopPropagation();
+                _self._openChatModal();
+                _self.mood = "happy"; _self.moodTimer = 0;
+                for (var i = 0; i < 3; i++) _self.addParticle(_self.x + (Math.random() - 0.5) * 20, _self.y + (Math.random() - 0.5) * 20, "sparkle");
+            }
+        };
+        canvas.canvas.addEventListener('contextmenu', this._contextHandler);
     },
 
     initParticles() {
@@ -145,16 +164,6 @@ const Blobby = {
 
         canvas.processMouseDown = (e) => {
             if (this._origMD) this._origMD.apply(canvas, arguments);
-            // Clic droit sur Blobby → ouvre le tchat
-            if (e.button === 2) {
-                const gm = this._getGM(canvas);
-                if (gm && this.hitTest(gm[0], gm[1])) {
-                    this._openChatModal();
-                    this.mood = "happy"; this.moodTimer = 0;
-                    for (let i = 0; i < 3; i++) this.addParticle(this.x + (Math.random() - 0.5) * 20, this.y + (Math.random() - 0.5) * 20, "sparkle");
-                    e.preventDefault();
-                }
-            }
         };
 
         canvas.processMouseMove = (e) => {
@@ -191,6 +200,12 @@ const Blobby = {
         canvas.processMouseDown = this._origMD || null;
         canvas.processMouseMove = this._origMM || null;
         canvas.processMouseUp = this._origMU || null;
+
+        // Nettoyer le handler contextmenu
+        if (this._contextHandler && canvas.canvas) {
+            canvas.canvas.removeEventListener('contextmenu', this._contextHandler);
+            this._contextHandler = null;
+        }
 
         if (this._animFrameId) {
             cancelAnimationFrame(this._animFrameId);
