@@ -189,10 +189,8 @@ const Blobby = {
         };
 
         // Blobby vit en autonomie via setInterval (separe du rAF de ComfyUI)
-        this._animInterval = setInterval(function() {
-            if (!Blobby._active) return;
-            if (canvas.setDirty) canvas.setDirty(false, true);
-        }, 33);
+        var fps = this._getFpsSetting();
+        this._startAnimationInterval(fps);
 
         console.log("%c🧡 Blobby activé !", "font-size: 16px; color: #FF8F00; font-weight: bold;");
     },
@@ -226,6 +224,41 @@ const Blobby = {
     },
 
     isActive() { return this._active; },
+
+    _getFpsSetting() {
+        try {
+            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+            return parseInt(cfg.blobbyFps) || 30;
+        } catch { return 30; }
+    },
+
+    _saveFpsSetting(fps) {
+        try {
+            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+            cfg.blobbyFps = fps;
+            localStorage.setItem('FRIA_config', JSON.stringify(cfg));
+        } catch {}
+    },
+
+    _startAnimationInterval(fps) {
+        if (this._animInterval) {
+            clearInterval(this._animInterval);
+            this._animInterval = null;
+        }
+        if (!fps || fps <= 0) return;
+        var intervalMs = Math.round(1000 / fps);
+        var canvas = this._canvas;
+        var _self = this;
+        this._animInterval = setInterval(function() {
+            if (!_self._active) return;
+            if (canvas.setDirty) canvas.setDirty(false, true);
+        }, intervalMs);
+    },
+
+    _restartAnimationInterval(fps) {
+        this._saveFpsSetting(fps);
+        this._startAnimationInterval(fps);
+    },
 
     _getGM(canvas) {
         return canvas.graph_mouse ? [canvas.graph_mouse[0], canvas.graph_mouse[1]] : null;
@@ -771,7 +804,7 @@ const Blobby = {
         });
 
         var tabNames = ['provider', 'character'];
-        var tabLabels = { provider: 'Provider', character: 'Caractère' };
+        var tabLabels = { provider: 'Général', character: 'Caractère' };
         var tabContent = document.createElement('div');
         Object.assign(tabContent.style, { padding: '14px', overflowY: 'auto', flex: '1', display: 'flex', flexDirection: 'column', gap: '12px' });
 
@@ -854,6 +887,56 @@ const Blobby = {
         provContent.appendChild(pLabel);
         provContent.appendChild(select);
         provContent.appendChild(pNote);
+
+        // ── FPS Control ──
+        var fpsSeparator = document.createElement('hr');
+        Object.assign(fpsSeparator.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        provContent.appendChild(fpsSeparator);
+
+        var fpsLabel = document.createElement('label');
+        fpsLabel.textContent = 'Animation (FPS)';
+        Object.assign(fpsLabel.style, { fontSize: '12px', color: '#94a3b8', fontWeight: '600' });
+
+        // Lire la valeur sauvegardee
+        var savedFps = 30;
+        try {
+            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+            savedFps = parseInt(cfg.blobbyFps) || 30;
+        } catch {}
+
+        var fpsContainer = document.createElement('div');
+        Object.assign(fpsContainer.style, { display: 'flex', alignItems: 'center', gap: '10px' });
+
+        var fpsRange = document.createElement('input');
+        fpsRange.type = 'range';
+        fpsRange.id = 'blobby-fps-range';
+        Object.assign(fpsRange.style, { flex: '1', accentColor: '#FF8F00' });
+        fpsRange.min = 0;
+        fpsRange.max = 120;
+        fpsRange.step = 5;
+        fpsRange.value = savedFps;
+
+        var fpsValue = document.createElement('span');
+        fpsValue.id = 'blobby-fps-value';
+        fpsValue.textContent = savedFps > 0 ? savedFps + ' fps' : 'Off';
+        Object.assign(fpsValue.style, { fontSize: '12px', color: '#e2e8f0', minWidth: '45px', textAlign: 'right', fontWeight: '600' });
+
+        fpsRange.oninput = function() {
+            var v = parseInt(this.value) || 0;
+            fpsValue.textContent = v > 0 ? v + ' fps' : 'Off';
+            _self._saveFpsSetting(v);
+            _self._restartAnimationInterval(v);
+        };
+
+        var fpsNote = document.createElement('p');
+        fpsNote.textContent = 'Regle la frequence d\'animation de Blobby. 0 = arrete, 30 = fluide, 60+ = tres fluide (attention perf).';
+        Object.assign(fpsNote.style, { fontSize: '11px', color: '#64748b', lineHeight: '1.4', margin: '0' });
+
+        fpsContainer.appendChild(fpsRange);
+        fpsContainer.appendChild(fpsValue);
+        provContent.appendChild(fpsLabel);
+        provContent.appendChild(fpsContainer);
+        provContent.appendChild(fpsNote);
 
         // ── Tab Caractere ──
         var charContent = document.createElement('div');
