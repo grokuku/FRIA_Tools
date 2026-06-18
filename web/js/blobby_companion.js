@@ -449,10 +449,23 @@ const Blobby = {
 
     updateNodeCollision(nodes) {
         if (!nodes) return;
+        function getNodeBounds(node) {
+            if (typeof node.getBounding === 'function') {
+                try {
+                    var bbox = node.getBounding();
+                    if (bbox && bbox.length === 4) return { x: bbox[0], y: bbox[1], w: bbox[2], h: bbox[3] };
+                } catch {}
+            }
+            // Le titre de la node est dessine au-dessus de node.pos
+            // On remonte le Y de la hauteur du titre pour couvrir le titre
+            var titleH = window.LiteGraph?.NODE_TITLE_HEIGHT || 30;
+            return { x: node.pos[0], y: node.pos[1] - titleH, w: node.size[0], h: node.size[1] + titleH };
+        }
+
         if (!this.isDragging) {
             for (const node of nodes) {
-                const nx = node.pos[0], ny = node.pos[1];
-                const nw = node.size[0], nh = node.size[1];
+                var b = getNodeBounds(node);
+                const nx = b.x, ny = b.y, nw = b.w, nh = b.h;
                 const isInside = (this.x >= nx && this.x <= nx + nw && this.y >= ny && this.y <= ny + nh);
                 if (isInside) {
                     const dl = this.x - nx, dr = (nx + nw) - this.x;
@@ -469,8 +482,8 @@ const Blobby = {
         for (const p of this.bodyParticles) {
             if (isNaN(p.x) || isNaN(p.y)) continue;
             for (const node of nodes) {
-                const nx = node.pos[0], ny = node.pos[1];
-                const nw = node.size[0], nh = node.size[1], pr = p.radius;
+                var b = getNodeBounds(node);
+                const nx = b.x, ny = b.y, nw = b.w, nh = b.h, pr = p.radius;
                 const isInside = (p.x >= nx && p.x <= nx + nw && p.y >= ny && p.y <= ny + nh);
                 if (isInside) {
                     const dl = p.x - nx, dr = (nx + nw) - p.x;
@@ -497,8 +510,8 @@ const Blobby = {
         if (this.nodeBounceCooldown <= 0) {
             for (const p of this.bodyParticles) {
                 for (const node of nodes) {
-                    const nx = node.pos[0], ny = node.pos[1];
-                    const nw = node.size[0], nh = node.size[1];
+                    var b = getNodeBounds(node);
+                    const nx = b.x, ny = b.y, nw = b.w, nh = b.h;
                     if (p.x >= nx && p.x <= nx + nw && p.y >= ny && p.y <= ny + nh) {
                         if (node.comfyClass?.includes("KSampler")) {
                             this.mood = "surprised"; this.moodTimer = 0;
