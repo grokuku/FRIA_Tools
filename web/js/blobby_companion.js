@@ -113,6 +113,7 @@ const Blobby = {
         try {
             var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
             var a = cfg.blobbyAppearance || {};
+            var oldParticles = this.NUM_PARTICLES;
             if (a.numParticles) this.NUM_PARTICLES = a.numParticles;
             if (a.bodyAlpha !== undefined) this.bodyAlpha = a.bodyAlpha;
             if (a.brainAlpha !== undefined) this.brainAlpha = a.brainAlpha;
@@ -126,6 +127,10 @@ const Blobby = {
                 for (var k in a.colors) {
                     if (a.colors.hasOwnProperty(k)) this.colors[k] = a.colors[k];
                 }
+            }
+            // Reinitaliser les particules si le nombre a change
+            if (this.NUM_PARTICLES !== oldParticles) {
+                this.initParticles();
             }
         } catch {}
     },
@@ -698,22 +703,22 @@ const Blobby = {
         var eY = this.eyeY;
         var eSpr = this.eyeSpread;
         ctx.strokeStyle = "#0f172a";
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = 2.5 * es;
         ctx.lineCap = "round";
-        const leftEyeX = ox - eSpr * s * es, rightEyeX = ox + eSpr * s * es, browY = oy - 6 * s;
+        const leftEyeX = ox - eSpr * s * es, rightEyeX = ox + eSpr * s * es, browY = oy - 6 * s * es;
         ctx.beginPath();
         if (this.mood === "surprised") {
-            ctx.moveTo(leftEyeX - 8 * s * es, browY - 3 * s);
-            ctx.quadraticCurveTo(leftEyeX, browY - 8 * s, leftEyeX + 6 * s * es, browY - 5 * s);
-            ctx.moveTo(rightEyeX + 8 * s * es, browY - 3 * s);
-            ctx.quadraticCurveTo(rightEyeX, browY - 8 * s, rightEyeX - 6 * s * es, browY - 5 * s);
+            ctx.moveTo(leftEyeX - 8 * s * es, browY - 3 * s * es);
+            ctx.quadraticCurveTo(leftEyeX, browY - 8 * s * es, leftEyeX + 6 * s * es, browY - 5 * s * es);
+            ctx.moveTo(rightEyeX + 8 * s * es, browY - 3 * s * es);
+            ctx.quadraticCurveTo(rightEyeX, browY - 8 * s * es, rightEyeX - 6 * s * es, browY - 5 * s * es);
         } else if (this.mood === "sleepy") {
-            ctx.moveTo(leftEyeX - 7 * s * es, browY + 2 * s); ctx.lineTo(leftEyeX + 7 * s * es, browY + 2 * s);
-            ctx.moveTo(rightEyeX - 7 * s * es, browY + 2 * s); ctx.lineTo(rightEyeX + 7 * s * es, browY + 2 * s);
+            ctx.moveTo(leftEyeX - 7 * s * es, browY + 2 * s * es); ctx.lineTo(leftEyeX + 7 * s * es, browY + 2 * s * es);
+            ctx.moveTo(rightEyeX - 7 * s * es, browY + 2 * s * es); ctx.lineTo(rightEyeX + 7 * s * es, browY + 2 * s * es);
         } else {
-            ctx.arc(leftEyeX, browY + 2 * s, 7 * s * es, Math.PI * 1.15, Math.PI * 1.85);
-            ctx.moveTo(rightEyeX - 7 * s * es, browY + 2 * s);
-            ctx.arc(rightEyeX, browY + 2 * s, 7 * s * es, Math.PI * 1.15, Math.PI * 1.85);
+            ctx.arc(leftEyeX, browY + 2 * s * es, 7 * s * es, Math.PI * 1.15, Math.PI * 1.85);
+            ctx.moveTo(rightEyeX - 7 * s * es, browY + 2 * s * es);
+            ctx.arc(rightEyeX, browY + 2 * s * es, 7 * s * es, Math.PI * 1.15, Math.PI * 1.85);
         }
         ctx.stroke();
 
@@ -1217,6 +1222,33 @@ const Blobby = {
         modal.appendChild(tabsBar);
         modal.appendChild(tabContent);
         document.body.appendChild(modal);
+
+        // Drag
+        (function(hdr, mdl) {
+            var d = { active: false, sx: 0, sy: 0, ox: 0, oy: 0 };
+            hdr.addEventListener('mousedown', function(e) {
+                if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+                d.active = true;
+                var r = mdl.getBoundingClientRect();
+                d.sx = e.clientX; d.sy = e.clientY;
+                d.ox = r.left; d.oy = r.top;
+                mdl.style.position = 'fixed';
+                mdl.style.left = r.left + 'px';
+                mdl.style.top = r.top + 'px';
+                mdl.style.transform = 'none';
+                mdl.style.margin = '0';
+                hdr.style.cursor = 'grabbing';
+                e.preventDefault();
+            });
+            document.addEventListener('mousemove', function(e) {
+                if (!d.active) return;
+                mdl.style.left = (d.ox + e.clientX - d.sx) + 'px';
+                mdl.style.top = (d.oy + e.clientY - d.sy) + 'px';
+            });
+            document.addEventListener('mouseup', function() {
+                if (d.active) { d.active = false; hdr.style.cursor = ''; }
+            });
+        })(header, modal);
 
         // Activer le premier onglet
         switchTab('provider');
