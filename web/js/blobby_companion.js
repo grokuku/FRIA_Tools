@@ -452,7 +452,7 @@ const Blobby = {
 
         this.updateParticlePhysics();
         this.updateNodeCollision(nodes);
-        this.updateOrganPosition();
+        this.updateOrganPosition(deltaTime);
 
         if (this.isDragging && mousePosGraph) {
             const dx = mousePosGraph[0] - this.x;
@@ -677,7 +677,7 @@ const Blobby = {
         this.nodeBounceCooldown = Math.max(0, this.nodeBounceCooldown - 0.016);
     },
 
-    updateOrganPosition() {
+    updateOrganPosition(deltaTime) {
         let sx = 0, sy = 0, validCount = 0;
         for (const p of this.bodyParticles) {
             if (!isNaN(p.x) && !isNaN(p.y)) { sx += p.x; sy += p.y; validCount++; }
