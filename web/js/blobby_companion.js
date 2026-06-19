@@ -1085,7 +1085,7 @@ const Blobby = {
         fpsRange.id = 'blobby-fps-range';
         Object.assign(fpsRange.style, { flex: '1', accentColor: '#FF8F00' });
         fpsRange.min = 0;
-        fpsRange.max = 120;
+        fpsRange.max = 165;
         fpsRange.step = 5;
         fpsRange.value = savedFps;
 
@@ -1102,7 +1102,7 @@ const Blobby = {
         };
 
         var fpsNote = document.createElement('p');
-        fpsNote.textContent = 'Regle la frequence d\'animation de Blobby. 0 = arrete, 30 = fluide, 60+ = tres fluide (attention perf).';
+        fpsNote.textContent = 'Regle la frequence d\'animation de Blobby. 0 = arrete, 30 = fluide, 60+ = fluide, 120-165 = max (ecrans haut refresh).';
         Object.assign(fpsNote.style, { fontSize: '11px', color: '#64748b', lineHeight: '1.4', margin: '0' });
 
         fpsContainer.appendChild(fpsRange);
