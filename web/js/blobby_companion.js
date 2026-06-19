@@ -705,7 +705,10 @@ const Blobby = {
         ctx.strokeStyle = "#0f172a";
         ctx.lineWidth = 2.5 * es;
         ctx.lineCap = "round";
-        const leftEyeX = ox - eSpr * s * es, rightEyeX = ox + eSpr * s * es, browY = oy - 6 * s * es;
+        // Les sourcils suivent la position des yeux (eyeY)
+        const leftEyeX = ox - eSpr * s * es, rightEyeX = ox + eSpr * s * es;
+        var eyeCenterY = oy + eY * s * es;
+        var browY = eyeCenterY - 12 * s * es;  // toujours 12px au-dessus de l'oeil
         ctx.beginPath();
         if (this.mood === "surprised") {
             ctx.moveTo(leftEyeX - 8 * s * es, browY - 3 * s * es);
