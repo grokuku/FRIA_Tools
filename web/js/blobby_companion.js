@@ -79,6 +79,22 @@ const Blobby = {
     time: 0,
     nodeBounceCooldown: 0,
 
+    // ── Apparence (surchargeable via localStorage) ──
+    bodyAlpha: 1.0,
+    brainAlpha: 1.0,
+    brainSize: 1.0,
+    eyeY: 6,        // decalage Y des yeux depuis le centre
+    eyeSpread: 15,   // ecartement horizontal des yeux
+    eyeScale: 1.0,   // taille des yeux
+    mouthY: 22,      // decalage Y de la bouche
+    mouthScale: 1.0, // taille de la bouche
+    colors: {         // couleurs par humeur
+        happy: '#FF8F00',
+        surprised: '#E65100',
+        sleepy: '#43A047',
+        _default: '#FF8F00'
+    },
+
     visibleArea: null,
     _offscreen: null,
     _octx: null,
@@ -93,6 +109,27 @@ const Blobby = {
     _origMU: null,
     _contextHandler: null,
 
+    _loadAppearance() {
+        try {
+            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+            var a = cfg.blobbyAppearance || {};
+            if (a.numParticles) this.NUM_PARTICLES = a.numParticles;
+            if (a.bodyAlpha !== undefined) this.bodyAlpha = a.bodyAlpha;
+            if (a.brainAlpha !== undefined) this.brainAlpha = a.brainAlpha;
+            if (a.brainSize !== undefined) this.brainSize = a.brainSize;
+            if (a.eyeY !== undefined) this.eyeY = a.eyeY;
+            if (a.eyeSpread !== undefined) this.eyeSpread = a.eyeSpread;
+            if (a.eyeScale !== undefined) this.eyeScale = a.eyeScale;
+            if (a.mouthY !== undefined) this.mouthY = a.mouthY;
+            if (a.mouthScale !== undefined) this.mouthScale = a.mouthScale;
+            if (a.colors) {
+                for (var k in a.colors) {
+                    if (a.colors.hasOwnProperty(k)) this.colors[k] = a.colors[k];
+                }
+            }
+        } catch {}
+    },
+
     init(canvas) {
         this._canvas = canvas;
         this.x = 400;
@@ -100,6 +137,7 @@ const Blobby = {
         this.organX = this.x;
         this.organY = this.y;
         this.blinkTimer = 60 + Math.random() * 120;
+        this._loadAppearance();
         this.initParticles();
 
         this._offscreen = document.createElement('canvas');
@@ -599,7 +637,9 @@ const Blobby = {
             octx.fillStyle = bodyColor;
             octx.fillRect(0, 0, bw, bh);
             octx.restore();
+            ctx.globalAlpha = this.bodyAlpha;
             ctx.drawImage(oc, minX - pad, minY - pad);
+            ctx.globalAlpha = 1;
         } catch (e) {
             this.drawFallbackBody(ctx, s);
         }
@@ -620,18 +660,16 @@ const Blobby = {
     },
 
     getBodyColor() {
-        switch (this.mood) {
-            case "surprised": return "#E65100";
-            case "sleepy": return "#43A047";
-            default: return "#FF8F00";
-        }
+        return this.colors[this.mood] || this.colors._default;
     },
 
     drawBrain(ctx, ox, oy, s) {
         ctx.save();
+        ctx.globalAlpha = this.brainAlpha;
         const pulse = 1 + Math.sin(this.time * 4) * 0.03;
         ctx.translate(ox, oy - 18 * s);
         ctx.scale(pulse, pulse);
+        ctx.scale(this.brainSize, this.brainSize);
         ctx.fillStyle = "#ff4da6";
         ctx.beginPath();
         ctx.arc(-7 * s, -4 * s, 10 * s, 0, Math.PI * 2);
@@ -656,59 +694,64 @@ const Blobby = {
     },
 
     drawEyes(ctx, ox, oy, s) {
+        var es = this.eyeScale;
+        var eY = this.eyeY;
+        var eSpr = this.eyeSpread;
         ctx.strokeStyle = "#0f172a";
         ctx.lineWidth = 2.5;
         ctx.lineCap = "round";
-        const leftEyeX = ox - 15 * s, rightEyeX = ox + 15 * s, browY = oy - 6 * s;
+        const leftEyeX = ox - eSpr * s * es, rightEyeX = ox + eSpr * s * es, browY = oy - 6 * s;
         ctx.beginPath();
         if (this.mood === "surprised") {
-            ctx.moveTo(leftEyeX - 8 * s, browY - 3 * s);
-            ctx.quadraticCurveTo(leftEyeX, browY - 8 * s, leftEyeX + 6 * s, browY - 5 * s);
-            ctx.moveTo(rightEyeX + 8 * s, browY - 3 * s);
-            ctx.quadraticCurveTo(rightEyeX, browY - 8 * s, rightEyeX - 6 * s, browY - 5 * s);
+            ctx.moveTo(leftEyeX - 8 * s * es, browY - 3 * s);
+            ctx.quadraticCurveTo(leftEyeX, browY - 8 * s, leftEyeX + 6 * s * es, browY - 5 * s);
+            ctx.moveTo(rightEyeX + 8 * s * es, browY - 3 * s);
+            ctx.quadraticCurveTo(rightEyeX, browY - 8 * s, rightEyeX - 6 * s * es, browY - 5 * s);
         } else if (this.mood === "sleepy") {
-            ctx.moveTo(leftEyeX - 7 * s, browY + 2 * s); ctx.lineTo(leftEyeX + 7 * s, browY + 2 * s);
-            ctx.moveTo(rightEyeX - 7 * s, browY + 2 * s); ctx.lineTo(rightEyeX + 7 * s, browY + 2 * s);
+            ctx.moveTo(leftEyeX - 7 * s * es, browY + 2 * s); ctx.lineTo(leftEyeX + 7 * s * es, browY + 2 * s);
+            ctx.moveTo(rightEyeX - 7 * s * es, browY + 2 * s); ctx.lineTo(rightEyeX + 7 * s * es, browY + 2 * s);
         } else {
-            ctx.arc(leftEyeX, browY + 2 * s, 7 * s, Math.PI * 1.15, Math.PI * 1.85);
-            ctx.moveTo(rightEyeX - 7 * s, browY + 2 * s);
-            ctx.arc(rightEyeX, browY + 2 * s, 7 * s, Math.PI * 1.15, Math.PI * 1.85);
+            ctx.arc(leftEyeX, browY + 2 * s, 7 * s * es, Math.PI * 1.15, Math.PI * 1.85);
+            ctx.moveTo(rightEyeX - 7 * s * es, browY + 2 * s);
+            ctx.arc(rightEyeX, browY + 2 * s, 7 * s * es, Math.PI * 1.15, Math.PI * 1.85);
         }
         ctx.stroke();
 
         const drawOneEye = (ex) => {
-            const eyeX = ox + ex, eyeY = oy + 6 * s;
+            const eyeX = ox + ex, eyeY = oy + eY * s * es;
             const angle = Math.atan2(this.mouseY - (this.y + eyeY), this.mouseX - (this.x + eyeX));
-            const lookDist = Math.min(5 * s, Math.hypot(this.mouseX - (this.x + eyeX), this.mouseY - (this.y + eyeY)) * 0.02);
+            const lookDist = Math.min(5 * s * es, Math.hypot(this.mouseX - (this.x + eyeX), this.mouseY - (this.y + eyeY)) * 0.02);
             const pupilX = eyeX + Math.cos(angle) * lookDist;
             const pupilY = eyeY + Math.sin(angle) * lookDist;
             if (this.isBlinking) {
                 ctx.strokeStyle = "#0f172a"; ctx.lineWidth = 3;
-                ctx.beginPath(); ctx.moveTo(eyeX - 9 * s, eyeY); ctx.quadraticCurveTo(eyeX, eyeY + 3 * s, eyeX + 9 * s, eyeY); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(eyeX - 9 * s * es, eyeY); ctx.quadraticCurveTo(eyeX, eyeY + 3 * s * es, eyeX + 9 * s * es, eyeY); ctx.stroke();
                 return;
             }
-            const scleraR = this.mood === "surprised" ? 11 * s : 9 * s;
+            const scleraR = (this.mood === "surprised" ? 11 : 9) * s * es;
             ctx.fillStyle = "#ffffff";
             ctx.beginPath(); ctx.arc(eyeX, eyeY, scleraR, 0, Math.PI * 2); ctx.fill();
             ctx.strokeStyle = "rgba(0,0,0,0.2)"; ctx.lineWidth = 1; ctx.stroke();
-            const pupilR = this.mood === "surprised" ? 3 * s : 4.5 * s;
+            const pupilR = (this.mood === "surprised" ? 3 : 4.5) * s * es;
             ctx.fillStyle = "#0f172a";
             ctx.beginPath(); ctx.arc(pupilX, pupilY, pupilR, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = "#ffffff";
             ctx.beginPath(); ctx.arc(pupilX - pupilR * 0.3, pupilY - pupilR * 0.3, pupilR * 0.35, 0, Math.PI * 2); ctx.fill();
         };
-        drawOneEye(-15 * s); drawOneEye(15 * s);
+        drawOneEye(-eSpr * s * es); drawOneEye(eSpr * s * es);
     },
 
     drawMouth(ctx, ox, oy, s) {
-        const mouthY = oy + 22 * s, mouthW = (10 + this.mouthOpen * 6) * s;
+        var mY = this.mouthY;
+        var mS = this.mouthScale;
+        const mouthY = oy + mY * s * mS, mouthW = (10 + this.mouthOpen * 6) * s * mS;
         if (this.mood === "surprised" && this.mouthOpen > 0.3) {
-            ctx.beginPath(); ctx.ellipse(ox, mouthY, 6 * s, (3 + this.mouthOpen * 6) * s, 0, 0, Math.PI * 2);
+            ctx.beginPath(); ctx.ellipse(ox, mouthY, 6 * s * mS, (3 + this.mouthOpen * 6) * s * mS, 0, 0, Math.PI * 2);
             ctx.fillStyle = "#5D4037"; ctx.fill();
-            ctx.beginPath(); ctx.ellipse(ox, mouthY + s, 4 * s, (1 + this.mouthOpen * 4) * s, 0, 0, Math.PI * 2);
+            ctx.beginPath(); ctx.ellipse(ox, mouthY + s * mS, 4 * s * mS, (1 + this.mouthOpen * 4) * s * mS, 0, 0, Math.PI * 2);
             ctx.fillStyle = "#D32F2F"; ctx.fill();
         } else if (this.mood === "sleepy") {
-            ctx.beginPath(); ctx.ellipse(ox, mouthY, 2 * s, 1.5 * s, 0, 0, Math.PI * 2);
+            ctx.beginPath(); ctx.ellipse(ox, mouthY, 2 * s * mS, 1.5 * s * mS, 0, 0, Math.PI * 2);
             ctx.fillStyle = "#5D4037"; ctx.fill();
         } else {
             ctx.beginPath(); ctx.arc(ox, mouthY - 2 * s, mouthW, 0.1, Math.PI - 0.1);
