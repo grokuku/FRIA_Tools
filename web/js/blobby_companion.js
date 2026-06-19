@@ -71,6 +71,31 @@ function _blobbySetAll(data) {
     } catch {}
 }
 
+function _blobbyLoadFromServer() {
+    try {
+        var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+        var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
+        var headers = { 'Content-Type': 'application/json' };
+        if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
+        fetch(baseUrl + '/api/settings', { method: 'GET', headers: headers })
+            .then(function(r) { return r.json().catch(function(){ return {}; }); })
+            .then(function(serverSettings) {
+                if (serverSettings && serverSettings.blobbyData) {
+                    // Le serveur est prioritaire : on ecrase le localStorage
+                    try {
+                        var c = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+                        c.blobbyData = JSON.parse(JSON.stringify(serverSettings.blobbyData));
+                        localStorage.setItem('FRIA_config', JSON.stringify(c));
+                    } catch {}
+                    if (typeof Blobby !== 'undefined' && Blobby._loadAppearance) {
+                        Blobby._loadAppearance();
+                    }
+                }
+            })
+            .catch(function(){});
+    } catch {}
+}
+
 function _blobbyScheduleSync(data) {
     if (_blobbySyncTimer) clearTimeout(_blobbySyncTimer);
     _blobbySyncTimer = setTimeout(function() {
@@ -231,6 +256,8 @@ const Blobby = {
         this.organX = this.x;
         this.organY = this.y;
         this.blinkTimer = 60 + Math.random() * 120;
+        // Charger les settings depuis le serveur (si disponible)
+        _blobbyLoadFromServer();
         this._loadAppearance();
         this.initParticles();
 
