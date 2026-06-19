@@ -1493,8 +1493,10 @@ const Blobby = {
                 totalChars += (el.textContent || '').length;
             });
             var estTokens = Math.round(totalChars / 4);
-            ctxBar.textContent = '~' + estTokens + ' tokens | 4096 max';
-            ctxBar.style.color = estTokens > 3000 ? '#f87171' : (estTokens > 2000 ? '#facc15' : '#555');
+            var maxCtx = parseInt(ctxBar.dataset.maxCtx) || 4096;
+            ctxBar.textContent = '~' + estTokens + ' tokens | ' + maxCtx + ' max';
+            var pct = estTokens / maxCtx;
+            ctxBar.style.color = pct > 0.75 ? '#f87171' : (pct > 0.5 ? '#facc15' : '#555');
         }
         _updateCtxBar();
 
@@ -1619,8 +1621,10 @@ const Blobby = {
                 totalChars += (el.textContent || '').length;
             });
             var estTokens = Math.round(totalChars / 4);
-            ctxBar.textContent = '~' + estTokens + ' tokens | 4096 max';
-            ctxBar.style.color = estTokens > 3000 ? '#f87171' : (estTokens > 2000 ? '#facc15' : '#555');
+            var maxCtx = parseInt(ctxBar.dataset.maxCtx) || 4096;
+            ctxBar.textContent = '~' + estTokens + ' tokens | ' + maxCtx + ' max';
+            var pct = estTokens / maxCtx;
+            ctxBar.style.color = pct > 0.75 ? '#f87171' : (pct > 0.5 ? '#facc15' : '#555');
         }
     },
 
@@ -1684,6 +1688,11 @@ const Blobby = {
             }
 
             var reply = data.output || '...';
+            // Mettre a jour le max context si disponible
+            if (data.max_context) {
+                var ctxBar = document.getElementById('blobby-chat-ctx');
+                if (ctxBar) ctxBar.dataset.maxCtx = data.max_context;
+            }
             // Executer les commandes dans la reponse
             reply = this._executeCommands(reply);
             this._addChatMessage(container, 'blobby', reply);

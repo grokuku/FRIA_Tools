@@ -1313,4 +1313,39 @@ def keywords_llm_process():
         return jsonify({'error': f'Erreur LLM: {msg}'}), 502
 
     output = llm_response['choices'][0]['message']['content'].strip()
-    return jsonify({'output': output})
+    usage = llm_response.get('usage', {})
+    
+    # Essayer de recuperer la taille max de contexte
+    max_context = None
+    try:
+        import requests as _req2
+        r2 = _req2.get(f'{base_url}/models', headers=llm_config.get('headers', {}), timeout=5)
+        if r2.ok:
+            models_data = r2.json()
+            all_models = models_data.get('data') or models_data.get('models') or []
+            for m in all_models:
+                mid = m.get('id') or m.get('name') or ''
+                if mid == model or model in mid:
+                    max_context = m.get('max_context_length') or m.get('context_length') or \
+                                  m.get('max_model_len') or m.get('context_window')
+                    break
+    except Exception:
+        pass
+    
+    # Fallback : valeurs connues
+    if not max_context:
+        known = {
+            'gpt-4': 8192, 'gpt-4-turbo': 128000, 'gpt-3.5': 4096,
+            'claude': 100000, 'gemma': 8192, 'llama': 4096,
+            'mistral': 8192, 'mixtral': 32768, 'qwen': 32768,
+            'deepseek': 4096, 'command': 4096,
+        }
+        for k, v in known.items():
+            if k in model.lower():
+                max_context = v
+                break
+    
+    if not max_context:
+        max_context = 4096
+    
+    return jsonify({'output': output, 'usage': usage, 'max_context': max_context})
