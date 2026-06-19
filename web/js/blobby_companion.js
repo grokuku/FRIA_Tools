@@ -34,8 +34,24 @@ function _setFRIAConfig(cfg) {
     localStorage.setItem(FRIA_CONFIG_KEY, JSON.stringify(cfg));
 }
 
-// ── Stockage localStorage pour les settings Blobby ──
-// (pas de serveur : plus rapide, pas d'impact sur les FPS de ComfyUI)
+// ── Stockage Blobby ──
+// localStorage immediat + sync differee vers le backend FR.IA (debounce 2s)
+// Pas d'impact sur les FPS : les sliders ecrivent en local, le serveur est appele
+// seulement quand l'utilisateur a fini de bouger le slider.
+
+var _blobbySyncTimer = null;
+var _blobbySyncStatus = 'local'; // 'local' | 'pending' | 'synced' | 'error'
+
+function _blobbySyncIndicator() {
+    var el = document.getElementById('blobby-sync-status');
+    if (!el) return;
+    switch (_blobbySyncStatus) {
+        case 'local': el.textContent = '⬤'; el.style.color = '#888'; el.title = 'Local seulement'; break;
+        case 'pending': el.textContent = '◌'; el.style.color = '#facc15'; el.title = 'Sync en attente...'; break;
+        case 'synced': el.textContent = '⬤'; el.style.color = '#4ade80'; el.title = 'Sauvegarde serveur OK'; break;
+        case 'error': el.textContent = '⬤'; el.style.color = '#f87171'; el.title = 'Erreur de sync'; break;
+    }
+}
 
 function _blobbyGetAll() {
     try {
@@ -49,7 +65,42 @@ function _blobbySetAll(data) {
         var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
         cfg.blobbyData = data;
         localStorage.setItem('FRIA_config', JSON.stringify(cfg));
+        _blobbySyncStatus = 'pending';
+        _blobbySyncIndicator();
+        _blobbyScheduleSync(data);
     } catch {}
+}
+
+function _blobbyScheduleSync(data) {
+    if (_blobbySyncTimer) clearTimeout(_blobbySyncTimer);
+    _blobbySyncTimer = setTimeout(function() {
+        _blobbySyncTimer = null;
+        try {
+            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+            var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
+            var headers = { 'Content-Type': 'application/json' };
+            if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
+            fetch(baseUrl + '/api/settings', { method: 'GET', headers: headers })
+                .then(function(r) { return r.json().catch(function(){ return {}; }); })
+                .then(function(existing) {
+                    existing.blobbyData = data;
+                    return fetch(baseUrl + '/api/settings', {
+                        method: 'POST', headers: headers, body: JSON.stringify(existing)
+                    });
+                })
+                .then(function() {
+                    _blobbySyncStatus = 'synced';
+                    _blobbySyncIndicator();
+                })
+                .catch(function(){
+                    _blobbySyncStatus = 'error';
+                    _blobbySyncIndicator();
+                });
+        } catch {
+            _blobbySyncStatus = 'error';
+            _blobbySyncIndicator();
+        }
+    }, 2000);
 }
 
 function _blobbySave(key, data) {
@@ -1347,6 +1398,11 @@ const Blobby = {
         var title = document.createElement('span');
         title.innerHTML = '🧡 <b>Blobby</b>';
         title.style.color = '#FF8F00';
+        var syncDot = document.createElement('span');
+        syncDot.id = 'blobby-sync-status';
+        Object.assign(syncDot.style, { fontSize: '9px', marginLeft: '4px', cursor: 'help' });
+        // Initialiser l'indicateur
+        setTimeout(function() { _blobbySyncIndicator(); }, 100);
 
         // Slider transparence
         var alphaSlider = document.createElement('input');
@@ -1409,6 +1465,7 @@ const Blobby = {
         headerRight.appendChild(settingsBtn);
         headerRight.appendChild(closeBtn);
         header.appendChild(title);
+        title.appendChild(syncDot);
         header.appendChild(alphaSlider);
         header.appendChild(headerRight);
 

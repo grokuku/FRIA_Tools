@@ -10,8 +10,4 @@ Blobby Companion — A friendly blob character for the ComfyUI canvas.
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 
-# Note : les settings Blobby sont stockes en localStorage (plus fiable que le serveur ComfyUI)
-# La persistence serveur via settings_api.py est desactivee car elle ralentit le rendu
-# (trop de requetes fetch par mouvement de slider)
-
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
