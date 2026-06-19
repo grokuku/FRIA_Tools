@@ -34,65 +34,45 @@ function _setFRIAConfig(cfg) {
     localStorage.setItem(FRIA_CONFIG_KEY, JSON.stringify(cfg));
 }
 
-// ── Stockage serveur (ComfyUI user dir) avec fallback localStorage ──
+// ── Stockage localStorage pour les settings Blobby ──
+// (pas de serveur : plus rapide, pas d'impact sur les FPS de ComfyUI)
 
-var _blobbyServerCache = {};
-
-async function _blobbySave(key, data) {
-    _blobbyServerCache[key] = data;
-    // Fallback localStorage
+function _blobbyGetAll() {
     try {
         var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-        if (!cfg.blobbyServer) cfg.blobbyServer = {};
-        cfg.blobbyServer[key] = data;
+        return cfg.blobbyData || {};
+    } catch { return {}; }
+}
+
+function _blobbySetAll(data) {
+    try {
+        var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+        cfg.blobbyData = data;
         localStorage.setItem('FRIA_config', JSON.stringify(cfg));
     } catch {}
-    // Essayer le serveur ComfyUI si disponible
-    try {
-        await fetch('/fria/blobby/save', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({key: key, data: data})
-        });
-    } catch {}
 }
 
-async function _blobbyLoad(key, defaultVal) {
-    // Verifier le cache
-    if (_blobbyServerCache[key] !== undefined) return _blobbyServerCache[key];
-    // Essayer le serveur
-    try {
-        var r = await fetch('/fria/blobby/load?key=' + encodeURIComponent(key));
-        if (r.ok) {
-            var j = await r.json();
-            if (j && j.data !== null && j.data !== undefined) {
-                _blobbyServerCache[key] = j.data;
-                return j.data;
-            }
-        }
-    } catch {}
-    // Fallback localStorage
-    try {
-        var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-        var ls = cfg.blobbyServer || {};
-        if (ls[key] !== undefined) {
-            _blobbyServerCache[key] = ls[key];
-            return ls[key];
-        }
-    } catch {}
-    return defaultVal;
+function _blobbySave(key, data) {
+    var all = _blobbyGetAll();
+    all[key] = data;
+    _blobbySetAll(all);
 }
 
-async function _blobbySaveAppearance(data) { await _blobbySave('appearance', data); }
-async function _blobbyLoadAppearance(def) { return await _blobbyLoad('appearance', def); }
-async function _blobbySaveCharacter(text) { await _blobbySave('character', text); }
-async function _blobbyLoadCharacter(def) { return await _blobbyLoad('character', def); }
-async function _blobbySaveChatHistory(data) { await _blobbySave('chatHistory', data); }
-async function _blobbyLoadChatHistory() { return await _blobbyLoad('chatHistory', []); }
-async function _blobbySaveChatState(data) { await _blobbySave('chatState', data); }
-async function _blobbyLoadChatState(def) { return await _blobbyLoad('chatState', def); }
-async function _blobbySaveFps(fps) { await _blobbySave('fps', fps); }
-async function _blobbyLoadFps(def) { return await _blobbyLoad('fps', def); }
+function _blobbyLoad(key, defaultVal) {
+    var all = _blobbyGetAll();
+    return all[key] !== undefined ? all[key] : defaultVal;
+}
+
+function _blobbySaveAppearance(data) { _blobbySave('appearance', data); }
+function _blobbyLoadAppearance(def) { return _blobbyLoad('appearance', def); }
+function _blobbySaveCharacter(text) { _blobbySave('character', text); }
+function _blobbyLoadCharacter(def) { return _blobbyLoad('character', def); }
+function _blobbySaveChatHistory(data) { _blobbySave('chatHistory', data); }
+function _blobbyLoadChatHistory() { return _blobbyLoad('chatHistory', []); }
+function _blobbySaveChatState(data) { _blobbySave('chatState', data); }
+function _blobbyLoadChatState(def) { return _blobbyLoad('chatState', def); }
+function _blobbySaveFps(fps) { _blobbySave('fps', fps); }
+function _blobbyLoadFps(def) { return _blobbyLoad('fps', def); }
 
 const Blobby = {
     x: 400,
@@ -169,9 +149,9 @@ const Blobby = {
     _origMU: null,
     _contextHandler: null,
 
-    async _loadAppearance() {
+    _loadAppearance() {
         try {
-            var a = await _blobbyLoadAppearance({});
+            var a = _blobbyLoadAppearance({});
             var oldParticles = this.NUM_PARTICLES;
             if (a.numParticles) this.NUM_PARTICLES = a.numParticles;
             if (a.bodyAlpha !== undefined) this.bodyAlpha = a.bodyAlpha;
@@ -193,14 +173,14 @@ const Blobby = {
         } catch {}
     },
 
-    async init(canvas) {
+    init(canvas) {
         this._canvas = canvas;
         this.x = 400;
         this.y = 300;
         this.organX = this.x;
         this.organY = this.y;
         this.blinkTimer = 60 + Math.random() * 120;
-        await this._loadAppearance();
+        this._loadAppearance();
         this.initParticles();
 
         this._offscreen = document.createElement('canvas');
@@ -246,7 +226,7 @@ const Blobby = {
         }
     },
 
-    async activate() {
+    activate() {
         if (this._active) return;
         this._active = true;
 
@@ -290,7 +270,7 @@ const Blobby = {
         };
 
         // Blobby vit en autonomie via setInterval (separe du rAF de ComfyUI)
-        var fps = await this._getFpsSetting();
+        var fps = this._getFpsSetting();
         this._startAnimationInterval(fps);
 
         console.log("%c🧡 Blobby activé !", "font-size: 16px; color: #FF8F00; font-weight: bold;");
@@ -326,12 +306,12 @@ const Blobby = {
 
     isActive() { return this._active; },
 
-    async _getFpsSetting() {
-        return await _blobbyLoadFps(30);
+    _getFpsSetting() {
+        return _blobbyLoadFps(30);
     },
 
-    async _saveFpsSetting(fps) {
-        await _blobbySaveFps(fps);
+    _saveFpsSetting(fps) {
+        _blobbySaveFps(fps);
     },
 
     _startAnimationInterval(fps) {
@@ -349,8 +329,8 @@ const Blobby = {
         }, intervalMs);
     },
 
-    async _restartAnimationInterval(fps) {
-        await this._saveFpsSetting(fps);
+    _restartAnimationInterval(fps) {
+        this._saveFpsSetting(fps);
         this._startAnimationInterval(fps);
     },
 
@@ -1308,15 +1288,15 @@ const Blobby = {
         switchTab('provider');
     },
 
-    async _saveChatCharacter(text) {
-        await _blobbySaveCharacter(text);
+    _saveChatCharacter(text) {
+        _blobbySaveCharacter(text);
     },
 
-    getCharacter: async function() {
-        return await _blobbyLoadCharacter(_blobbyDefaultCharacter);
+    getCharacter: function() {
+        return _blobbyLoadCharacter(_blobbyDefaultCharacter);
     },
 
-    async _saveChatHistory() {
+    _saveChatHistory() {
         var msgs = document.getElementById('blobby-chat-msgs');
         if (!msgs) return;
         var history = [];
@@ -1324,7 +1304,7 @@ const Blobby = {
             history.push({ role: el.dataset.role, text: el.innerHTML });
         });
         if (history.length > 50) history = history.slice(-50);
-        await _blobbySaveChatHistory(history);
+        _blobbySaveChatHistory(history);
     },
 
     _openChatModal() {
@@ -1440,37 +1420,36 @@ const Blobby = {
             display: 'flex', flexDirection: 'column', gap: '8px',
         });
 
-        // Restaurer l'historique (asynchrone)
-        _blobbyLoadChatHistory().then(function(history) {
-            history.forEach(function(msg) {
-                var div = document.createElement('div');
-                div.className = 'blobby-msg';
-                div.dataset.role = msg.role;
-                Object.assign(div.style, {
-                    padding: '6px 10px', borderRadius: '8px', fontSize: '12px',
-                    lineHeight: '1.4', maxWidth: '85%', wordBreak: 'break-word',
-                    whiteSpace: 'pre-wrap',
-                });
-                if (msg.role === 'user') {
-                    div.style.background = '#6366f1'; div.style.color = '#fff';
-                    div.style.alignSelf = 'flex-end';
-                    div.textContent = msg.text;
-                } else if (msg.role === 'blobby') {
-                    div.style.background = '#2a2a2e'; div.style.color = '#e2e8f0';
-                    div.style.alignSelf = 'flex-start'; div.style.border = '1px solid #444';
-                    div.innerHTML = msg.text;
-                } else if (msg.role === 'system') {
-                    div.style.background = 'transparent'; div.style.color = '#888';
-                    div.style.alignSelf = 'center'; div.style.fontSize = '11px';
-                    div.textContent = msg.text;
-                } else if (msg.role === 'action') {
-                    div.style.background = '#1a3a1a'; div.style.color = '#86efac';
-                    div.style.alignSelf = 'center'; div.style.fontSize = '11px';
-                    div.style.border = '1px solid #166534';
-                    div.innerHTML = '⚡ ' + msg.text;
-                }
-                messages.appendChild(div);
+        // Restaurer l'historique
+        var history = _blobbyLoadChatHistory();
+        history.forEach(function(msg) {
+            var div = document.createElement('div');
+            div.className = 'blobby-msg';
+            div.dataset.role = msg.role;
+            Object.assign(div.style, {
+                padding: '6px 10px', borderRadius: '8px', fontSize: '12px',
+                lineHeight: '1.4', maxWidth: '85%', wordBreak: 'break-word',
+                whiteSpace: 'pre-wrap',
             });
+            if (msg.role === 'user') {
+                div.style.background = '#6366f1'; div.style.color = '#fff';
+                div.style.alignSelf = 'flex-end';
+                div.textContent = msg.text;
+            } else if (msg.role === 'blobby') {
+                div.style.background = '#2a2a2e'; div.style.color = '#e2e8f0';
+                div.style.alignSelf = 'flex-start'; div.style.border = '1px solid #444';
+                div.innerHTML = msg.text;
+            } else if (msg.role === 'system') {
+                div.style.background = 'transparent'; div.style.color = '#888';
+                div.style.alignSelf = 'center'; div.style.fontSize = '11px';
+                div.textContent = msg.text;
+            } else if (msg.role === 'action') {
+                div.style.background = '#1a3a1a'; div.style.color = '#86efac';
+                div.style.alignSelf = 'center'; div.style.fontSize = '11px';
+                div.style.border = '1px solid #166534';
+                div.innerHTML = '⚡ ' + msg.text;
+            }
+            messages.appendChild(div);
         });
 
         if (messages.children.length === 0) {
@@ -1646,7 +1625,7 @@ const Blobby = {
                 return;
             }
 
-            var character = await this.getCharacter();
+            var character = this.getCharacter();
             var moodDesc = this.mood === 'happy' ? '😊 Tout content et joyeux !'
                 : this.mood === 'surprised' ? '😮 Surpris et curieux !'
                 : this.mood === 'sleepy' ? '😴 Endormi et lent...'
