@@ -34,6 +34,66 @@ function _setFRIAConfig(cfg) {
     localStorage.setItem(FRIA_CONFIG_KEY, JSON.stringify(cfg));
 }
 
+// ── Stockage serveur (ComfyUI user dir) avec fallback localStorage ──
+
+var _blobbyServerCache = {};
+
+async function _blobbySave(key, data) {
+    _blobbyServerCache[key] = data;
+    // Fallback localStorage
+    try {
+        var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+        if (!cfg.blobbyServer) cfg.blobbyServer = {};
+        cfg.blobbyServer[key] = data;
+        localStorage.setItem('FRIA_config', JSON.stringify(cfg));
+    } catch {}
+    // Essayer le serveur ComfyUI si disponible
+    try {
+        await fetch('/fria/blobby/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({key: key, data: data})
+        });
+    } catch {}
+}
+
+async function _blobbyLoad(key, defaultVal) {
+    // Verifier le cache
+    if (_blobbyServerCache[key] !== undefined) return _blobbyServerCache[key];
+    // Essayer le serveur
+    try {
+        var r = await fetch('/fria/blobby/load?key=' + encodeURIComponent(key));
+        if (r.ok) {
+            var j = await r.json();
+            if (j && j.data !== null && j.data !== undefined) {
+                _blobbyServerCache[key] = j.data;
+                return j.data;
+            }
+        }
+    } catch {}
+    // Fallback localStorage
+    try {
+        var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+        var ls = cfg.blobbyServer || {};
+        if (ls[key] !== undefined) {
+            _blobbyServerCache[key] = ls[key];
+            return ls[key];
+        }
+    } catch {}
+    return defaultVal;
+}
+
+async function _blobbySaveAppearance(data) { await _blobbySave('appearance', data); }
+async function _blobbyLoadAppearance(def) { return await _blobbyLoad('appearance', def); }
+async function _blobbySaveCharacter(text) { await _blobbySave('character', text); }
+async function _blobbyLoadCharacter(def) { return await _blobbyLoad('character', def); }
+async function _blobbySaveChatHistory(data) { await _blobbySave('chatHistory', data); }
+async function _blobbyLoadChatHistory() { return await _blobbyLoad('chatHistory', []); }
+async function _blobbySaveChatState(data) { await _blobbySave('chatState', data); }
+async function _blobbyLoadChatState(def) { return await _blobbyLoad('chatState', def); }
+async function _blobbySaveFps(fps) { await _blobbySave('fps', fps); }
+async function _blobbyLoadFps(def) { return await _blobbyLoad('fps', def); }
+
 const Blobby = {
     x: 400,
     y: 300,
@@ -109,10 +169,9 @@ const Blobby = {
     _origMU: null,
     _contextHandler: null,
 
-    _loadAppearance() {
+    async _loadAppearance() {
         try {
-            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-            var a = cfg.blobbyAppearance || {};
+            var a = await _blobbyLoadAppearance({});
             var oldParticles = this.NUM_PARTICLES;
             if (a.numParticles) this.NUM_PARTICLES = a.numParticles;
             if (a.bodyAlpha !== undefined) this.bodyAlpha = a.bodyAlpha;
@@ -128,21 +187,20 @@ const Blobby = {
                     if (a.colors.hasOwnProperty(k)) this.colors[k] = a.colors[k];
                 }
             }
-            // Reinitaliser les particules si le nombre a change
             if (this.NUM_PARTICLES !== oldParticles) {
                 this.initParticles();
             }
         } catch {}
     },
 
-    init(canvas) {
+    async init(canvas) {
         this._canvas = canvas;
         this.x = 400;
         this.y = 300;
         this.organX = this.x;
         this.organY = this.y;
         this.blinkTimer = 60 + Math.random() * 120;
-        this._loadAppearance();
+        await this._loadAppearance();
         this.initParticles();
 
         this._offscreen = document.createElement('canvas');
@@ -188,7 +246,7 @@ const Blobby = {
         }
     },
 
-    activate() {
+    async activate() {
         if (this._active) return;
         this._active = true;
 
@@ -232,7 +290,7 @@ const Blobby = {
         };
 
         // Blobby vit en autonomie via setInterval (separe du rAF de ComfyUI)
-        var fps = this._getFpsSetting();
+        var fps = await this._getFpsSetting();
         this._startAnimationInterval(fps);
 
         console.log("%c🧡 Blobby activé !", "font-size: 16px; color: #FF8F00; font-weight: bold;");
@@ -268,19 +326,12 @@ const Blobby = {
 
     isActive() { return this._active; },
 
-    _getFpsSetting() {
-        try {
-            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-            return parseInt(cfg.blobbyFps) || 30;
-        } catch { return 30; }
+    async _getFpsSetting() {
+        return await _blobbyLoadFps(30);
     },
 
-    _saveFpsSetting(fps) {
-        try {
-            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-            cfg.blobbyFps = fps;
-            localStorage.setItem('FRIA_config', JSON.stringify(cfg));
-        } catch {}
+    async _saveFpsSetting(fps) {
+        await _blobbySaveFps(fps);
     },
 
     _startAnimationInterval(fps) {
@@ -298,8 +349,8 @@ const Blobby = {
         }, intervalMs);
     },
 
-    _restartAnimationInterval(fps) {
-        this._saveFpsSetting(fps);
+    async _restartAnimationInterval(fps) {
+        await this._saveFpsSetting(fps);
         this._startAnimationInterval(fps);
     },
 
@@ -1257,35 +1308,23 @@ const Blobby = {
         switchTab('provider');
     },
 
-    _saveChatCharacter(text) {
-        try {
-            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-            cfg.blobbyCharacter = text;
-            localStorage.setItem('FRIA_config', JSON.stringify(cfg));
-        } catch {}
+    async _saveChatCharacter(text) {
+        await _blobbySaveCharacter(text);
     },
 
-    getCharacter: function() {
-        try {
-            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-            return cfg.blobbyCharacter || _blobbyDefaultCharacter;
-        } catch { return _blobbyDefaultCharacter; }
+    getCharacter: async function() {
+        return await _blobbyLoadCharacter(_blobbyDefaultCharacter);
     },
 
-    _saveChatHistory() {
+    async _saveChatHistory() {
         var msgs = document.getElementById('blobby-chat-msgs');
         if (!msgs) return;
         var history = [];
         msgs.querySelectorAll('.blobby-msg').forEach(function(el) {
             history.push({ role: el.dataset.role, text: el.innerHTML });
         });
-        // Garder les 50 derniers messages
         if (history.length > 50) history = history.slice(-50);
-        try {
-            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-            cfg.blobbyChatHistory = history;
-            localStorage.setItem('FRIA_config', JSON.stringify(cfg));
-        } catch {}
+        await _blobbySaveChatHistory(history);
     },
 
     _openChatModal() {
@@ -1345,6 +1384,13 @@ const Blobby = {
                 if (!cfg.blobbyChatState) cfg.blobbyChatState = {};
                 cfg.blobbyChatState.alpha = parseInt(this.value);
                 localStorage.setItem('FRIA_config', JSON.stringify(cfg));
+                // Sync vers serveur
+                var r = modal.getBoundingClientRect();
+                _blobbySaveChatState({
+                    x: Math.round(r.left), y: Math.round(window.innerHeight - r.top - r.height),
+                    w: Math.round(r.width), h: Math.round(r.height),
+                    alpha: parseInt(this.value),
+                });
             } catch {}
         };
 
@@ -1364,13 +1410,12 @@ const Blobby = {
         function _saveChatState() {
             try {
                 var r = modal.getBoundingClientRect();
-                var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-                cfg.blobbyChatState = {
+                var state = {
                     x: Math.round(r.left), y: Math.round(window.innerHeight - r.top - r.height),
                     w: Math.round(r.width), h: Math.round(r.height),
                     alpha: parseInt(alphaSlider.value),
                 };
-                localStorage.setItem('FRIA_config', JSON.stringify(cfg));
+                _blobbySaveChatState(state);
             } catch {}
         }
         // ResizeObserver pour sauvegarder lors du redimensionnement
@@ -1395,10 +1440,8 @@ const Blobby = {
             display: 'flex', flexDirection: 'column', gap: '8px',
         });
 
-        // Restaurer l'historique
-        try {
-            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-            var history = cfg.blobbyChatHistory || [];
+        // Restaurer l'historique (asynchrone)
+        _blobbyLoadChatHistory().then(function(history) {
             history.forEach(function(msg) {
                 var div = document.createElement('div');
                 div.className = 'blobby-msg';
@@ -1428,13 +1471,32 @@ const Blobby = {
                 }
                 messages.appendChild(div);
             });
-        } catch {}
+        });
 
         if (messages.children.length === 0) {
             // Message de bienvenue si aucun historique
             this._addChatMessage(messages, 'blobby', '👋 Salut ! Clique sur un nœud ou pose-moi une question sur le workflow.');
         }
         messages.scrollTop = messages.scrollHeight;
+
+        // Contexte (en bas de la zone de messages)
+        var ctxBar = document.createElement('div');
+        ctxBar.id = 'blobby-chat-ctx';
+        Object.assign(ctxBar.style, {
+            padding: '3px 12px', fontSize: '10px', color: '#555',
+            textAlign: 'right', borderTop: '1px solid #2a2a2e', flexShrink: '0',
+            userSelect: 'none',
+        });
+        function _updateCtxBar() {
+            var totalChars = 0;
+            messages.querySelectorAll('.blobby-msg').forEach(function(el) {
+                totalChars += (el.textContent || '').length;
+            });
+            var estTokens = Math.round(totalChars / 4);
+            ctxBar.textContent = '~' + estTokens + ' tokens | 4096 max';
+            ctxBar.style.color = estTokens > 3000 ? '#f87171' : (estTokens > 2000 ? '#facc15' : '#555');
+        }
+        _updateCtxBar();
 
         // Input area
         var inputArea = document.createElement('div');
@@ -1479,6 +1541,7 @@ const Blobby = {
 
         modal.appendChild(header);
         modal.appendChild(messages);
+        modal.appendChild(ctxBar);
         modal.appendChild(inputArea);
         document.body.appendChild(modal);
         input.focus();
@@ -1548,6 +1611,17 @@ const Blobby = {
         container.appendChild(div);
         container.scrollTop = container.scrollHeight;
         this._saveChatHistory();
+        // Mettre a jour la barre de contexte
+        var ctxBar = document.getElementById('blobby-chat-ctx');
+        if (ctxBar) {
+            var totalChars = 0;
+            container.querySelectorAll('.blobby-msg').forEach(function(el) {
+                totalChars += (el.textContent || '').length;
+            });
+            var estTokens = Math.round(totalChars / 4);
+            ctxBar.textContent = '~' + estTokens + ' tokens | 4096 max';
+            ctxBar.style.color = estTokens > 3000 ? '#f87171' : (estTokens > 2000 ? '#facc15' : '#555');
+        }
     },
 
     async _handleChatMessage(container, userText) {
@@ -1568,7 +1642,7 @@ const Blobby = {
                 return;
             }
 
-            var character = this.getCharacter();
+            var character = await this.getCharacter();
             var moodDesc = this.mood === 'happy' ? '😊 Tout content et joyeux !'
                 : this.mood === 'surprised' ? '😮 Surpris et curieux !'
                 : this.mood === 'sleepy' ? '😴 Endormi et lent...'

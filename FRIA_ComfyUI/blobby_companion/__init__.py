@@ -10,4 +10,7 @@ Blobby Companion — A friendly blob character for the ComfyUI canvas.
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 
+# Enregistrer les routes API pour les settings Blobby
+from . import settings_api
+
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
