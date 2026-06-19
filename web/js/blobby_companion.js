@@ -1189,8 +1189,7 @@ const Blobby = {
 
         var _saveAppearance = function() {
             try {
-                var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-                var a = cfg.blobbyAppearance || {};
+                var a = {};
                 a.numParticles = parseInt(document.getElementById('bapp-particles')?.value) || 60;
                 a.bodyAlpha = (parseFloat(document.getElementById('bapp-body-alpha')?.value) || 100) / 100;
                 a.brainAlpha = (parseFloat(document.getElementById('bapp-brain-alpha')?.value) || 100) / 100;
@@ -1200,14 +1199,12 @@ const Blobby = {
                 a.eyeScale = parseFloat(document.getElementById('bapp-eye-scale')?.value) || 1;
                 a.mouthY = parseFloat(document.getElementById('bapp-mouth-y')?.value) || 22;
                 a.mouthScale = parseFloat(document.getElementById('bapp-mouth-scale')?.value) || 1;
-                // Couleurs
                 a.colors = {};
                 ['happy','surprised','sleepy','_default'].forEach(function(k) {
                     var el = document.getElementById('bapp-color-' + k);
                     if (el) a.colors[k] = el.value;
                 });
-                cfg.blobbyAppearance = a;
-                localStorage.setItem('FRIA_config', JSON.stringify(cfg));
+                _blobbySaveAppearance(a);
                 _self._loadAppearance();
             } catch {}
         };
@@ -1215,8 +1212,7 @@ const Blobby = {
         function _onAppChange() { _saveAppearance(); }
 
         // Charger valeurs actuelles
-        var _app = {};
-        try { var _acfg = JSON.parse(localStorage.getItem('FRIA_config')) || {}; _app = _acfg.blobbyAppearance || {}; } catch {}
+        var _app = _blobbyLoadAppearance({});
 
         appContent.appendChild(makeSlider('Particules', 'bapp-particles', 10, 120, 5, _app.numParticles || 60, '', _onAppChange));
 
