@@ -494,7 +494,7 @@ const Blobby = {
         this.targetMouthOpen = this.mood === "surprised" ? 0.8 :
             this.mood === "sleepy" ? 0.1 :
                 this.mood === "happy" ? 0.3 + Math.sin(this.time * 2) * 0.15 : 0.3;
-        this.mouthOpen += (this.targetMouthOpen - this.mouthOpen) * 0.1;
+        this.mouthOpen += (this.targetMouthOpen - this.mouthOpen) * 0.1 * deltaTime * 60;
 
         this.blinkTimer += deltaTime * 60;
         if (!this.isBlinking && this.blinkTimer > 120 + Math.random() * 180) {
@@ -685,8 +685,8 @@ const Blobby = {
         if (validCount === 0) return;
         const comX = sx / validCount, comY = sy / validCount;
         const dx = comX - this.organX, dy = comY - this.organY;
-        this.organVx += dx * 0.08; this.organVy += dy * 0.08;
-        this.organVx *= 0.78; this.organVy *= 0.78;
+        this.organVx += dx * 0.08 * deltaTime * 60; this.organVy += dy * 0.08 * deltaTime * 60;
+        this.organVx *= Math.pow(0.78, deltaTime * 60); this.organVy *= Math.pow(0.78, deltaTime * 60);
         this.organX += this.organVx; this.organY += this.organVy;
     },
 
