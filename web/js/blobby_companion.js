@@ -859,8 +859,8 @@ const Blobby = {
             display: 'flex', borderBottom: '1px solid #333', background: '#1a1a1e', flexShrink: '0',
         });
 
-        var tabNames = ['provider', 'character'];
-        var tabLabels = { provider: 'Général', character: 'Caractère' };
+        var tabNames = ['provider', 'character', 'appearance'];
+        var tabLabels = { provider: 'Général', character: 'Caractère', appearance: 'Apparence' };
         var tabContent = document.createElement('div');
         Object.assign(tabContent.style, { padding: '14px', overflowY: 'auto', flex: '1', display: 'flex', flexDirection: 'column', gap: '12px' });
 
@@ -1045,8 +1045,173 @@ const Blobby = {
         charContent.appendChild(ta);
         charContent.appendChild(resetBtn);
 
+        // ── Tab Apparence ──
+        var appContent = document.createElement('div');
+        appContent.id = 'bcs-content-appearance';
+        appContent.className = 'bcs-tab-content';
+        Object.assign(appContent.style, { display: 'none', flexDirection: 'column', gap: '12px' });
+
+        // Helper pour creer un slider
+        function makeSlider(label, id, min, max, step, val, suffix, onChange) {
+            var row = document.createElement('div');
+            var lbl = document.createElement('label');
+            lbl.textContent = label;
+            Object.assign(lbl.style, { fontSize: '11px', color: '#94a3b8', fontWeight: '600' });
+            var cont = document.createElement('div');
+            Object.assign(cont.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+            var input = document.createElement('input');
+            input.type = 'range';
+            input.id = id;
+            Object.assign(input.style, { flex: '1', accentColor: '#FF8F00' });
+            input.min = min; input.max = max; input.step = step; input.value = val;
+            var valSpan = document.createElement('span');
+            valSpan.textContent = val + (suffix || '');
+            Object.assign(valSpan.style, { fontSize: '11px', color: '#e2e8f0', minWidth: '35px', textAlign: 'right' });
+            input.oninput = function() {
+                var v = parseFloat(this.value);
+                valSpan.textContent = v + (suffix || '');
+                if (onChange) onChange(v);
+            };
+            cont.appendChild(input);
+            cont.appendChild(valSpan);
+            row.appendChild(lbl);
+            row.appendChild(cont);
+            return row;
+        }
+
+        // Helper pour creer un color picker
+        function makeColorPicker(label, color, onChange) {
+            var row = document.createElement('div');
+            Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+            var lbl = document.createElement('span');
+            lbl.textContent = label;
+            Object.assign(lbl.style, { fontSize: '11px', color: '#94a3b8', flex: '1' });
+            var input = document.createElement('input');
+            input.type = 'color';
+            input.id = 'bapp-color-' + label.replace(/[^a-z]/gi,'').toLowerCase();
+            input.value = color;
+            Object.assign(input.style, { width: '32px', height: '24px', padding: '0', border: 'none', borderRadius: '4px', cursor: 'pointer', background: 'transparent' });
+            input.oninput = function() { if (onChange) onChange(this.value); };
+            row.appendChild(lbl);
+            row.appendChild(input);
+            return row;
+        }
+
+        var _saveAppearance = function() {
+            try {
+                var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+                var a = cfg.blobbyAppearance || {};
+                a.numParticles = parseInt(document.getElementById('bapp-particles')?.value) || 60;
+                a.bodyAlpha = (parseFloat(document.getElementById('bapp-body-alpha')?.value) || 100) / 100;
+                a.brainAlpha = (parseFloat(document.getElementById('bapp-brain-alpha')?.value) || 100) / 100;
+                a.brainSize = parseFloat(document.getElementById('bapp-brain-size')?.value) || 1;
+                a.eyeY = parseFloat(document.getElementById('bapp-eye-y')?.value) || 6;
+                a.eyeSpread = parseFloat(document.getElementById('bapp-eye-spread')?.value) || 15;
+                a.eyeScale = parseFloat(document.getElementById('bapp-eye-scale')?.value) || 1;
+                a.mouthY = parseFloat(document.getElementById('bapp-mouth-y')?.value) || 22;
+                a.mouthScale = parseFloat(document.getElementById('bapp-mouth-scale')?.value) || 1;
+                // Couleurs
+                a.colors = {};
+                ['happy','surprised','sleepy','_default'].forEach(function(k) {
+                    var el = document.getElementById('bapp-color-' + k);
+                    if (el) a.colors[k] = el.value;
+                });
+                cfg.blobbyAppearance = a;
+                localStorage.setItem('FRIA_config', JSON.stringify(cfg));
+                _self._loadAppearance();
+            } catch {}
+        };
+
+        function _onAppChange() { _saveAppearance(); }
+
+        // Charger valeurs actuelles
+        var _app = {};
+        try { var _acfg = JSON.parse(localStorage.getItem('FRIA_config')) || {}; _app = _acfg.blobbyAppearance || {}; } catch {}
+
+        appContent.appendChild(makeSlider('Particules', 'bapp-particles', 10, 120, 5, _app.numParticles || 60, '', _onAppChange));
+
+        var sep1 = document.createElement('hr');
+        Object.assign(sep1.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        appContent.appendChild(sep1);
+
+        var secLabel = document.createElement('span');
+        secLabel.textContent = 'Transparences';
+        Object.assign(secLabel.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
+        appContent.appendChild(secLabel);
+        appContent.appendChild(makeSlider('Corps', 'bapp-body-alpha', 0, 100, 5, Math.round((_app.bodyAlpha || 1) * 100), '%', function(v) { _onAppChange(); }));
+        appContent.appendChild(makeSlider('Cerveau', 'bapp-brain-alpha', 0, 100, 5, Math.round((_app.brainAlpha || 1) * 100), '%', _onAppChange));
+
+        var sep2 = document.createElement('hr');
+        Object.assign(sep2.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        appContent.appendChild(sep2);
+
+        var secLabel2 = document.createElement('span');
+        secLabel2.textContent = 'Yeux';
+        Object.assign(secLabel2.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
+        appContent.appendChild(secLabel2);
+        appContent.appendChild(makeSlider('Hauteur', 'bapp-eye-y', -20, 30, 1, _app.eyeY || 6, '', _onAppChange));
+        appContent.appendChild(makeSlider('Écartement', 'bapp-eye-spread', 5, 40, 1, _app.eyeSpread || 15, '', _onAppChange));
+        appContent.appendChild(makeSlider('Taille', 'bapp-eye-scale', 0.2, 3, 0.1, _app.eyeScale || 1, '', _onAppChange));
+
+        var sep3 = document.createElement('hr');
+        Object.assign(sep3.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        appContent.appendChild(sep3);
+
+        var secLabel3 = document.createElement('span');
+        secLabel3.textContent = 'Bouche';
+        Object.assign(secLabel3.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
+        appContent.appendChild(secLabel3);
+        appContent.appendChild(makeSlider('Hauteur', 'bapp-mouth-y', 10, 40, 1, _app.mouthY || 22, '', _onAppChange));
+        appContent.appendChild(makeSlider('Taille', 'bapp-mouth-scale', 0.2, 3, 0.1, _app.mouthScale || 1, '', _onAppChange));
+
+        var sep4 = document.createElement('hr');
+        Object.assign(sep4.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        appContent.appendChild(sep4);
+
+        var secLabel4 = document.createElement('span');
+        secLabel4.textContent = 'Cerveau';
+        Object.assign(secLabel4.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
+        appContent.appendChild(secLabel4);
+        appContent.appendChild(makeSlider('Taille', 'bapp-brain-size', 0.2, 3, 0.1, _app.brainSize || 1, '', _onAppChange));
+
+        var sep5 = document.createElement('hr');
+        Object.assign(sep5.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        appContent.appendChild(sep5);
+
+        var secLabel5 = document.createElement('span');
+        secLabel5.textContent = 'Couleurs par humeur';
+        Object.assign(secLabel5.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
+        appContent.appendChild(secLabel5);
+
+        var moods = [
+            { key: 'happy', label: '😊 Heureux' },
+            { key: 'surprised', label: '😮 Surpris' },
+            { key: 'sleepy', label: '😴 Endormi' },
+            { key: '_default', label: '😐 Neutre' },
+        ];
+        moods.forEach(function(m) {
+            var curColors = _app.colors || {};
+            var c = curColors[m.key] || Blobby.colors[m.key] || '#FF8F00';
+            // On remplace makeColorPicker pour controler l'id
+            var row = document.createElement('div');
+            Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+            var lbl = document.createElement('span');
+            lbl.textContent = m.label;
+            Object.assign(lbl.style, { fontSize: '11px', color: '#94a3b8', flex: '1' });
+            var input = document.createElement('input');
+            input.type = 'color';
+            input.id = 'bapp-color-' + m.key;
+            input.value = c;
+            Object.assign(input.style, { width: '32px', height: '24px', padding: '0', border: 'none', borderRadius: '4px', cursor: 'pointer', background: 'transparent' });
+            input.oninput = function() { _onAppChange(); };
+            row.appendChild(lbl);
+            row.appendChild(input);
+            appContent.appendChild(row);
+        });
+
         tabContent.appendChild(provContent);
         tabContent.appendChild(charContent);
+        tabContent.appendChild(appContent);
 
         modal.appendChild(header);
         modal.appendChild(tabsBar);
@@ -1098,28 +1263,56 @@ const Blobby = {
             return;
         }
 
+        // Restaurer la position/taille/opacite sauvegardees
+        var savedState = {};
+        try { var scfg = JSON.parse(localStorage.getItem('FRIA_config')) || {}; savedState = scfg.blobbyChatState || {}; } catch {}
+
         var modal = document.createElement('div');
         modal.id = 'blobby-chat-modal';
         Object.assign(modal.style, {
-            position: 'fixed', left: '20px', bottom: '20px',
-            width: '360px', height: '420px',
+            position: 'fixed',
+            width: (savedState.w || '360') + 'px',
+            height: (savedState.h || '420') + 'px',
             background: '#1e1e24', borderRadius: '12px',
             boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
             zIndex: '99999', display: 'flex', flexDirection: 'column',
             border: '1px solid #333', overflow: 'hidden',
-            fontSize: '13px',
+            fontSize: '13px', resize: 'both', minWidth: '280px', minHeight: '200px',
         });
+        modal.style.left = (savedState.x || '20') + 'px';
+        modal.style.bottom = (savedState.y || '20') + 'px';
+        modal.style.top = 'auto';
 
         // Header
         var header = document.createElement('div');
         Object.assign(header.style, {
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '8px 12px', cursor: 'grab', userSelect: 'none',
-            borderBottom: '1px solid #333', background: '#2a2a2e',
+            borderBottom: '1px solid #333', background: '#2a2a2e', flexShrink: '0',
         });
         var title = document.createElement('span');
         title.innerHTML = '🧡 <b>Blobby</b>';
         title.style.color = '#FF8F00';
+
+        // Slider transparence
+        var alphaSlider = document.createElement('input');
+        alphaSlider.type = 'range';
+        Object.assign(alphaSlider.style, { width: '60px', accentColor: '#FF8F00', margin: '0 4px', cursor: 'pointer' });
+        alphaSlider.min = 10;
+        alphaSlider.max = 100;
+        alphaSlider.value = savedState.alpha || 100;
+        modal.style.opacity = (savedState.alpha || 100) / 100;
+        alphaSlider.oninput = function() {
+            var v = parseInt(this.value) / 100;
+            modal.style.opacity = v;
+            try {
+                var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+                if (!cfg.blobbyChatState) cfg.blobbyChatState = {};
+                cfg.blobbyChatState.alpha = parseInt(this.value);
+                localStorage.setItem('FRIA_config', JSON.stringify(cfg));
+            } catch {}
+        };
+
         var headerRight = document.createElement('div');
         Object.assign(headerRight.style, { display: 'flex', alignItems: 'center', gap: '6px' });
         var settingsBtn = document.createElement('button');
@@ -1127,16 +1320,36 @@ const Blobby = {
         Object.assign(settingsBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '14px', padding: '0 4px' });
         settingsBtn.onmouseenter = () => settingsBtn.style.color = '#fff';
         settingsBtn.onmouseleave = () => settingsBtn.style.color = '#888';
-        settingsBtn.onclick = (e) => { e.stopPropagation(); modal.style.display = 'none'; _self._openChatSettings(); };
+        settingsBtn.onclick = (e) => { e.stopPropagation(); _self._openChatSettings(); };
         var closeBtn = document.createElement('button');
         closeBtn.textContent = '✕';
         Object.assign(closeBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '16px', padding: '0 4px' });
         closeBtn.onmouseenter = () => closeBtn.style.color = '#f87171';
         closeBtn.onmouseleave = () => closeBtn.style.color = '#888';
-        closeBtn.onclick = () => { modal.style.display = 'none'; };
+        function _saveChatState() {
+            try {
+                var r = modal.getBoundingClientRect();
+                var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+                cfg.blobbyChatState = {
+                    x: Math.round(r.left), y: Math.round(window.innerHeight - r.top - r.height),
+                    w: Math.round(r.width), h: Math.round(r.height),
+                    alpha: parseInt(alphaSlider.value),
+                };
+                localStorage.setItem('FRIA_config', JSON.stringify(cfg));
+            } catch {}
+        }
+        // ResizeObserver pour sauvegarder lors du redimensionnement
+        var ro = new ResizeObserver(_saveChatState);
+        ro.observe(modal);
+
+        closeBtn.onclick = () => {
+            _saveChatState();
+            modal.style.display = 'none';
+        };
         headerRight.appendChild(settingsBtn);
         headerRight.appendChild(closeBtn);
         header.appendChild(title);
+        header.appendChild(alphaSlider);
         header.appendChild(headerRight);
 
         // Messages area
@@ -1254,7 +1467,11 @@ const Blobby = {
                 modal.style.bottom = 'auto';
             });
             document.addEventListener('mouseup', () => {
-                if (drag.active) { drag.active = false; header.style.cursor = 'grab'; }
+                if (drag.active) {
+                    drag.active = false;
+                    header.style.cursor = 'grab';
+                    _saveChatState();
+                }
             });
         })(header, modal);
     },
