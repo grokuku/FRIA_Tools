@@ -4,7 +4,125 @@
 
 ---
 
-## 🚀 Session en cours (15/06/2026)
+## 🔍 Audit complet du code — Rapport de bugs (20/06/2026)
+
+> Analyse exhaustive de tous les fichiers du projet (backend, frontend, ComfyUI).
+> Aucune correction appliquée — rapport uniquement.
+
+### 🔴 Bugs critiques (runtime errors)
+
+| # | Fichier | Bug | Impact |
+|---|---------|-----|-------|
+| **C1** | `backend/routes/enhance.py` | `_prepare_validation_pass()` référence la variable `critique_prompt` qui n'existe pas dans la fonction. Devrait être `user_content` (défini plus haut comme `current_output`). | **NameError** au runtime dès qu'une passe de validation Ideogram 4 est déclenchée. Le debug de validation plante, mais la requête LLM elle-même est déjà construite avant le crash — donc l'erreur se produit à la construction du dict de debug, cassant l'appel de validation. |
+| **C2** | `backend/routes/keywords.py` | `list_subsections()` (ligne ~499) utilise `FROM keywords` **sans alias `k`**, mais `_privacy_filter()` retourne une clause avec `k.privacy_status`. SQLite lève `no such column: k.privacy_status`. | **500 silencieux** — le frontend `loadSubsections()` a un `catch {}` qui avale l'erreur. Les sous-sections ne se chargent jamais (dropdown vide). |
+| **C3** | `backend/routes/keywords.py` | `check_keyword_duplicates()` (ligne ~667) utilise `FROM keywords` **sans alias `k`** dans la requête de vérification exacte, mais `_privacy_filter()` retourne `k.privacy_status`. | **500** lors de la vérification de doublons exacts. La branche sémantique (qui utilise `FROM keywords k`) fonctionne, mais la branche exacte plante. |
+
+### 🟠 Bugs majeurs (sécurité / logique)
+
+| # | Fichier | Bug | Impact |
+|---|---------|-----|-------|
+| **M1** | `backend/routes/enhance.py` | Recherche sémantique des EP elements dans `_prepare_enhance()` : `SELECT k.keyword, ke.embedding FROM keywords k JOIN keyword_embeddings ke ...` **sans `_privacy_filter`**. Charge TOUS les keywords, y compris privés d'autres utilisateurs. | **Fuite de privacy** — un keyword privé d'un autre user peut finir dans le prompt généré. |
+| **M2** | `backend/routes/generate.py` | Recherche sémantique dans `generate_prompt()` : `SELECT k.id, ke.embedding FROM keywords k JOIN keyword_embeddings ke ...` **sans `_privacy_filter`**. Même problème que M1. | **Fuite de privacy** — un keyword privé peut être pioché aléatoirement dans le prompt. |
+| **M3** | `backend/routes/enhance.py` | `keywords_llm_process()` : la requête `/models` pour détecter `max_context` envoie `headers=llm_config.get('headers', {})` mais `llm_config` n'a **pas de clé `headers`** (seulement `base_url` et `api_key`). Le header d'auth est manquant. | `/models` échoue pour les APIs qui requièrent une auth. `max_context` tombe toujours sur le fallback heuristique (peu fiable). |
+| **M4** | `backend/routes/export.py` | Code orphelin en fin de fichier : `result['output'] = corrected` et `return result` après le `return send_file(...)` de `export_md()`. Variables `result` et `corrected` non définies. Code unreachable mais parasite. | Pas d'erreur runtime (unreachable), mais code mort confus qui provient visiblement d'un copier-coller d'une fonction de validation. |
+| **M5** | `backend/routes/enhance.py` | `_prepare_enhance()` ouvre **6 connexions DB séparées** (`conn = get_db()` / `conn.close()`) sans `try/finally`. Si une exception se produit entre `get_db()` et `close()`, la connexion fuit. | **Fuite de connexions** SQLite possible sous charge d'erreur. SQLite a un pool limité. |
+| **M6** | `backend/routes/enhance.py` | `repeat_penalty` (param Ollama) et `frequency_penalty` (param OpenAI) sont envoyés **simultanément** dans `llm_request`. | Comportement imprévisible selon le backend LLM : OpenAI ignore `repeat_penalty`, Ollama peut ignorer `frequency_penalty`. Pas un crash mais résultats incohérents. |
+
+### 🟡 Bugs mineurs (code quality / performance)
+
+| # | Fichier | Bug | Impact |
+|---|---------|-----|-------|
+| **L1** | `backend/routes/keywords.py` | `bulk_import_keywords()` appelle `_regenerate_keyword_embedding()` **pour chaque keyword** individuellement. | Très lent pour les imports en masse (1 appel API embedding par keyword). Devrait batcher. |
+| **L2** | `backend/routes/keywords.py` | `scan_keyword_duplicates()` : comparaison sémantique **O(n²)** — compare chaque paire de keywords. | Bloque pour les grandes bases (timeout probable au-delà de ~5000 keywords). |
+| **L3** | `backend/routes/enhance.py` | `_load_enhance_session()` et `_update_enhance_session()` : le `except ValueError: raise` capture TOUTES les `ValueError`, y compris celle de `strptime` si le format `expires_at` est corrompu. | Message d'erreur confus si le format de date est invalide (au lieu de "Session expirée"). |
+| **L4** | `backend/routes/enhance.py` | `_prepare_enhance()` : `random.choice()` et `ORDER BY RANDOM()` pour les EP elements et random keywords **ignorent le seed**. `/api/generate` utilise `rng = random.Random(seed)` mais pas `/api/enhance`. | Non-déterminisme : le même seed ne produit pas le même prompt. *(Déjà noté dans la roadmap, confirmé.)* |
+| **L5** | `frontend/js/app-core.js` | `filtersBar` toujours déclaré (`const filtersBar = $('filters-bar')`) bien que la roadmap le marque comme résolu. | Code mort — variable inutilisée. **La roadmap est inexacte** sur ce point (marqué `[x]` mais le code est toujours là). |
+| **L6** | `frontend/js/app-filters.js` | `_loadApiKeySettings()` défini mais jamais appelé (c'est `loadApiKeySettings()` qui est appelé, qui appelle `loadApiKey()`). | Code mort. *(Déjà noté dans la roadmap.)* |
+| **L7** | `frontend/js/app-admin.js` | `copyEnhanceOutput()` utilise `document.execCommand('copy')` (déprécié). | Ne fonctionne plus sur certains navigateurs modernes. Devrait utiliser `navigator.clipboard.writeText()`. |
+| **L8** | `backend/routes/import_export.py` | `import_md()` : variables `delete_after` et `tmp` peuvent être non définies si une exception se produit avant leur assignation. Le `finally` les référence dans un `try/except` qui avale l'erreur. | Erreur silencieuse dans le `finally`, pas de crash mais masquage potentiel d'erreurs. |
+| **L9** | `backend/routes/enhance.py` | `_prepare_enhance()` : le check de doublon pour les keywords dans `_create_keyword()` (keywords.py:117) est **global** (tous les keywords, y compris privés d'autres users). | Un user ne peut pas créer un keyword qui matche le keyword privé d'un autre user, même s'il ne le voit pas. |
+| **L10** | `FRIA_ComfyUI/README.md` | Contradiction : `git clone ... FRIA_Tools` mais l'avertissement dit `FRIA_Keywords`. La roadmap dit de corriger mais le README n'a pas été mis à jour. | Confusion pour les utilisateurs. Le bon nom est `FRIA_Tools` (le repo s'appelle ainsi). |
+| **L11** | `backend/exporter.py` | `[:100]` dans le footer tronque la liste des catégories au milieu d'un titre. | Export markdown avec footer coupé. *(Déjà noté dans la roadmap.)* |
+
+### ⚠️ Inexactitudes de la roadmap vs code actuel
+
+| Point | Roadmap dit | Code actuel | Correction |
+|------|------------|-------------|------------|
+| `filtersBar` supprimé | `[x]` (résolu) | Toujours présent dans `app-core.js:17` | **À décocher** — le code mort est toujours là |
+| README ComfyUI corrigé | Note dit "corriger l'avertissement obsolète FRIA_Keywords" | README toujours contradictoire (`git clone ... FRIA_Tools` vs `⚠️ Le nom du dossier doit être FRIA_Keywords`) | **Toujours en attente** |
+| Seed ignoré dans `/api/enhance` | `[ ]` non résolu | Confirmé : `random.choice()` et `ORDER BY RANDOM()` toujours utilisés | Roadmap correcte ✅ |
+| `_loadApiKeySettings()` | `[ ]` non résolu | Confirmé : toujours défini, jamais appelé | Roadmap correcte ✅ |
+| `loadColWidths` colonnes cachées | `[ ]` non résolu | Confirmé : applique largeurs à tous les `<th>` y compris `score-header` hidden | Roadmap correcte ✅ |
+| Variables `cur`/`cur2`/`conn`/`conn2` | `[ ]` non résolu | Confirmé : `_prepare_enhance` a 6 `get_db()`, `_finish_enhance_pass1` utilise `conn2` | Roadmap correcte ✅ |
+| Troncature `exporter.py` | `[ ]` non résolu | Confirmé : `[:100]` toujours présent | Roadmap correcte ✅ |
+
+### 📊 Résumé
+
+| Sévérité | Count | Nouveaux vs connus |
+|-----------|-------|-------------------|
+| 🔴 Critique (crash) | 3 | 3 nouveaux (C1, C2, C3) |
+| 🟠 Majeur | 6 | 4 nouveaux (M1, M2, M3, M4), 2 connus (M5, M6) |
+| 🟡 Mineur | 11 | 3 nouveaux (L7, L8, L9), 8 connus |
+| ⚠️ Roadmap inexacte | 2 | `filtersBar` + README |
+| **Total nouveaux** | **10** | |
+
+---
+
+## 🚀 Session en cours (19/06/2026)
+
+### ✅ Blobby Companion — Intégration complète
+- **Intégration** : personnage interactif 100% Canvas 2D qui vit sur le canvas ComfyUI.
+- **Activation** : via menu FR.IA > "Activer Blobby" avec badge ON/OFF + option "💬 Chat" visible seulement quand Blobby est actif.
+- **Clic droit** plus utilisé — tout se fait depuis le menu FR.IA.
+
+### ✅ Chat Blobby
+- **Modale de discussion** flottante, déplaçable, redimensionnable (`resize: both`), avec persistance position/taille.
+- **Slider de transparence** dans l'en-tête (10-100%), persisté.
+- **Historique** sauvegardé dans `localStorage.FRIA_config.blobbyData.chatHistory` (50 derniers messages).
+- **Barre de contexte** en bas : estime les tokens (`~XXX tokens | YYYY max`) avec code couleur selon le ratio.
+- **Caractère Groot-like** : Blobby ne répond que "Blobby" avec variations expressives.
+- **Humeur influencée** : le prompt LLM inclut l'humeur actuelle (happy/surprised/sleepy).
+- **Provider LLM** configurable dans les paramètres (dropdown).
+- **Sync serveur** vers backend FR.IA avec debounce 2s + indicateur visuel ⬤ (vert/jaune/rouge).
+
+### ✅ Paramètres Blobby (3 onglets)
+- **Général** : choix du provider LLM + slider FPS animation (0-165).
+- **Caractère** : textarea éditable pour la personnalité, reset au défaut.
+- **Apparence** :
+  - Particules (10-120)
+  - Transparences : Corps (%), Cerveau (%)
+  - Yeux : Hauteur, Écartement, Taille
+  - Bouche : Hauteur, Taille
+  - Cerveau : Taille
+  - Couleurs par humeur : 4 color pickers (😊 Heureux, 😮 Surpris, 😴 Endormi, 😐 Neutre)
+- Modale déplaçable et redimensionnable.
+
+### ✅ Physique et rendu
+- **Collision avec les nœuds** : les titres des nœuds sont inclus dans la bounding box (`getNodeBounds()` utilise `LiteGraph.NODE_TITLE_HEIGHT`).
+- **Framerate-indépendant** : toutes les animations (position, amortissement, bouche, organes) utilisent `deltaTime * 60`.
+- **Performance** : `setInterval(33ms)` + `setDirty(false, true)` — pas de conflit avec le rAF de ComfyUI.
+- **Apparence** : toutes les propriétés visuelles sont configurables via localStorage.
+
+### ✅ Filtres — Bug privacy_status
+- **Problème** : `_rebuild_filter_cache()` utilisait `privacy_status = 'public'` en dur, ignorant les mots-clés privés (`'private'`) et en attente (`'public_pending'`).
+- **Fix** : passage de `user_id` à `_rebuild_filter_cache()`, utilisation de `_privacy_filter(user_id)` pour les trois appels (POST, PUT, refresh).
+
+### ✅ Bulk Import — Nouveautés
+- **Onglets** : modale avec 2 onglets (Import / Génération IA).
+- **Import** : checkbox "Convertir via LLM" + dropdown provider + niveau NSFW (SFW/Sexy/Érotique/Porno).
+- **Génération IA** : textarea d'instructions + dropdown provider + niveau NSFW → résultat parsé en tableau éditable dans l'onglet Import.
+- **LLM instruction stricte** : format `keyword | description | section | subsection | nsfw(0/1)` imposé, pas de texte hors-format.
+- **Persistance choix** : provider et niveau NSFW sauvegardés dans `FRIA_config`.
+
+### ✅ Scan des doublons
+- **Timeout 60s supprimé** : plus de limite arbitraire.
+- **Bouton Annuler** : barre de progression avec bouton "✕ Annuler", annulation propre via `AbortController`.
+- **Résultats scrollables** : modale dédiée large (700px) avec `overflow-y: auto`.
+
+### ✅ API — Améliorations
+- **`/api/keywords/llm-process`** : nouvel endpoint simple pour les appels LLM (bulk import / chat).
+- **Retourne `max_context`** : détecté via API `/models` du provider, fallback par nom de modèle, défaut 4096.
+- **`/api/settings`** : les données Blobby sont mergées avec les settings existants pour ne pas les écraser.
 
 ### ✅ Normalisation des données : `prompt_type` → `template_id` (migration radicale)
 - **Problème** : `prompt_type` était utilisé à la fois comme catégorie (slug texte) et comme identifiant fonctionnel, ce qui créait de la confusion et des bugs de persistance (renommer un template cassait les workflows).
@@ -446,7 +564,7 @@ Code review complet, classé par priorité :
 - [ ] **Code mort : `_loadApiKeySettings()` jamais appelé** — Garder `loadApiKeySettings()` (appelé) et supprimer la version `_loadApiKeySettings()` (jamais appelée). *À faire*.
 - [x] **Code mort dans `enhance_prompt`** — `format_instruction`, query `prompt_examples` supprimés. *Fait*.
 - [ ] **Bug n°11 : variables `cur`/`cur2`/`conn`/`conn2` multiples dans `enhance_prompt`** — Renommer en `_db_ep`, `_db_rand`, `_db_template`. *À faire*.
-- [x] **`var filtersBar` déclaré mais plus utilisé** dans `app-core.js`. *À supprimer*.
+- [ ] **`var filtersBar` déclaré mais plus utilisé** dans `app-core.js`. *À supprimer.* (Code toujours présent ligne 17)
 - [ ] **Troncature inesthétique dans `exporter.py`** — Le `[:100]` coupe la liste concaténée des catégories au milieu d'un titre. *À corriger*.
 - [ ] **README ComfyUI : nom de dossier contradictoire** — `git clone ... FRIA_Tools` mais l'avertissement dit `FRIA_Keywords`. *À corriger*.
 
@@ -533,7 +651,7 @@ Code review complet, classé par priorité :
 - [ ] **Troncature inesthétique du footer** — `[:100]` coupe la liste concaténée.
 
 ### Frontend — index.html
-- [x] **Potentiel : `filtersBar` déclaré mais plus utilisé** — À supprimer dans `app-core.js`.
+- [ ] **Potentiel : `filtersBar` déclaré mais plus utilisé** — Toujours présent dans `app-core.js:17`. *À supprimer.* (Roadmap disait [x] mais code toujours là)
 - [ ] **Score header visible en mode texte** — `scoreHeader` est initialisé comme `hidden` mais affecté par `loadColWidths` qui applique des largeurs à tous les `<th>`.
 - [x] **Unreachable code dans deleteUser/adminClearDb** — Code après `return;` déplacé dans le callback.
 - [x] **`delStyle()` silencieux** — Ajout d'affichage d'erreur.

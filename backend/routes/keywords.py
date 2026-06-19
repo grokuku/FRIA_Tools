@@ -495,9 +495,9 @@ def check_keyword_duplicates():
     # 1. Vérification exacte (insensible à la casse) — parmi les visible
     privacy_where, privacy_params = _privacy_filter(user_id)
     cur.execute(f"""
-        SELECT id, keyword, description, privacy_status, user_id
-        FROM keywords
-        WHERE LOWER(keyword) = LOWER(?) AND {privacy_where}
+        SELECT k.id, k.keyword, k.description, k.privacy_status, k.user_id
+        FROM keywords k
+        WHERE LOWER(k.keyword) = LOWER(?) AND {privacy_where}
     """, [keyword] + privacy_params)
     exact_matches = [dict(r) for r in cur.fetchall()]
 
@@ -663,11 +663,11 @@ def list_subsections():
         params.append(section_id)
 
     cur.execute(f"""
-        SELECT subsection_id, subsection_title, COUNT(*) as total
-        FROM keywords
+        SELECT k.subsection_id, k.subsection_title, COUNT(*) as total
+        FROM keywords k
         WHERE {' AND '.join(where_parts)}
-        GROUP BY subsection_id
-        ORDER BY subsection_id
+        GROUP BY k.subsection_id
+        ORDER BY k.subsection_id
     """, params)
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()

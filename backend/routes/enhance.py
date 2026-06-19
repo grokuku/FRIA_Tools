@@ -1167,7 +1167,7 @@ def _prepare_validation_pass(current_output, original_input, style_text, width, 
     # Debug : enregistrer l'appel de validation
     debug['api_calls'].append({
         'system_prompt': llm_request['messages'][0]['content'],
-        'user_prompt': critique_prompt[:3000],
+        'user_prompt': user_content[:3000],
         'temperature': llm_request['temperature'],
         'model': model,
     })
