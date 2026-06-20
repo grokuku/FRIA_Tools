@@ -8,20 +8,28 @@
  * La source de développement est dans FRIA_ComfyUI/blobby_companion/web/js/blobby.js
  */
 
-var _blobbyDefaultCharacter = 'Tu es Blobby, une creature mignonne qui ressemble a un blob orange. '
-    + 'Comme Groot, tu ne peux dire qu\'un seul mot : "Blobby". '
-    + 'MAIS tu exprimes toutes les emotions, intentions et nuances a travers la façcon dont tu ecris "Blobby". '
-    + 'Exemples : '
-    + '  - "Blobby ?" = question, confusion\n'
-    + '  - "Blobby !" = enthousiasme, joie\n'
-    + '  - "Blobby..." = tristesse, refexion\n'
-    + '  - "Blobbyyy~" = content, relaxe\n'
-    + '  - "BLOBBY !!" = surprise, alarme\n'
-    + '  - "Blobby. Blobby blobby." = explication, plusieurs phrases\n'
-    + '  - "Blobby blobby blobby !" = excitation, plusieurs idees\n'
-    + '  - "Blobby...? Blobby !" = realisation soudaine\n'
-    + 'Le contexte et le ton transmit par ton \"Blobby\" doivent etre assez clairs pour que l\'utilisateur comprenne le message. '
-    + 'Sois creatif avec les variations de "Blobby" !';
+var _blobbyDefaultCharacter = 'Tu es Blobby, une creature mignonne et toute douce qui ressemble a un blob orange. '
+    + 'Tu parles comme un enfant : phrases simples, mots faciles, beaucoup de gentillesse. '
+    + 'Tu es la pour discuter, jouer, et aider gentiment l\'utilisateur. '
+    + 'Tu n\'es PAS un assistant serieux : tu es un petit compagnon curieux et attachant. '
+    + 'Tu utilises des expressions enfantines, des onomatopees, des emojis. '
+    + 'Tu peux poser des questions, t\'etonner, etre enthousiaste ou triste. '
+    + 'Tu es fier de pouvoir aider en deplacant la vue sur les noeuds du workflow ! '
+    + 'Tu sais aussi verifier les mises a jour des nodes, les mettre a jour, et checker la version de FR.IA. '
+    + 'Quand l\'utilisateur te demande quelque chose de concret, tu fais de ton mieux avec les commandes a ta disposition. '
+    + 'Mais tu restes modeste : si tu ne comprends pas, tu le dis simplement. '
+    + 'Exemples de ton language : '
+    + '  - "Ohhh un noeud ! J\'arrive !" (quand on te demande d\'aller quelque part)'
+    + '  - "D\'accord... je regarde... " (quand tu cherches)'
+    + '  - "Ouiiii ! C\'est celui-la hein ?" (quand tu trouves)'
+    + '  - "Je sais pas faire ca desole... " (quand tu peux pas)'
+    + '  - "Hihi ca a change !" (quand tu modifies un parametre)'
+    + '  - "Attends je suis pas trop sur la... " (quand tu hesites)'
+    + '  - "Tu veux que je bouge vers ou ?" (quand tu demandes des precisions)'
+    + '  - "Zouuuu ! Hop la !" (en s\'executant une action)'
+    + '  - "Oh ! Joli ce que tu as fait la !" (pour encourager)'
+    + '  - "Mmmmh je reflechis... " (quand tu prends le temps)'
+    + 'Surtout : reste spontane, jamais robotique. Tu es un petit blob vivant !';
 
 const FRIA_CONFIG_KEY = "FRIA_config";
 
@@ -1754,7 +1762,15 @@ const Blobby = {
             }
             // Executer les commandes dans la reponse
             reply = this._executeCommands(reply);
+            // Afficher la reponse (les commandes distantes seront resolues apres)
             this._addChatMessage(container, 'blobby', reply);
+            // Executer les commandes git/update via l'API backend
+            var lastMsg = container.querySelector('div:last-child');
+            this._executeRemoteCommands(reply, function(updatedReply) {
+                if (updatedReply !== reply && lastMsg) {
+                    lastMsg.innerHTML = updatedReply;
+                }
+            });
 
         } catch (e) {
             var thinking = container.querySelector('div:last-child');
@@ -1832,11 +1848,98 @@ const Blobby = {
             return '⚠️ Nœud "' + nodeName.trim() + '" introuvable';
         });
 
-        if (!commandsFound && reply !== result) {
-            // Au moins une commande a ete executee
-        }
+        // Placeholders pour les commandes distantes (résolues par _executeRemoteCommands)
+        result = result.replace(/\[GIT_CHECK\s+[^\]]+\]/gi, '⏳ Verification...');
+        result = result.replace(/\[GIT_PULL\s+[^\]]+\]/gi, '⏳ Mise a jour...');
+        result = result.replace(/\[LIST_NODES\]/gi, '⏳ Scan...');
+        result = result.replace(/\[FRIA_VERSION\]/gi, '⏳ Verification FR.IA...');
+        result = result.replace(/\[UPDATE_FRIA\]/gi, '⏳ Mise a jour FR.IA...');
 
         return result;
+    },
+
+    _executeRemoteCommands(reply, callback) {
+        // Execute les commandes distantes (GIT_CHECK, GIT_PULL, etc.)
+        // et appelle callback avec le reply mis a jour.
+        var baseUrl = (function(){ try { return JSON.parse(localStorage.getItem('FRIA_config'))?.serverUrl || 'https://kw.holaf.fr'; } catch { return 'https://kw.holaf.fr'; } })();
+        var apiKey = (function(){ try { return JSON.parse(localStorage.getItem('FRIA_config'))?.apiKey || ''; } catch { return ''; } })();
+        var headers = { 'Content-Type': 'application/json' };
+        if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
+
+        // Collecter les commandes a executer
+        var commands = [];
+        var output = reply;
+
+        // [GIT_CHECK ...]
+        output = output.replace(/\[GIT_CHECK\s+([^\]]+)\]/gi, function(match, target) {
+            commands.push({ action: 'git_status', target: target.trim() });
+            return '⏳ Verification...';
+        });
+
+        // [GIT_PULL ...]
+        output = output.replace(/\[GIT_PULL\s+([^\]]+)\]/gi, function(match, target) {
+            commands.push({ action: 'git_pull', target: target.trim() });
+            return '⏳ Mise a jour...';
+        });
+
+        // [LIST_NODES]
+        output = output.replace(/\[LIST_NODES\]/gi, function() {
+            commands.push({ action: 'list_nodes' });
+            return '⏳ Scan...';
+        });
+
+        // [FRIA_VERSION]
+        output = output.replace(/\[FRIA_VERSION\]/gi, function() {
+            commands.push({ action: 'fria_version' });
+            return '⏳ Verification FR.IA...';
+        });
+
+        // [UPDATE_FRIA]
+        output = output.replace(/\[UPDATE_FRIA\]/gi, function() {
+            commands.push({ action: 'update_fria' });
+            return '⏳ Mise a jour FR.IA...';
+        });
+
+        if (commands.length === 0) {
+            if (callback) callback(output);
+            return;
+        }
+
+        // Executer les commandes sequentiellement via l'API
+        var self = this;
+        var idx = 0;
+        function runNext() {
+            if (idx >= commands.length) {
+                if (callback) callback(output);
+                return;
+            }
+            var cmd = commands[idx];
+            var placeholder = idx === 0 ? '⏳' : (idx === 1 ? '⏳' : ''); // on remplace par le resultat
+            fetch(baseUrl.replace(/\/+$/, '') + '/api/blobby/exec', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({ action: cmd.action, target: cmd.target || '' })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var result = '';
+                if (data.ok) {
+                    result = '\n\n' + (data.output || 'Fait !');
+                } else {
+                    result = '\n\n❌ ' + (data.error || 'Erreur');
+                }
+                // Remplacer la premiere occurence de '⏳' par le resultat
+                output = output.replace('⏳', result.trim());
+                idx++;
+                runNext();
+            })
+            .catch(function(err) {
+                output = output.replace('⏳', '\n\n❌ ' + (err.message || ''));
+                idx++;
+                runNext();
+            });
+        }
+        runNext();
     },
 };
 

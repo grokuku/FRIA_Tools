@@ -41,6 +41,7 @@ from routes.enhance import *
 from routes.generate import *
 from routes.export import *
 from routes.ideogram import *
+from routes.blobby import *
 
 # Initialisation unique de la BDD (schemas + migrations) au demarrage
 from routes.helpers import _init_db
