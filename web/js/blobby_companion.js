@@ -1469,6 +1469,63 @@ const Blobby = {
             modal.style.display = 'none';
         };
         headerRight.appendChild(settingsBtn);
+        // Bouton Clear
+        var clearBtn = document.createElement('button');
+        clearBtn.textContent = '🗑';
+        clearBtn.title = 'Effacer la conversation';
+        Object.assign(clearBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '12px', padding: '0 4px' });
+        clearBtn.onmouseenter = () => clearBtn.style.color = '#f87171';
+        clearBtn.onmouseleave = () => clearBtn.style.color = '#888';
+        clearBtn.onclick = function(e) {
+            e.stopPropagation();
+            var msgs = document.getElementById('blobby-chat-msgs');
+            if (msgs) { msgs.innerHTML = ''; }
+            _blobbySaveChatHistory([]);
+            // Réajouter le message de bienvenue
+            if (typeof Blobby !== 'undefined' && Blobby._addChatMessage) {
+                Blobby._addChatMessage(msgs, 'blobby', '👋 Salut ! Clique sur un nœud ou pose-moi une question sur le workflow.');
+            }
+        };
+        headerRight.appendChild(clearBtn);
+        // Bouton Compact
+        var compactBtn = document.createElement('button');
+        compactBtn.textContent = '📦';
+        compactBtn.title = 'Mode compact';
+        Object.assign(compactBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '12px', padding: '0 4px' });
+        compactBtn.onmouseenter = () => compactBtn.style.color = '#fff';
+        compactBtn.onmouseleave = () => compactBtn.style.color = '#888';
+        compactBtn.onclick = function(e) {
+            e.stopPropagation();
+            var msgs = document.getElementById('blobby-chat-msgs');
+            if (!msgs) return;
+            var isCompact = compactBtn.dataset.compact === '1';
+            if (isCompact) {
+                msgs.querySelectorAll('.blobby-msg').forEach(function(el) {
+                    el.style.padding = '';
+                    el.style.fontSize = '';
+                    el.style.borderRadius = '';
+                });
+                msgs.querySelectorAll('.blobby-msg-compact').forEach(function(el) { el.remove(); });
+                compactBtn.dataset.compact = '0';
+                compactBtn.style.color = '#888';
+            } else {
+                msgs.querySelectorAll('.blobby-msg').forEach(function(el) {
+                    el.style.padding = '2px 8px';
+                    el.style.fontSize = '11px';
+                    el.style.borderRadius = '4px';
+                });
+                // Ajouter une notif discrète
+                var note = document.createElement('div');
+                note.className = 'blobby-msg-compact';
+                note.textContent = '📦 Mode compact';
+                Object.assign(note.style, { textAlign: 'center', color: '#666', fontSize: '10px', padding: '2px' });
+                msgs.appendChild(note);
+                compactBtn.dataset.compact = '1';
+                compactBtn.style.color = '#4ade80';
+            }
+        };
+        compactBtn.dataset.compact = '0';
+        headerRight.appendChild(compactBtn);
         headerRight.appendChild(closeBtn);
         header.appendChild(title);
         title.appendChild(syncDot);
