@@ -425,12 +425,20 @@
 // ── Keywords Manager ─────────────────────────────────────────────
 
 let kwEditingId = null;
+let kwSelectedIds = new Set();
+let kwLastClickedId = null;
+let kwCurrentList = [];
 
 function kwLoadList() {
     const search = document.getElementById('kw-filter-search').value.trim();
     const scope = document.getElementById('kw-filter-scope').value;
     const section = document.getElementById('kw-filter-section').value;
     const nsfw = document.getElementById('kw-filter-nsfw').value;
+
+    // Réinitialiser la sélection
+    kwSelectedIds.clear();
+    kwLastClickedId = null;
+    kwUpdateSelectUI();
 
     const params = new URLSearchParams();
     if (search) params.append('q', search);
@@ -495,25 +503,47 @@ function kwLoadList() {
 
 function renderKwList(keywords) {
     const list = document.getElementById('kw-list');
+    kwCurrentList = keywords || [];
     if (!keywords || keywords.length === 0) {
         list.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">Aucun mot-clé trouvé</p>';
+        document.getElementById('kw-select-toolbar').classList.add('hidden');
         return;
     }
+    document.getElementById('kw-select-toolbar').classList.remove('hidden');
     list.innerHTML = '';
     keywords.forEach(kw => {
         const privacyIcon = kw.privacy_status === 'public' ? '🌐' : (kw.privacy_status === 'public_pending' ? '🟡' : '🔒');
         const nsfwBadge = kw.nsfw ? '<span class="text-rose-400 text-[10px]">NSFW</span>' : '';
         const ownerLabel = kw.user_id ? '' : '<span class="text-[10px] text-slate-400">[global]</span>';
         const preview = (kw.description || '').substring(0, 60);
+        const isSelected = kwSelectedIds.has(kw.id);
 
         const row = document.createElement('div');
-        row.className = 'flex items-center gap-1.5 p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700/50 cursor-pointer transition text-xs';
-        row.innerHTML = '<span class="text-xs">' + privacyIcon + '</span>'
+        row.className = 'flex items-center gap-1.5 p-1.5 rounded transition text-xs cursor-pointer';
+        if (isSelected) {
+            row.className += ' bg-indigo-100 dark:bg-indigo-900/40 ring-1 ring-indigo-300 dark:ring-indigo-700';
+        } else {
+            row.className += ' hover:bg-slate-100 dark:hover:bg-slate-700/50';
+        }
+        row.dataset.kwId = kw.id;
+
+        // Checkbox
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = isSelected;
+        cb.className = 'kw-row-cb shrink-0 cursor-pointer';
+        cb.dataset.kwId = kw.id;
+        cb.onchange = function(e) { e.stopPropagation(); kwToggleSelection(kw.id, e); };
+        row.appendChild(cb);
+
+        row.innerHTML += '<span class="text-xs">' + privacyIcon + '</span>'
             + '<span class="flex-1 min-w-0"><strong class="text-slate-800 dark:text-slate-200">' + esc(kw.keyword) + '</strong>'
             + ' <span class="text-slate-400">' + esc(preview) + (preview.length >= 60 ? '...' : '') + '</span>'
             + '</span>'
             + nsfwBadge + ' ' + ownerLabel;
-        row.onclick = () => kwEdit(kw);
+
+        // Click sur la ligne : sélection (pas édition directe)
+        row.onclick = function(e) { kwToggleSelection(kw.id, e); };
 
         // Boutons actions
         const actions = document.createElement('div');
@@ -523,18 +553,130 @@ function renderKwList(keywords) {
         editBtn.textContent = '✎';
         editBtn.className = 'text-slate-400 hover:text-indigo-500 p-0.5 text-xs';
         editBtn.title = 'Éditer';
-        editBtn.onclick = (e) => { e.stopPropagation(); kwEdit(kw); };
+        editBtn.onclick = function(e) { e.stopPropagation(); kwEdit(kw); };
         actions.appendChild(editBtn);
 
         const delBtn = document.createElement('button');
         delBtn.textContent = '🗑';
         delBtn.className = 'text-slate-400 hover:text-rose-500 p-0.5 text-xs';
         delBtn.title = 'Supprimer';
-        delBtn.onclick = (e) => { e.stopPropagation(); kwDelete(kw.id); };
+        delBtn.onclick = function(e) { e.stopPropagation(); kwDelete(kw.id); };
         actions.appendChild(delBtn);
 
         row.appendChild(actions);
         list.appendChild(row);
+    });
+    kwUpdateSelectUI();
+}
+
+// ── Multi-sélection ─────────────────────────────────────────────
+
+function kwToggleSelection(id, event) {
+    var isCtrl = event && (event.ctrlKey || event.metaKey);
+    var isShift = event && event.shiftKey;
+
+    if (isShift && kwLastClickedId !== null) {
+        // Shift+click : sélection de la plage
+        var ids = kwCurrentList.map(function(k) { return k.id; });
+        var startIdx = ids.indexOf(kwLastClickedId);
+        var endIdx = ids.indexOf(id);
+        if (startIdx === -1 || endIdx === -1) return;
+        var from = Math.min(startIdx, endIdx);
+        var to = Math.max(startIdx, endIdx);
+        if (!isCtrl) kwSelectedIds.clear();
+        for (var i = from; i <= to; i++) {
+            kwSelectedIds.add(ids[i]);
+        }
+    } else if (isCtrl) {
+        // Ctrl+click : toggle
+        if (kwSelectedIds.has(id)) kwSelectedIds.delete(id);
+        else kwSelectedIds.add(id);
+    } else {
+        // Click simple : sélection unique
+        if (kwSelectedIds.size === 1 && kwSelectedIds.has(id)) {
+            kwSelectedIds.clear();
+        } else {
+            kwSelectedIds.clear();
+            kwSelectedIds.add(id);
+        }
+    }
+    kwLastClickedId = id;
+    kwRenderSelection();
+}
+
+function kwRenderSelection() {
+    var rows = document.querySelectorAll('#kw-list > div[data-kw-id]');
+    var isDark = document.documentElement.classList.contains('dark');
+    rows.forEach(function(row) {
+        var id = parseInt(row.dataset.kwId);
+        var cb = row.querySelector('.kw-row-cb');
+        var selected = kwSelectedIds.has(id);
+        if (cb) cb.checked = selected;
+        if (selected) {
+            row.className = row.className.replace(/hover:bg-slate-100 dark:hover:bg-slate-700\/50/g, '');
+            row.classList.add('bg-indigo-100', 'dark:bg-indigo-900/40', 'ring-1', 'ring-indigo-300', 'dark:ring-indigo-700');
+            row.classList.remove('hover:bg-slate-100', 'dark:hover:bg-slate-700/50');
+        } else {
+            row.classList.remove('bg-indigo-100', 'dark:bg-indigo-900/40', 'ring-1', 'ring-indigo-300', 'dark:ring-indigo-700');
+            row.classList.add('hover:bg-slate-100', 'dark:hover:bg-slate-700/50');
+        }
+    });
+    kwUpdateSelectUI();
+}
+
+function kwUpdateSelectUI() {
+    var count = kwSelectedIds.size;
+    var countEl = document.getElementById('kw-select-count');
+    if (countEl) countEl.textContent = count + ' sélectionné' + (count > 1 ? 's' : '');
+    var delBtn = document.getElementById('kw-btn-bulk-delete');
+    if (delBtn) {
+        delBtn.textContent = '🗑 Supprimer (' + count + ')';
+        delBtn.disabled = count === 0;
+        delBtn.style.opacity = count === 0 ? '0.5' : '1';
+    }
+}
+
+function kwSelectAll() {
+    kwCurrentList.forEach(function(k) { kwSelectedIds.add(k.id); });
+    kwRenderSelection();
+}
+
+function kwSelectNone() {
+    kwSelectedIds.clear();
+    kwRenderSelection();
+}
+
+function kwSelectInverse() {
+    var newSel = new Set();
+    kwCurrentList.forEach(function(k) {
+        if (!kwSelectedIds.has(k.id)) newSel.add(k.id);
+    });
+    kwSelectedIds = newSel;
+    kwRenderSelection();
+}
+
+async function kwBulkDelete() {
+    var ids = Array.from(kwSelectedIds);
+    if (ids.length === 0) return;
+    showConfirm('Confirmer', 'Supprimer ' + ids.length + ' mot' + (ids.length > 1 ? 's' : '') + '-clé' + (ids.length > 1 ? 's' : '') + ' ?', async function(ok) {
+        if (!ok) return;
+        var deleted = 0;
+        var errors = [];
+        for (var i = 0; i < ids.length; i++) {
+            try {
+                var res = await fetch(API + '/keywords/' + ids[i], { method: 'DELETE' });
+                if (res.ok) deleted++;
+                else errors.push(ids[i]);
+            } catch(e) { errors.push(ids[i]); }
+        }
+        kwSelectedIds.clear();
+        if (errors.length > 0) {
+            showModal('Résultat', deleted + ' supprimé(s), ' + errors.length + ' erreur(s)', 'warning');
+        } else {
+            showModal('Succès', deleted + ' mot' + (deleted > 1 ? 's' : '') + '-clé' + (deleted > 1 ? 's' : '') + ' supprimé' + (deleted > 1 ? 's' : ''), 'success');
+        }
+        if (kwEditingId && ids.includes(kwEditingId)) kwAddNew();
+        kwLoadList();
     });
 }
 

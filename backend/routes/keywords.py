@@ -49,6 +49,10 @@ def list_or_create_keywords():
         params.append(user_id)
     elif scope == 'public':
         conditions.append("k.privacy_status = 'public'")
+    elif scope == 'private':
+        conditions.append("k.privacy_status = 'private'")
+        conditions.append("k.user_id = ?")
+        params.append(user_id)
 
     if q:
         like = f"%{q}%"
