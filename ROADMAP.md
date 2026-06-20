@@ -7,64 +7,120 @@
 ## 🔍 Audit complet du code — Rapport de bugs (20/06/2026)
 
 > Analyse exhaustive de tous les fichiers du projet (backend, frontend, ComfyUI).
-> Aucune correction appliquée — rapport uniquement.
+> Bugs corrigés marqués ✅, bugs restants marqués ⬜.
 
 ### 🔴 Bugs critiques (runtime errors)
 
-| # | Fichier | Bug | Impact |
+| # | Fichier | Bug | Statut |
 |---|---------|-----|-------|
-| **C1** | `backend/routes/enhance.py` | `_prepare_validation_pass()` référence la variable `critique_prompt` qui n'existe pas dans la fonction. Devrait être `user_content` (défini plus haut comme `current_output`). | **NameError** au runtime dès qu'une passe de validation Ideogram 4 est déclenchée. Le debug de validation plante, mais la requête LLM elle-même est déjà construite avant le crash — donc l'erreur se produit à la construction du dict de debug, cassant l'appel de validation. |
-| **C2** | `backend/routes/keywords.py` | `list_subsections()` (ligne ~499) utilise `FROM keywords` **sans alias `k`**, mais `_privacy_filter()` retourne une clause avec `k.privacy_status`. SQLite lève `no such column: k.privacy_status`. | **500 silencieux** — le frontend `loadSubsections()` a un `catch {}` qui avale l'erreur. Les sous-sections ne se chargent jamais (dropdown vide). |
-| **C3** | `backend/routes/keywords.py` | `check_keyword_duplicates()` (ligne ~667) utilise `FROM keywords` **sans alias `k`** dans la requête de vérification exacte, mais `_privacy_filter()` retourne `k.privacy_status`. | **500** lors de la vérification de doublons exacts. La branche sémantique (qui utilise `FROM keywords k`) fonctionne, mais la branche exacte plante. |
+| **C1** | `enhance.py` | `_prepare_validation_pass()` référence `critique_prompt` (inexistant). | ✅ Corrigé → `user_content` |
+| **C2** | `keywords.py` | `list_subsections()` : `FROM keywords` sans alias `k`. | ✅ Corrigé → `FROM keywords k` |
+| **C3** | `keywords.py` | `check_keyword_duplicates()` : même problème d'alias. | ✅ Corrigé → `FROM keywords k` |
 
 ### 🟠 Bugs majeurs (sécurité / logique)
 
-| # | Fichier | Bug | Impact |
+| # | Fichier | Bug | Statut |
 |---|---------|-----|-------|
-| **M1** | `backend/routes/enhance.py` | Recherche sémantique des EP elements dans `_prepare_enhance()` : `SELECT k.keyword, ke.embedding FROM keywords k JOIN keyword_embeddings ke ...` **sans `_privacy_filter`**. Charge TOUS les keywords, y compris privés d'autres utilisateurs. | **Fuite de privacy** — un keyword privé d'un autre user peut finir dans le prompt généré. |
-| **M2** | `backend/routes/generate.py` | Recherche sémantique dans `generate_prompt()` : `SELECT k.id, ke.embedding FROM keywords k JOIN keyword_embeddings ke ...` **sans `_privacy_filter`**. Même problème que M1. | **Fuite de privacy** — un keyword privé peut être pioché aléatoirement dans le prompt. |
-| **M3** | `backend/routes/enhance.py` | `keywords_llm_process()` : la requête `/models` pour détecter `max_context` envoie `headers=llm_config.get('headers', {})` mais `llm_config` n'a **pas de clé `headers`** (seulement `base_url` et `api_key`). Le header d'auth est manquant. | `/models` échoue pour les APIs qui requièrent une auth. `max_context` tombe toujours sur le fallback heuristique (peu fiable). |
-| **M4** | `backend/routes/export.py` | Code orphelin en fin de fichier : `result['output'] = corrected` et `return result` après le `return send_file(...)` de `export_md()`. Variables `result` et `corrected` non définies. Code unreachable mais parasite. | Pas d'erreur runtime (unreachable), mais code mort confus qui provient visiblement d'un copier-coller d'une fonction de validation. |
-| **M5** | `backend/routes/enhance.py` | `_prepare_enhance()` ouvre **6 connexions DB séparées** (`conn = get_db()` / `conn.close()`) sans `try/finally`. Si une exception se produit entre `get_db()` et `close()`, la connexion fuit. | **Fuite de connexions** SQLite possible sous charge d'erreur. SQLite a un pool limité. |
-| **M6** | `backend/routes/enhance.py` | `repeat_penalty` (param Ollama) et `frequency_penalty` (param OpenAI) sont envoyés **simultanément** dans `llm_request`. | Comportement imprévisible selon le backend LLM : OpenAI ignore `repeat_penalty`, Ollama peut ignorer `frequency_penalty`. Pas un crash mais résultats incohérents. |
+| **M1** | `enhance.py` | EP semantic search sans `_privacy_filter` → fuite privacy. | ✅ Corrigé |
+| **M2** | `generate.py` | Semantic search sans `_privacy_filter` → fuite privacy. | ✅ Corrigé |
+| **M3** | `enhance.py` | `keywords_llm_process()` : header d'auth manquant pour `/models`. | ✅ Corrigé |
+| **M4** | `export.py` | Code orphelin (`result['output'] = corrected`) unreachable. | ✅ Corrigé (supprimé) |
+| **M5** | `enhance.py` | `_prepare_enhance()` : 6 connexions DB sans `try/finally`. | ✅ Corrigé → 1 connexion + `try/finally` |
+| **M6** | `enhance.py` | `repeat_penalty` + `frequency_penalty` envoyés simultanément. | ⬜ Restant |
 
 ### 🟡 Bugs mineurs (code quality / performance)
 
-| # | Fichier | Bug | Impact |
+| # | Fichier | Bug | Statut |
 |---|---------|-----|-------|
-| **L1** | `backend/routes/keywords.py` | `bulk_import_keywords()` appelle `_regenerate_keyword_embedding()` **pour chaque keyword** individuellement. | Très lent pour les imports en masse (1 appel API embedding par keyword). Devrait batcher. |
-| **L2** | `backend/routes/keywords.py` | `scan_keyword_duplicates()` : comparaison sémantique **O(n²)** — compare chaque paire de keywords. | Bloque pour les grandes bases (timeout probable au-delà de ~5000 keywords). |
-| **L3** | `backend/routes/enhance.py` | `_load_enhance_session()` et `_update_enhance_session()` : le `except ValueError: raise` capture TOUTES les `ValueError`, y compris celle de `strptime` si le format `expires_at` est corrompu. | Message d'erreur confus si le format de date est invalide (au lieu de "Session expirée"). |
-| **L4** | `backend/routes/enhance.py` | `_prepare_enhance()` : `random.choice()` et `ORDER BY RANDOM()` pour les EP elements et random keywords **ignorent le seed**. `/api/generate` utilise `rng = random.Random(seed)` mais pas `/api/enhance`. | Non-déterminisme : le même seed ne produit pas le même prompt. *(Déjà noté dans la roadmap, confirmé.)* |
-| **L5** | `frontend/js/app-core.js` | `filtersBar` toujours déclaré (`const filtersBar = $('filters-bar')`) bien que la roadmap le marque comme résolu. | Code mort — variable inutilisée. **La roadmap est inexacte** sur ce point (marqué `[x]` mais le code est toujours là). |
-| **L6** | `frontend/js/app-filters.js` | `_loadApiKeySettings()` défini mais jamais appelé (c'est `loadApiKeySettings()` qui est appelé, qui appelle `loadApiKey()`). | Code mort. *(Déjà noté dans la roadmap.)* |
-| **L7** | `frontend/js/app-admin.js` | `copyEnhanceOutput()` utilise `document.execCommand('copy')` (déprécié). | Ne fonctionne plus sur certains navigateurs modernes. Devrait utiliser `navigator.clipboard.writeText()`. |
-| **L8** | `backend/routes/import_export.py` | `import_md()` : variables `delete_after` et `tmp` peuvent être non définies si une exception se produit avant leur assignation. Le `finally` les référence dans un `try/except` qui avale l'erreur. | Erreur silencieuse dans le `finally`, pas de crash mais masquage potentiel d'erreurs. |
-| **L9** | `backend/routes/enhance.py` | `_prepare_enhance()` : le check de doublon pour les keywords dans `_create_keyword()` (keywords.py:117) est **global** (tous les keywords, y compris privés d'autres users). | Un user ne peut pas créer un keyword qui matche le keyword privé d'un autre user, même s'il ne le voit pas. |
-| **L10** | `FRIA_ComfyUI/README.md` | Contradiction : `git clone ... FRIA_Tools` mais l'avertissement dit `FRIA_Keywords`. La roadmap dit de corriger mais le README n'a pas été mis à jour. | Confusion pour les utilisateurs. Le bon nom est `FRIA_Tools` (le repo s'appelle ainsi). |
-| **L11** | `backend/exporter.py` | `[:100]` dans le footer tronque la liste des catégories au milieu d'un titre. | Export markdown avec footer coupé. *(Déjà noté dans la roadmap.)* |
+| **L1** | `keywords.py` | `bulk_import_keywords()` : embedding par keyword (lent). | ⬜ Restant |
+| **L2** | `keywords.py` | `scan_keyword_duplicates()` : O(n²). | ⬜ Restant |
+| **L3** | `enhance.py` | `except ValueError: raise` trop large dans sessions. | ⬜ Restant |
+| **L4** | `enhance.py` | Seed ignoré dans `/api/enhance`. | ⬜ Restant (déjà noté roadmap) |
+| **L5** | `app-core.js` | `filtersBar` déclaré mais inutilisé. | ⬜ Restant |
+| **L6** | `app-filters.js` | `_loadApiKeySettings()` jamais appelé. | ⬜ Restant |
+| **L7** | `app-admin.js` | `document.execCommand('copy')` déprécié. | ⬜ Restant |
+| **L8** | `import_export.py` | Variables `delete_after`/`tmp` potentiellement non définies. | ⬜ Restant |
+| **L9** | `keywords.py` | Check de doublon global incluant les keywords privés. | ⬜ Restant |
+| **L10** | `FRIA_ComfyUI/README.md` | Contradiction `FRIA_Tools` vs `FRIA_Keywords`. | ⬜ Restant |
+| **L11** | `exporter.py` | Troncature `[:100]` dans le footer. | ⬜ Restant |
 
-### ⚠️ Inexactitudes de la roadmap vs code actuel
+### 📊 Résumé de l'audit
 
-| Point | Roadmap dit | Code actuel | Correction |
-|------|------------|-------------|------------|
-| `filtersBar` supprimé | `[x]` (résolu) | Toujours présent dans `app-core.js:17` | **À décocher** — le code mort est toujours là |
-| README ComfyUI corrigé | Note dit "corriger l'avertissement obsolète FRIA_Keywords" | README toujours contradictoire (`git clone ... FRIA_Tools` vs `⚠️ Le nom du dossier doit être FRIA_Keywords`) | **Toujours en attente** |
-| Seed ignoré dans `/api/enhance` | `[ ]` non résolu | Confirmé : `random.choice()` et `ORDER BY RANDOM()` toujours utilisés | Roadmap correcte ✅ |
-| `_loadApiKeySettings()` | `[ ]` non résolu | Confirmé : toujours défini, jamais appelé | Roadmap correcte ✅ |
-| `loadColWidths` colonnes cachées | `[ ]` non résolu | Confirmé : applique largeurs à tous les `<th>` y compris `score-header` hidden | Roadmap correcte ✅ |
-| Variables `cur`/`cur2`/`conn`/`conn2` | `[ ]` non résolu | Confirmé : `_prepare_enhance` a 6 `get_db()`, `_finish_enhance_pass1` utilise `conn2` | Roadmap correcte ✅ |
-| Troncature `exporter.py` | `[ ]` non résolu | Confirmé : `[:100]` toujours présent | Roadmap correcte ✅ |
+| Sévérité | Total | Corrigés | Restants |
+|-----------|-------|----------|----------|
+| 🔴 Critique | 3 | 3 ✅ | 0 |
+| 🟠 Majeur | 6 | 5 ✅ | 1 (M6) |
+| 🟡 Mineur | 11 | 0 | 11 |
+| **Total** | **20** | **8** | **12** |
 
-### 📊 Résumé
+---
 
-| Sévérité | Count | Nouveaux vs connus |
-|-----------|-------|-------------------|
-| 🔴 Critique (crash) | 3 | 3 nouveaux (C1, C2, C3) |
-| 🟠 Majeur | 6 | 4 nouveaux (M1, M2, M3, M4), 2 connus (M5, M6) |
-| 🟡 Mineur | 11 | 3 nouveaux (L7, L8, L9), 8 connus |
-| ⚠️ Roadmap inexacte | 2 | `filtersBar` + README |
-| **Total nouveaux** | **10** | |
+## 🚀 Session (20/06/2026) — Bug fixes + Refonte Keywords Manager
+
+### ✅ Bugs critiques corrigés
+- **C1** : `critique_prompt` → `user_content` dans `_prepare_validation_pass()` (enhance.py)
+- **C2** : `list_subsections()` — ajout alias `k` sur `FROM keywords` (keywords.py)
+- **C3** : `check_keyword_duplicates()` — ajout alias `k` sur `FROM keywords` (keywords.py)
+
+### ✅ Bugs majeurs corrigés
+- **M1** : Ajout `_privacy_filter` dans la recherche sémantique des EP elements (enhance.py)
+- **M2** : Ajout `_privacy_filter` dans la recherche sémantique du generate (generate.py)
+- **M3** : Headers d'auth construits explicitement pour `/models` dans `keywords_llm_process()` (enhance.py)
+- **M4** : Suppression du code orphelin en fin de `export.py`
+- **M5** : `_prepare_enhance()` — 6 connexions DB → 1 seule avec `try/finally` (enhance.py)
+
+### ✅ Refonte du Keywords Manager
+
+#### Interface — panneau unique
+- **Suppression du split gauche/droite** : un seul panneau pleine largeur
+- **Tableau HTML** avec 8 colonnes : checkbox, keyword, description, section, sous-section, NSFW, statut, actions
+- **Édition directe inline** : chaque cellule contient un input/select/checkbox toujours éditable (plus de dépliage)
+- **Sticky header** : les titres de colonnes restent visibles pendant le scroll
+- **Colonnes redimensionnables** : poignées de drag sur les `<th>`, largeurs sauvegardées dans `settings.kwManagerColumns`
+- **Ctrl+Enter** pour sauvegarder une ligne depuis n'importe quel champ
+- **Dirty tracking** : bordure ambre sur les lignes modifiées non sauvegardées
+
+#### Multi-sélection + suppression multiple
+- **Click / Ctrl+Click / Shift+Click / Ctrl+Shift+Click** — sélection classique
+- **Click sur la ligne** (hors inputs/boutons) déclenche aussi la sélection
+- **Boutons Tout / Aucun / Inverser** dans la toolbar
+- **Suppression multiple** avec confirmation
+
+#### Filtres enrichis
+- **NSFW** : 2 checkboxes `[SFW] [NSFW]` (3 possibilités : tout, SFW, NSFW)
+- **Privacy** : 4 checkboxes `[🌐 Public] [🔒 Privé] [🟡 En attente] [👤 Mes keywords]` combinables
+- **Auteur** : dropdown listant les créateurs de keywords (`/api/keywords/authors`)
+- **Section** : dropdown existant conservé
+- **Recherche texte** : champ existant conservé
+- Backend : nouveaux params `privacy` (comma-separated) + `mine` (1/0), backward compat avec `scope`
+
+#### Section/Subsection — combobox avec auto-ID
+- **Datalist** : suggestions des sections/sous-sections existantes + possibilité d'en créer de nouvelles en tapant
+- **Auto-génération d'ID** : chiffres romains pour sections (I, II, III…), lettres pour sous-sections (I.A, I.B…)
+- **Filtre contextuel** : le datalist des sous-sections se filtre selon la section sélectionnée
+- Plus de champs ID manuels — tout est automatique
+
+#### Modale de création
+- Bouton **+ Add** ouvre une modale draggable avec : keyword, description, section/subsection (combobox), NSFW, privacy
+- Bouton supprimer en mode édition
+- Vérification de doublons intégrée
+
+#### Modération pending intégrée
+- **Filtre « ⏳ En attente »** : les keywords pending s'affichent dans la liste principale (plus de panneau séparé)
+- **Boutons ✅ / ❌** sur chaque ligne pending (visible uniquement pour kw_editor/admin)
+- **Édition + validation en une action** : le kw_editor peut corriger les champs puis cliquer ✅ → les modifications sont sauvegardées en même temps que la validation
+- Backend : `review_keyword` accepte un champ `edits` (dict) pour mettre à jour le keyword avant de changer son `privacy_status`
+
+#### Re-modération automatique
+- **Règle** : si un utilisateur non-éditeur modifie un de ses keywords `public`, il est automatiquement remis en `public_pending`
+- Les kw_editor/admin qui modifient gardent le statut `public` (ils sont modérateurs)
+
+#### Backend — nouveaux endpoints & params
+- `GET /api/keywords/authors` : liste les auteurs ayant créé au moins un keyword
+- `GET /api/keywords` : nouveaux params `privacy` (comma-separated), `mine` (1/0), `author` (user_id), `scope=pending`
+- `POST /api/keywords/<id>/review` : accepte `edits` (dict) pour édition lors de la validation
+- `PUT /api/keywords/<id>` : re-modération auto (public → pending si non-éditeur)
+- Migration BDD : colonne `created_at` ajoutée à la table `keywords`
 
 ---
 
