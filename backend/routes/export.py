@@ -23,7 +23,3 @@ def export_md():
     )
 
 
-    result['output'] = corrected
-    return result
-
-

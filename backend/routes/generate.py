@@ -62,8 +62,10 @@ def generate_prompt():
             try:
                 from embeddings import generate_embedding, cosine_similarity
                 qe = generate_embedding(elem['text'])
+                gen_privacy_where, gen_privacy_params = _privacy_filter(user_id)
                 cur.execute(
-                    "SELECT k.id, ke.embedding FROM keywords k JOIN keyword_embeddings ke ON ke.keyword_id = k.id"
+                    f"SELECT k.id, ke.embedding FROM keywords k JOIN keyword_embeddings ke ON ke.keyword_id = k.id WHERE {gen_privacy_where}",
+                    gen_privacy_params
                 )
                 rows = cur.fetchall()
                 if rows:

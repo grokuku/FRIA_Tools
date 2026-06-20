@@ -698,279 +698,268 @@ def _prepare_enhance(user_id, data):
     width = int(data.get('width') or 0)
     height = int(data.get('height') or 0)
 
-    # Resoudre le template selectionne
+    # ── Une seule connexion DB pour toute la fonction (try/finally) ──
     conn = get_db()
-    template_row = conn.execute(
-        "SELECT id, name, output_format, system_prompt, examples FROM prompt_templates WHERE id = ? AND (is_public = 1 OR is_default = 1 OR user_id = ?)",
-        (template_id, user_id)
-    ).fetchone()
-    conn.close()
-    if not template_row:
-        return jsonify({'error': f"Template {template_id} introuvable ou inaccessible."}), 404
-    output_format = template_row['output_format'] or 'text'
-    template_system_prompt = template_row['system_prompt'] or ''
-    template_name = template_row['name'] or ''
     try:
-        template_examples = json.loads(template_row['examples']) if template_row['examples'] else []
-    except Exception:
-        template_examples = []
+        # Resoudre le template selectionne
+        template_row = conn.execute(
+            "SELECT id, name, output_format, system_prompt, examples FROM prompt_templates WHERE id = ? AND (is_public = 1 OR is_default = 1 OR user_id = ?)",
+            (template_id, user_id)
+        ).fetchone()
+        if not template_row:
+            return jsonify({'error': f"Template {template_id} introuvable ou inaccessible."}), 404
+        output_format = template_row['output_format'] or 'text'
+        template_system_prompt = template_row['system_prompt'] or ''
+        template_name = template_row['name'] or ''
+        try:
+            template_examples = json.loads(template_row['examples']) if template_row['examples'] else []
+        except Exception:
+            template_examples = []
 
-    logging.warning(f"[enhance] REQUEST user={user_id} preset_id={preset_id} template_id={template_id} name='{template_name}' output_format='{output_format}' text_len={len(text)}")
+        logging.warning(f"[enhance] REQUEST user={user_id} preset_id={preset_id} template_id={template_id} name='{template_name}' output_format='{output_format}' text_len={len(text)}")
 
-    # Resoudre le style si style_id fourni
-    negative_prompt = ''
-    if style_id:
-        conn = get_db()
-        row = conn.execute("SELECT style_text, negative_prompt FROM styles WHERE id = ?", (style_id,)).fetchone()
-        if row:
-            if not style_text:
-                style_text = row['style_text'] or ''
-            negative_prompt = row['negative_prompt'] or ''
-        conn.close()
+        # Resoudre le style si style_id fourni
+        negative_prompt = ''
+        if style_id:
+            row = conn.execute("SELECT style_text, negative_prompt FROM styles WHERE id = ?", (style_id,)).fetchone()
+            if row:
+                if not style_text:
+                    style_text = row['style_text'] or ''
+                negative_prompt = row['negative_prompt'] or ''
 
-    # Resoudre les elements EP
-    ep_keywords = []
-    if ep_elements:
-        conn = get_db()
-        cur = conn.cursor()
-        for elem in ep_elements:
-            if elem.get('type') == 'filter' and elem.get('id'):
-                cur.execute("SELECT keyword_id FROM filter_cache WHERE filter_id = ?", (elem['id'],))
-                kids = [r[0] for r in cur.fetchall()]
-                if kids:
-                    cur.execute("SELECT keyword FROM keywords WHERE id IN (" + ','.join('?' for _ in kids) + ")", kids)
-                    kws = [r[0] for r in cur.fetchall()]
-                    if kws:
-                        ep_keywords.append(random.choice(kws))
-            elif elem.get('type') == 'text' and elem.get('text'):
+        # Resoudre les elements EP
+        ep_keywords = []
+        if ep_elements:
+            cur = conn.cursor()
+            for elem in ep_elements:
+                if elem.get('type') == 'filter' and elem.get('id'):
+                    cur.execute("SELECT keyword_id FROM filter_cache WHERE filter_id = ?", (elem['id'],))
+                    kids = [r[0] for r in cur.fetchall()]
+                    if kids:
+                        cur.execute("SELECT keyword FROM keywords WHERE id IN (" + ','.join('?' for _ in kids) + ")", kids)
+                        kws = [r[0] for r in cur.fetchall()]
+                        if kws:
+                            ep_keywords.append(random.choice(kws))
+                elif elem.get('type') == 'text' and elem.get('text'):
+                    try:
+                        qv = generate_embedding(elem['text'])
+                        ep_privacy_where, ep_privacy_params = _privacy_filter(user_id)
+                        cur.execute(f"SELECT k.keyword, ke.embedding FROM keywords k JOIN keyword_embeddings ke ON ke.keyword_id = k.id WHERE {ep_privacy_where}", ep_privacy_params)
+                        rows = cur.fetchall()
+                        scored = []
+                        for r in rows:
+                            vec = json.loads(r['embedding']) if r['embedding'] else None
+                            if vec:
+                                s = cosine_similarity(qv, vec)
+                                if s >= 0.45:
+                                    scored.append((r['keyword'], s))
+                        scored.sort(key=lambda x: x[1], reverse=True)
+                        top5 = [k for k, _ in scored[:5]]
+                        if top5:
+                            ep_keywords.append(random.choice(top5))
+                    except Exception:
+                        pass
+
+        ep_text = ', '.join(ep_keywords) if ep_keywords else ''
+
+        # Random elements : piocher depuis sections non encore utilisees
+        rand_keywords = []
+        if random_count > 0:
+            cur = conn.cursor()
+            # Trouver les sections deja utilisees
+            all_kw_text = (text + ' ' + ep_text).lower()
+            existing = []
+            for kw in all_kw_text.replace(',', ' ').split():
+                kw = kw.strip()
+                if len(kw) >= 3:
+                    existing.append(kw)
+            if existing:
+                placeholders = ','.join('?' for _ in existing)
+                cur.execute(f"SELECT DISTINCT section_id FROM keywords WHERE LOWER(keyword) IN ({placeholders})", existing)
+                used_sections = {r[0] for r in cur.fetchall() if r[0]}
+            else:
+                used_sections = set()
+            # Piocher des keywords depuis des sections inutilisees
+            if used_sections:
+                ph = ','.join('?' for _ in used_sections)
+                cur.execute(f"SELECT keyword FROM keywords WHERE (section_id NOT IN ({ph}) OR section_id IS NULL) AND privacy_status = 'public' ORDER BY RANDOM() LIMIT ?", list(used_sections) + [random_count])
+            else:
+                cur.execute("SELECT keyword FROM keywords WHERE privacy_status = 'public' ORDER BY RANDOM() LIMIT ?", (random_count,))
+            rand_keywords = [r[0] for r in cur.fetchall()]
+
+        rand_text = ', '.join(rand_keywords) if rand_keywords else ''
+
+        # ── Construction de l'entree utilisateur (genérique) ──────────
+        # Le template BDD definit le format exact (sections, priorites, etc.)
+        # via son system_prompt. On envoie le contenu brut a structurer.
+        merged_parts = []
+        if text:
+            merged_parts.append(text)
+        if ep_text:
+            merged_parts.append(ep_text)
+        if rand_text:
+            merged_parts.append(rand_text)
+        if style_text:
+            merged_parts.append("STYLE (must be preserved verbatim):\n" + style_text)
+        if special_instructions:
+            merged_parts.append("ADDITIONAL INSTRUCTIONS:\n" + special_instructions)
+        if width and height:
+            from math import gcd
+            g = gcd(width, height)
+            merged_parts.append(f"IMAGE DIMENSIONS: {width}x{height} pixels (aspect ratio: {width//g}:{height//g})")
+        # Les elements EP de type "text" sont les sujets principaux
+        named_elems = [e.get('text', '').strip() for e in ep_elements
+                       if e.get('type') == 'text' and e.get('text', '').strip()]
+        if named_elems:
+            elems_str = '\n'.join(f"  {i+1}. {desc}" for i, desc in enumerate(named_elems))
+            merged_parts.append(f"ELEMENTS TO PLACE IN THE SCENE:\n{elems_str}")
+        merged_text = '\n\n'.join(merged_parts)
+        if not merged_text.strip():
+            return jsonify({'error': 'Aucun contenu a generer'}), 400
+
+        # Recuperer le preset (meme connexion DB)
+        preset = None
+        if preset_id:
+            preset = conn.execute("SELECT * FROM ai_presets WHERE id = ?", (preset_id,)).fetchone()
+        if not preset:
+            # Fallback : premier preset personnel dispo
+            preset = conn.execute(
+                "SELECT * FROM ai_presets WHERE user_id = ? OR is_global = 1 ORDER BY is_global DESC LIMIT 1",
+                (user_id,)
+            ).fetchone()
+        if not preset:
+            return jsonify({'error': 'Aucun preset IA configure. Cree un preset dans la configuration.'}), 400
+
+        api_key = decrypt_api_key(preset['api_key_encrypted'])
+        base_url = preset['base_url'].rstrip('/')
+        model = preset['model']
+        # Debug temporaire : tracer le preset utilise
+        logging.warning(f"[enhance] user={user_id} preset_id={preset['id']} name='{preset['name']}' is_global={preset['is_global']} model='{model}' base_url='{base_url}' api_key_len={len(api_key) if api_key else 0}")
+
+        # Construire le prompt systeme a partir du template selectionne
+        logging.warning(f"[enhance] template_id={template_id} name='{template_name}' output_format='{output_format}' found={'yes' if template_system_prompt else 'no'} sys_len={len(template_system_prompt)}")
+
+        system_parts = []
+
+        # 1) STYLE — tout en haut, imperatif
+        if style_text:
+            system_parts.append(f"""CRITICAL — STYLE PRESERVATION RULE
+    You MUST preserve the following style in the output prompt, verbatim and unmodified:
+    {style_text}
+
+    This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summarize it.""")
+
+        # 2) INSTRUCTIONS — system_prompt du template (doc, schema, tips, output format)
+        # Les exemples et les regles obligatoires sont geres separement ci-dessous.
+        if template_system_prompt and template_system_prompt.strip():
+            system_parts.append(template_system_prompt.strip())
+        else:
+            return jsonify({'error': f"Aucun template trouve pour template_id={template_id}. Cree un template dans l'onglet Templates."}), 400
+
+        # 3) EXAMPLES — injectes depuis le champ examples du template
+        if template_examples:
+            ex_list = '\n'.join(f'- {ex}' for ex in template_examples)
+            system_parts.append(f"""## Examples
+    Here are well-structured examples for reference — study them but do NOT copy verbatim:
+    {ex_list}""")
+
+        # 4) MANDATORY RULES — regles obligatoires, non visibles dans l'UI
+        system_parts.append("""Mandatory rules:
+    - The assigned STYLE must be preserved exactly as-is
+    - In case of conflict, prioritize: base prompt > elements > random
+    - Remove duplicates
+    - Organize by importance
+    - DO NOT REPEAT the same tags/concepts
+    - OUTPUT ONLY the prompt, nothing else: no explanations, no comments, no introductory sentences
+    - The prompt must be ready to use in an image generator""")
+
+        # 5) Instructions speciales (toujours en dernier)
+        if special_instructions:
+            system_parts.append(f"Additional instructions: {special_instructions}")
+
+        system_prompt = '\n\n'.join(system_parts)
+
+        # Construire le payload LLM (format OpenAI standard pour /chat/completions)
+        llm_request = {
+            'model': model,
+            'messages': [
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': merged_text}
+            ],
+            'temperature': 0.3,
+            'frequency_penalty': 0.5,
+            'repeat_penalty': 1.2,
+        }
+        llm_config = {
+            'base_url': base_url,
+            'api_key': api_key,
+            'model': model,
+        }
+        # Debug : enregistrer la passe 1
+        debug_sections.append({
+            'title': 'Passe 1 : Generation',
+            'model': model,
+            'system_prompt': system_prompt[:2000],
+            'user_prompt': merged_text[:2000],
+            'temperature': llm_request['temperature'],
+        })
+
+        # ── Auto-critique : passes de validation (Ideogram 4 uniquement) ────
+        # Pour les autres types, pas de bbox/structure a valider, on garde 0.
+        validation_passes = int(data.get('validation_passes', 0))
+        validation_passes = max(0, min(validation_passes, 3))  # borne 0..3
+
+        # Charger le template de validation (optionnel, pour Ideogram 4 passe 2)
+        # Si validation_template_id est fourni, utilise son system_prompt.
+        # Sinon, garde le hardcodé (backward compatible).
+        validation_template_id = data.get('validation_template_id')
+        validation_system_prompt = ''
+        validation_examples = []
+        if validation_passes > 0 and validation_template_id:
+            val_row = conn.execute(
+                "SELECT system_prompt, examples FROM prompt_templates WHERE id = ?",
+                (int(validation_template_id),)
+            ).fetchone()
+            if val_row:
+                validation_system_prompt = val_row['system_prompt'] or ''
                 try:
-                    qv = generate_embedding(elem['text'])
-                    cur.execute("SELECT k.keyword, ke.embedding FROM keywords k JOIN keyword_embeddings ke ON ke.keyword_id = k.id")
-                    rows = cur.fetchall()
-                    scored = []
-                    for r in rows:
-                        vec = json.loads(r['embedding']) if r['embedding'] else None
-                        if vec:
-                            s = cosine_similarity(qv, vec)
-                            if s >= 0.45:
-                                scored.append((r['keyword'], s))
-                    scored.sort(key=lambda x: x[1], reverse=True)
-                    top5 = [k for k, _ in scored[:5]]
-                    if top5:
-                        ep_keywords.append(random.choice(top5))
+                    validation_examples = json.loads(val_row['examples']) if val_row['examples'] else []
                 except Exception:
-                    pass
+                    validation_examples = []
+
+        return {
+            # Identifiant unique de cette session de generation.
+            # En mode local (client-side), le caller doit conserver ce session_id
+            # pour le rappeler dans /api/enhance/finish.
+            'session_id': None,  # pas de session persistante en mode cloud (un seul appel HTTP)
+            'llm_request': llm_request,
+            'llm_config': llm_config,
+            # Metadata necessaires a _finish_enhance (tout ce qui n'est pas dans le payload LLM)
+            'user_id': user_id,
+            'preset_id': preset['id'],
+            'preset_name': preset['name'],
+            'is_global': preset['is_global'],
+            # Indique si le preset est marque client-side (= appel LLM deleste au client).
+            # Utilise par /api/enhance/prepare pour decider du routage.
+            'is_client_side': bool(_row_get(preset, 'is_client_side', 0)),
+            'template_id': template_id,
+            'template_name': template_name,
+            'output_format': output_format,
+            'width': width,
+            'height': height,
+            'style_text': style_text,
+            'style_id': data.get('style_id'),
+            'negative_prompt': negative_prompt,
+            'merged_text': merged_text,
+            'model': model,
+            'validation_passes': validation_passes,
+            'validation_template_id': validation_template_id,
+            'validation_system_prompt': validation_system_prompt,
+            'validation_examples': validation_examples,
+            'debug_sections': debug_sections,
+        }
+    finally:
         conn.close()
-
-    ep_text = ', '.join(ep_keywords) if ep_keywords else ''
-
-    # Random elements : piocher depuis sections non encore utilisees
-    rand_keywords = []
-    if random_count > 0:
-        conn = get_db()
-        cur = conn.cursor()
-        # Trouver les sections deja utilisees
-        all_kw_text = (text + ' ' + ep_text).lower()
-        existing = []
-        for kw in all_kw_text.replace(',', ' ').split():
-            kw = kw.strip()
-            if len(kw) >= 3:
-                existing.append(kw)
-        if existing:
-            placeholders = ','.join('?' for _ in existing)
-            cur.execute(f"SELECT DISTINCT section_id FROM keywords WHERE LOWER(keyword) IN ({placeholders})", existing)
-            used_sections = {r[0] for r in cur.fetchall() if r[0]}
-        else:
-            used_sections = set()
-        # Piocher des keywords depuis des sections inutilisees
-        if used_sections:
-            ph = ','.join('?' for _ in used_sections)
-            cur.execute(f"SELECT keyword FROM keywords WHERE (section_id NOT IN ({ph}) OR section_id IS NULL) AND privacy_status = 'public' ORDER BY RANDOM() LIMIT ?", list(used_sections) + [random_count])
-        else:
-            cur.execute("SELECT keyword FROM keywords WHERE privacy_status = 'public' ORDER BY RANDOM() LIMIT ?", (random_count,))
-        rand_keywords = [r[0] for r in cur.fetchall()]
-        conn.close()
-
-    rand_text = ', '.join(rand_keywords) if rand_keywords else ''
-
-    # ── Branche specifique Ideogram 4 ─────────────────────────────
-    # Pour Ideogram 4 on structure l'entree en sections nommees
-    # (description generale + 4 elements + dimensions) au lieu du
-    # format avec priorites [PRIORITE ...] qui n'a pas de sens ici.
-    # ── Construction de l'entree utilisateur (genérique) ──────────
-    # Le template BDD definit le format exact (sections, priorites, etc.)
-    # via son system_prompt. On envoie le contenu brut a structurer.
-    merged_parts = []
-    if text:
-        merged_parts.append(text)
-    if ep_text:
-        merged_parts.append(ep_text)
-    if rand_text:
-        merged_parts.append(rand_text)
-    if style_text:
-        merged_parts.append("STYLE (must be preserved verbatim):\n" + style_text)
-    if special_instructions:
-        merged_parts.append("ADDITIONAL INSTRUCTIONS:\n" + special_instructions)
-    if width and height:
-        from math import gcd
-        g = gcd(width, height)
-        merged_parts.append(f"IMAGE DIMENSIONS: {width}x{height} pixels (aspect ratio: {width//g}:{height//g})")
-    # Les elements EP de type "text" sont les sujets principaux
-    named_elems = [e.get('text', '').strip() for e in ep_elements
-                   if e.get('type') == 'text' and e.get('text', '').strip()]
-    if named_elems:
-        elems_str = '\n'.join(f"  {i+1}. {desc}" for i, desc in enumerate(named_elems))
-        merged_parts.append(f"ELEMENTS TO PLACE IN THE SCENE:\n{elems_str}")
-    merged_text = '\n\n'.join(merged_parts)
-    if not merged_text.strip():
-        return jsonify({'error': 'Aucun contenu a generer'}), 400
-
-    # Recuperer le preset
-    conn = get_db()
-    preset = None
-    if preset_id:
-        preset = conn.execute("SELECT * FROM ai_presets WHERE id = ?", (preset_id,)).fetchone()
-    if not preset:
-        # Fallback : premier preset personnel dispo
-        preset = conn.execute(
-            "SELECT * FROM ai_presets WHERE user_id = ? OR is_global = 1 ORDER BY is_global DESC LIMIT 1",
-            (user_id,)
-        ).fetchone()
-    if not preset:
-        conn.close()
-        return jsonify({'error': 'Aucun preset IA configure. Cree un preset dans la configuration.'}), 400
-
-    api_key = decrypt_api_key(preset['api_key_encrypted'])
-    base_url = preset['base_url'].rstrip('/')
-    model = preset['model']
-    conn.close()
-    # Debug temporaire : tracer le preset utilise
-    logging.warning(f"[enhance] user={user_id} preset_id={preset['id']} name='{preset['name']}' is_global={preset['is_global']} model='{model}' base_url='{base_url}' api_key_len={len(api_key) if api_key else 0}")
-
-    # Construire le prompt systeme a partir du template selectionne
-    logging.warning(f"[enhance] template_id={template_id} name='{template_name}' output_format='{output_format}' found={'yes' if template_system_prompt else 'no'} sys_len={len(template_system_prompt)}")
-
-    system_parts = []
-
-    # 1) STYLE — tout en haut, imperatif
-    if style_text:
-        system_parts.append(f"""CRITICAL — STYLE PRESERVATION RULE
-You MUST preserve the following style in the output prompt, verbatim and unmodified:
-{style_text}
-
-This style is IMPERATIVE. Keep it exactly as written, do NOT rephrase or summarize it.""")
-
-    # 2) INSTRUCTIONS — system_prompt du template (doc, schema, tips, output format)
-    # Les exemples et les regles obligatoires sont geres separement ci-dessous.
-    if template_system_prompt and template_system_prompt.strip():
-        system_parts.append(template_system_prompt.strip())
-    else:
-        return jsonify({'error': f"Aucun template trouve pour template_id={template_id}. Cree un template dans l'onglet Templates."}), 400
-
-    # 3) EXAMPLES — injectes depuis le champ examples du template
-    if template_examples:
-        ex_list = '\n'.join(f'- {ex}' for ex in template_examples)
-        system_parts.append(f"""## Examples
-Here are well-structured examples for reference — study them but do NOT copy verbatim:
-{ex_list}""")
-
-    # 4) MANDATORY RULES — regles obligatoires, non visibles dans l'UI
-    system_parts.append("""Mandatory rules:
-- The assigned STYLE must be preserved exactly as-is
-- In case of conflict, prioritize: base prompt > elements > random
-- Remove duplicates
-- Organize by importance
-- DO NOT REPEAT the same tags/concepts
-- OUTPUT ONLY the prompt, nothing else: no explanations, no comments, no introductory sentences
-- The prompt must be ready to use in an image generator""")
-
-    # 5) Instructions speciales (toujours en dernier)
-    if special_instructions:
-        system_parts.append(f"Additional instructions: {special_instructions}")
-
-    system_prompt = '\n\n'.join(system_parts)
-
-    # Construire le payload LLM (format OpenAI standard pour /chat/completions)
-    llm_request = {
-        'model': model,
-        'messages': [
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': merged_text}
-        ],
-        'temperature': 0.3,
-        'frequency_penalty': 0.5,
-        'repeat_penalty': 1.2,
-    }
-    llm_config = {
-        'base_url': base_url,
-        'api_key': api_key,
-        'model': model,
-    }
-    # Debug : enregistrer la passe 1
-    debug_sections.append({
-        'title': 'Passe 1 : Generation',
-        'model': model,
-        'system_prompt': system_prompt[:2000],
-        'user_prompt': merged_text[:2000],
-        'temperature': llm_request['temperature'],
-    })
-
-    # ── Auto-critique : passes de validation (Ideogram 4 uniquement) ────
-    # Pour les autres types, pas de bbox/structure a valider, on garde 0.
-    validation_passes = int(data.get('validation_passes', 0))
-    validation_passes = max(0, min(validation_passes, 3))  # borne 0..3
-
-    # Charger le template de validation (optionnel, pour Ideogram 4 passe 2)
-    # Si validation_template_id est fourni, utilise son system_prompt.
-    # Sinon, garde le hardcodé (backward compatible).
-    validation_template_id = data.get('validation_template_id')
-    validation_system_prompt = ''
-    validation_examples = []
-    if validation_passes > 0 and validation_template_id:
-        conn = get_db()
-        val_row = conn.execute(
-            "SELECT system_prompt, examples FROM prompt_templates WHERE id = ?",
-            (int(validation_template_id),)
-        ).fetchone()
-        if val_row:
-            validation_system_prompt = val_row['system_prompt'] or ''
-            try:
-                validation_examples = json.loads(val_row['examples']) if val_row['examples'] else []
-            except Exception:
-                validation_examples = []
-        conn.close()
-
-    return {
-        # Identifiant unique de cette session de generation.
-        # En mode local (client-side), le caller doit conserver ce session_id
-        # pour le rappeler dans /api/enhance/finish.
-        'session_id': None,  # pas de session persistante en mode cloud (un seul appel HTTP)
-        'llm_request': llm_request,
-        'llm_config': llm_config,
-        # Metadata necessaires a _finish_enhance (tout ce qui n'est pas dans le payload LLM)
-        'user_id': user_id,
-        'preset_id': preset['id'],
-        'preset_name': preset['name'],
-        'is_global': preset['is_global'],
-        # Indique si le preset est marque client-side (= appel LLM deleste au client).
-        # Utilise par /api/enhance/prepare pour decider du routage.
-        'is_client_side': bool(_row_get(preset, 'is_client_side', 0)),
-        'template_id': template_id,
-        'template_name': template_name,
-        'output_format': output_format,
-        'width': width,
-        'height': height,
-        'style_text': style_text,
-        'style_id': data.get('style_id'),
-        'negative_prompt': negative_prompt,
-        'merged_text': merged_text,
-        'model': model,
-        'validation_passes': validation_passes,
-        'validation_template_id': validation_template_id,
-        'validation_system_prompt': validation_system_prompt,
-        'validation_examples': validation_examples,
-        'debug_sections': debug_sections,
-    }
 
 
 def _call_llm_internal(llm_request, llm_config):
@@ -1319,7 +1308,10 @@ def keywords_llm_process():
     max_context = None
     try:
         import requests as _req2
-        r2 = _req2.get(f'{base_url}/models', headers=llm_config.get('headers', {}), timeout=5)
+        r2_headers = {}
+        if api_key:
+            r2_headers['Authorization'] = f'Bearer {api_key}'
+        r2 = _req2.get(f'{base_url}/models', headers=r2_headers, timeout=5)
         if r2.ok:
             models_data = r2.json()
             all_models = models_data.get('data') or models_data.get('models') or []
