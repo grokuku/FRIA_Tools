@@ -224,10 +224,14 @@ def _init_db():
         ("reviewed_by", "NULL"),
         ("reviewed_at", "NULL"),
         ("review_notes", "NULL"),
-        ("created_at", "CURRENT_TIMESTAMP"),
     ]:
         if col not in cols_kw:
             conn.execute(f"ALTER TABLE keywords ADD COLUMN {col} TEXT DEFAULT {default}")
+
+    # created_at : SQLite n'accepte pas CURRENT_TIMESTAMP comme DEFAULT dans ALTER TABLE
+    if "created_at" not in cols_kw:
+        conn.execute("ALTER TABLE keywords ADD COLUMN created_at TEXT")
+        conn.execute("UPDATE keywords SET created_at = datetime('now') WHERE created_at IS NULL")
 
     cols_users = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
     for col, default in [("role", "'user'"), ("settings", "'{}'"), ("guild_nickname", "NULL"), ("api_token", "NULL")]:
