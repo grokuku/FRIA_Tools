@@ -272,6 +272,11 @@ def edit_or_delete_keyword(keyword_id):
     if privacy not in ('private', 'public_pending', 'public'):
         privacy = kw['privacy_status']
 
+    # Si un utilisateur non-éditeur modifie un keyword public,
+    # le repasser en public_pending pour re-modération
+    if is_owner and not is_editor and kw['privacy_status'] == 'public':
+        privacy = 'public_pending'
+
     # Vérifier doublon (sauf soi-même)
     cur.execute("SELECT id FROM keywords WHERE LOWER(keyword) = LOWER(?) AND id != ?", (keyword, keyword_id))
     if cur.fetchone():
