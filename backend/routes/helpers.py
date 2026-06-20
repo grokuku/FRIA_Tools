@@ -224,6 +224,7 @@ def _init_db():
         ("reviewed_by", "NULL"),
         ("reviewed_at", "NULL"),
         ("review_notes", "NULL"),
+        ("created_at", "CURRENT_TIMESTAMP"),
     ]:
         if col not in cols_kw:
             conn.execute(f"ALTER TABLE keywords ADD COLUMN {col} TEXT DEFAULT {default}")
