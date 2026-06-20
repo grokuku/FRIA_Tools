@@ -611,13 +611,13 @@ function kwLoadList() {
         authSel.value = authVal;
 
         // Charger les keywords
-        const list = document.getElementById('kw-list');
-        list.innerHTML = '<p class="text-xs text-slate-400">Chargement...</p>';
+        const tbody = document.getElementById('kw-table-body');
+        tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-4 text-center text-slate-400">Chargement...</td></tr>';
 
         fetch(API + '/keywords?' + params.toString())
             .then(r => r.json())
             .then(data => { renderKwList(data); })
-            .catch(() => { list.innerHTML = '<p class="text-xs text-rose-400">Erreur de chargement</p>'; });
+            .catch(() => { tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-4 text-center text-rose-400">Erreur de chargement</td></tr>'; });
     });
 
     // Vérifier le statut kw_editor
