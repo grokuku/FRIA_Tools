@@ -1860,8 +1860,9 @@ const Blobby = {
 
     _executeRemoteCommands(reply, callback) {
         // Execute les commandes distantes (GIT_CHECK, GIT_PULL, etc.)
+        // via le serveur ComfyUI local (/fr_ia/blobby/exec)
         // et appelle callback avec le reply mis a jour.
-        var baseUrl = (function(){ try { return JSON.parse(localStorage.getItem('FRIA_config'))?.serverUrl || 'https://kw.holaf.fr'; } catch { return 'https://kw.holaf.fr'; } })();
+        var localUrl = window.location.origin.replace(/\/+$/, '');
         var apiKey = (function(){ try { return JSON.parse(localStorage.getItem('FRIA_config'))?.apiKey || ''; } catch { return ''; } })();
         var headers = { 'Content-Type': 'application/json' };
         if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
@@ -1915,7 +1916,7 @@ const Blobby = {
             }
             var cmd = commands[idx];
             var placeholder = idx === 0 ? '⏳' : (idx === 1 ? '⏳' : ''); // on remplace par le resultat
-            fetch(baseUrl.replace(/\/+$/, '') + '/api/blobby/exec', {
+            fetch(localUrl + '/fr_ia/blobby/exec', {
                 method: 'POST',
                 headers: headers,
                 body: JSON.stringify({ action: cmd.action, target: cmd.target || '' })

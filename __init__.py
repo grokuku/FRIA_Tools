@@ -272,6 +272,120 @@ if _routes is not None and _update_manager_mod is not None:
     print("[FR.IA] Update routes registered: POST /fr_ia/update, /fr_ia/restart")
     print("[FR.IA] Credentials routes registered: GET/POST /fr_ia/credentials")
 
+    # ── Route Blobby Exec (commandes git locales) ─────────────
+    @_routes.post("/fr_ia/blobby/exec")
+    async def _fr_ia_blobby_exec_route(request):
+        """Execute une commande git locale sur la machine ComfyUI."""
+        import os as _os
+        import subprocess as _sp
+        try:
+            data = await request.json()
+            action = (data.get("action") or "").strip()
+            target = (data.get("target") or "").strip()
+
+            # Dossier de base (custom_nodes/ ou FRIA_Tools/)
+            _base_dir = _os.path.dirname(_os.path.abspath(__file__))
+            _custom_nodes_dir = _os.path.dirname(_base_dir) if _base_dir else ""
+
+            def _run_git(cwd, *args):
+                r = _sp.run(["git"] + list(args), cwd=cwd, capture_output=True, text=True, timeout=30)
+                out = r.stdout.strip()
+                if r.stderr: out += "\n" + r.stderr.strip()
+                if r.returncode != 0: out += f"\n❌ Code: {r.returncode}"
+                return out
+
+            def _find_git_repo(name):
+                """Cherche un dossier avec .git dans custom_nodes/."""
+                if not name: return None
+                for d in (_custom_nodes_dir, _base_dir):
+                    p = _os.path.join(d, name) if d != _base_dir else d
+                    if _os.path.isdir(_os.path.join(p, ".git")):
+                        return p
+                    # Chercher aussi dans custom_nodes/<name>/
+                    if _custom_nodes_dir:
+                        p2 = _os.path.join(_custom_nodes_dir, name)
+                        if _os.path.isdir(_os.path.join(p2, ".git")):
+                            return p2
+                return None
+
+            if action == "git_status":
+                path = _find_git_repo(target)
+                if not path: return _aio_web.json_response({"ok": False, "output": f"⚠️ Dossier '{target}' introuvable"})
+                branch = _run_git(path, "rev-parse", "--abbrev-ref", "HEAD")
+                status = _run_git(path, "status", "--short")
+                behind = "?"
+                try:
+                    b = _run_git(path, "rev-list", "--count", f"{branch}..origin/{branch}", "--")
+                    behind = int(b) if b.isdigit() else "?"
+                except: pass
+                ahead = "?"
+                try:
+                    a = _run_git(path, "rev-list", "--count", f"origin/{branch}..{branch}", "--")
+                    ahead = int(a) if a.isdigit() else "?"
+                except: pass
+                lines = [f"📁 **{target or _os.path.basename(path)}** (branche: {branch})"]
+                if behind not in (0, "?", 0): lines.append(f"  🔽 {behind} commit(s) derrière")
+                if ahead not in (0, "?", 0): lines.append(f"  🔼 {ahead} commit(s) devant")
+                if status: lines.append(f"  📝 Modifications locales:\n{status}")
+                if behind in (0, "?") and ahead in (0, "?") and not status: lines.append("  ✅ À jour, propre")
+                return _aio_web.json_response({"ok": True, "output": "\n".join(lines)})
+
+            elif action == "git_pull":
+                path = _find_git_repo(target)
+                if not path: return _aio_web.json_response({"ok": False, "output": f"⚠️ Dossier '{target}' introuvable"})
+                out = _run_git(path, "pull")
+                return _aio_web.json_response({"ok": True, "output": f"📥 **{target}**:\n{out}"})
+
+            elif action == "list_nodes":
+                if not _custom_nodes_dir or not _os.path.isdir(_custom_nodes_dir):
+                    return _aio_web.json_response({"ok": True, "output": "Aucun custom_nodes trouvé"})
+                results = []
+                for item in sorted(_os.listdir(_custom_nodes_dir)):
+                    d = _os.path.join(_custom_nodes_dir, item)
+                    if _os.path.isdir(_os.path.join(d, ".git")):
+                        try:
+                            b = _run_git(d, "rev-parse", "--abbrev-ref", "HEAD")
+                        except: b = "?"
+                        try:
+                            behind = _run_git(d, "rev-list", "--count", f"{b}..origin/{b}", "--").strip()
+                        except: behind = "?"
+                        icon = "🔴" if behind not in ("0", "?", "") else "🟢"
+                        results.append(f"  {icon} {item} ({b})")
+                txt = "📂 **Dépôts git:**\n" + "\n".join(results) if results else "Aucun node git trouvé"
+                return _aio_web.json_response({"ok": True, "output": txt})
+
+            elif action == "fria_version":
+                path = _find_git_repo("")
+                if not path: return _aio_web.json_response({"ok": False, "output": "⚠️ FRIA_Tools pas un dépôt git"})
+                branch = _run_git(path, "rev-parse", "--abbrev-ref", "HEAD")
+                log = _run_git(path, "log", "--oneline", "-5")
+                behind = "?"
+                try:
+                    b = _run_git(path, "rev-list", "--count", f"{branch}..origin/{branch}", "--").strip()
+                    behind = int(b) if b.isdigit() else "?"
+                except: pass
+                status = _run_git(path, "status", "--short")
+                lines = [f"🟢 **FR.IA** ({branch})"]
+                if behind not in (0, "?", 0): lines.append(f"  🔽 {behind} mise(s) à jour dispo")
+                if status: lines.append("  📝 Modifications locales")
+                lines.append(f"\nDerniers commits:\n{log}")
+                return _aio_web.json_response({"ok": True, "output": "\n".join(lines)})
+
+            elif action == "update_fria":
+                path = _find_git_repo("")
+                if not path: return _aio_web.json_response({"ok": False, "output": "⚠️ FRIA_Tools pas un dépôt git"})
+                out = _run_git(path, "pull")
+                return _aio_web.json_response({"ok": True, "output": f"📥 Mise à jour FR.IA:\n{out}"})
+
+            else:
+                return _aio_web.json_response({"ok": False, "output": f"Action '{action}' inconnue"}, status=400)
+
+        except Exception as e:
+            import traceback
+            return _aio_web.json_response({"ok": False, "output": f"❌ Erreur: {e}", "log": traceback.format_exc()}, status=500)
+
+    print("[FR.IA] Blobby exec route registered: POST /fr_ia/blobby/exec")
+
     # ── Route WebSocket Terminal (PAS DE MOT DE PASSE) ──────────────
     # Le widget FR.IA Terminal (fria_terminal_widget.js) ouvre un
     # WebSocket sur /fr_ia/terminal pour piloter un PTY distant.
