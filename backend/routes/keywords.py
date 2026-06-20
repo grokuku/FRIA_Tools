@@ -33,33 +33,62 @@ def list_or_create_keywords():
     section = request.args.get('section', '').strip()
     subsection = request.args.get('subsection', '').strip()
     nsfw_raw = request.args.get('nsfw', '').strip()
-    scope = request.args.get('scope', '').strip()  # 'mine' | 'public' | 'private' | 'pending' | '' (tout visible)
+    scope = request.args.get('scope', '').strip()  # backward compat ('mine' | 'public' | 'private' | 'pending')
     author = request.args.get('author', '').strip()  # user_id de l'auteur
+    # Nouveaux filtres checkbox (combinables)
+    privacy_filter = request.args.get('privacy', '').strip()  # comma-separated: 'public,private,pending'
+    mine_only = request.args.get('mine', '').strip()  # '1' = mes keywords uniquement
 
     conditions = ["1=1"]
     params = []
 
-    # Filtre privacy
-    privacy_where, privacy_params = _privacy_filter(user_id)
-    conditions.append(privacy_where)
-    params.extend(privacy_params)
+    # Filtre privacy de base (visibilité selon le rôle)
+    base_privacy_where, base_privacy_params = _privacy_filter(user_id)
+    conditions.append(base_privacy_where)
+    params.extend(base_privacy_params)
 
-    # Filtre scope
-    if scope == 'mine':
-        conditions.append("k.user_id = ?")
-        params.append(user_id)
-    elif scope == 'public':
-        conditions.append("k.privacy_status = 'public'")
-    elif scope == 'private':
-        conditions.append("k.privacy_status = 'private'")
-        conditions.append("k.user_id = ?")
-        params.append(user_id)
-    elif scope == 'pending':
-        # En attente : kw_editor/admin voit tous les pending, les autres voient les leurs
-        conditions.append("k.privacy_status = 'public_pending'")
-        if not is_kw_editor(user_id):
+    # Filtre scope (backward compat) OU nouveaux filtres checkbox
+    if scope:
+        # Ancien mode : scope unique
+        if scope == 'mine':
             conditions.append("k.user_id = ?")
             params.append(user_id)
+        elif scope == 'public':
+            conditions.append("k.privacy_status = 'public'")
+        elif scope == 'private':
+            conditions.append("k.privacy_status = 'private'")
+            conditions.append("k.user_id = ?")
+            params.append(user_id)
+        elif scope == 'pending':
+            conditions.append("k.privacy_status = 'public_pending'")
+            if not is_kw_editor(user_id):
+                conditions.append("k.user_id = ?")
+                params.append(user_id)
+    else:
+        # Nouveau mode : checkboxes combinables
+        if mine_only == '1':
+            conditions.append("k.user_id = ?")
+            params.append(user_id)
+        if privacy_filter:
+            statuses = [s.strip() for s in privacy_filter.split(',') if s.strip()]
+            # Sécuriser les valeurs
+            valid_statuses = [s for s in statuses if s in ('public', 'private', 'public_pending')]
+            if valid_statuses:
+                # Pour 'private' et 'pending', restreindre aux propres keywords si non éditeur
+                if not is_kw_editor(user_id):
+                    valid_statuses = [s for s in valid_statuses if s == 'public']
+                    if not valid_statuses:
+                        # Non-éditeur ne peut voir private/pending que si ce sont les siens
+                        conditions.append("(k.privacy_status = 'public' OR k.user_id = ?)")
+                        params.append(user_id)
+                    else:
+                        placeholders = ','.join('?' for _ in valid_statuses)
+                        conditions.append(f"k.privacy_status IN ({placeholders})")
+                        params.extend(valid_statuses)
+                else:
+                    placeholders = ','.join('?' for _ in valid_statuses)
+                    conditions.append(f"k.privacy_status IN ({placeholders})")
+                    params.extend(valid_statuses)
 
     # Filtre par auteur
     if author:

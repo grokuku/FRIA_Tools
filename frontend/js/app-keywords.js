@@ -523,10 +523,24 @@ function kwModalOnSubsectionChange() {
 
 function kwLoadList() {
     const search = document.getElementById('kw-filter-search').value.trim();
-    const scope = document.getElementById('kw-filter-scope').value;
     const section = document.getElementById('kw-filter-section').value;
-    const nsfw = document.getElementById('kw-filter-nsfw').value;
     const author = document.getElementById('kw-filter-author').value;
+
+    // Checkboxes NSFW
+    var sfwChecked = document.getElementById('kw-filter-sfw').checked;
+    var nsfwChecked = document.getElementById('kw-filter-nsfw').checked;
+    var nsfwParam = '';
+    if (sfwChecked && !nsfwChecked) nsfwParam = '0';
+    else if (!sfwChecked && nsfwChecked) nsfwParam = '1';
+    // both checked or both unchecked = no filter
+
+    // Checkboxes privacy/scope
+    var privacyParts = [];
+    if (document.getElementById('kw-filter-public').checked) privacyParts.push('public');
+    if (document.getElementById('kw-filter-private').checked) privacyParts.push('private');
+    if (document.getElementById('kw-filter-pending').checked) privacyParts.push('public_pending');
+    var privacyParam = privacyParts.join(',');
+    var mineParam = document.getElementById('kw-filter-mine').checked ? '1' : '';
 
     // Réinitialiser la sélection
     kwSelectedIds.clear();
@@ -536,10 +550,11 @@ function kwLoadList() {
 
     const params = new URLSearchParams();
     if (search) params.append('q', search);
-    if (scope) params.append('scope', scope);
     if (section) params.append('section', section);
-    if (nsfw !== '') params.append('nsfw', nsfw);
+    if (nsfwParam !== '') params.append('nsfw', nsfwParam);
     if (author) params.append('author', author);
+    if (privacyParam) params.append('privacy', privacyParam);
+    if (mineParam) params.append('mine', mineParam);
 
     // Charger les sections + sous-sections + auteurs pour les filtres/datalists
     Promise.all([
@@ -2020,7 +2035,9 @@ function _showScanResults(html) {
 // ── Export ──────────────────────────────────────────────────────
 
 function kwExport() {
-    const scope = document.getElementById('kw-filter-scope').value || 'public';
+    // Utiliser les checkboxes pour déterminer le scope d'export
+    var mineOnly = document.getElementById('kw-filter-mine').checked;
+    var scope = mineOnly ? 'mine' : 'public';
     window.open(API + '/keywords/export?scope=' + scope, '_blank');
 }
 
