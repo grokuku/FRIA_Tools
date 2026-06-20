@@ -428,6 +428,103 @@ let kwEditingId = null;
 let kwSelectedIds = new Set();
 let kwLastClickedId = null;
 let kwCurrentList = [];
+let _kwSectionsCache = [];
+let _kwSubsectionsCache = [];
+
+// ── Combobox section/subsection : auto-ID ──
+
+function _romanToNum(s) {
+    var roman = {'I':1,'V':5,'X':10,'L':50,'C':100,'D':500,'M':1000};
+    var n = 0;
+    for (var i = 0; i < s.length; i++) {
+        var cur = roman[s[i]] || 0;
+        var next = roman[s[i+1]] || 0;
+        if (cur < next) n -= cur; else n += cur;
+    }
+    return n;
+}
+
+function _numToRoman(num) {
+    var vals = [1000,900,500,400,100,90,50,40,10,9,5,4,1];
+    var syms = ['M','CM','D','CD','C','XC','L','XL','X','IX','V','IV','I'];
+    var r = '';
+    for (var i = 0; i < vals.length; i++) {
+        while (num >= vals[i]) { r += syms[i]; num -= vals[i]; }
+    }
+    return r;
+}
+
+function kwOnSectionChange() {
+    var title = document.getElementById('kw-form-section').value.trim();
+    var idEl = document.getElementById('kw-form-section-id');
+    var titleEl = document.getElementById('kw-form-section-title');
+    if (!title) { idEl.value = ''; titleEl.value = ''; return; }
+    // Chercher une section existante avec ce titre
+    var found = _kwSectionsCache.find(function(s) { return s.section_title.toLowerCase() === title.toLowerCase(); });
+    if (found) {
+        idEl.value = found.section_id;
+        titleEl.value = found.section_title;
+    } else {
+        // Nouvelle section : auto-générer l'ID (max roman + 1)
+        var maxNum = 0;
+        _kwSectionsCache.forEach(function(s) {
+            var n = _romanToNum(s.section_id);
+            if (n > maxNum) maxNum = n;
+        });
+        idEl.value = _numToRoman(maxNum + 1);
+        titleEl.value = title;
+    }
+    // Rafraîchir le datalist des sous-sections pour cette section
+    kwRefreshSubsectionCombo(idEl.value);
+}
+
+function kwRefreshSubsectionCombo(sectionId) {
+    var dl = document.getElementById('kw-subsection-combo');
+    dl.innerHTML = '';
+    var subs = sectionId
+        ? _kwSubsectionsCache.filter(function(s) { return s.subsection_id && s.subsection_id.startsWith(sectionId + '.'); })
+        : _kwSubsectionsCache;
+    subs.forEach(function(sub) {
+        var opt = document.createElement('option');
+        opt.value = sub.subsection_title;
+        opt.textContent = sub.subsection_id + ' — ' + sub.subsection_title;
+        dl.appendChild(opt);
+    });
+}
+
+function kwOnSubsectionChange() {
+    var title = document.getElementById('kw-form-subsection').value.trim();
+    var idEl = document.getElementById('kw-form-subsection-id');
+    var titleEl = document.getElementById('kw-form-subsection-title');
+    var sectionId = document.getElementById('kw-form-section-id').value;
+    if (!title) { idEl.value = ''; titleEl.value = ''; return; }
+    // Chercher une sous-section existante
+    var found = _kwSubsectionsCache.find(function(s) {
+        return s.subsection_title.toLowerCase() === title.toLowerCase() &&
+               (!sectionId || (s.subsection_id && s.subsection_id.startsWith(sectionId + '.')));
+    });
+    if (found) {
+        idEl.value = found.subsection_id;
+        titleEl.value = found.subsection_title;
+    } else if (sectionId) {
+        // Nouvelle sous-section : auto-générer l'ID (section_id + .X)
+        var existing = _kwSubsectionsCache.filter(function(s) {
+            return s.subsection_id && s.subsection_id.startsWith(sectionId + '.');
+        });
+        var nextLetter = 'A';
+        if (existing.length > 0) {
+            var lastLetter = existing.map(function(s) {
+                return s.subsection_id.split('.')[1] || 'A';
+            }).sort().pop();
+            nextLetter = String.fromCharCode(lastLetter.charCodeAt(0) + 1);
+        }
+        idEl.value = sectionId + '.' + nextLetter;
+        titleEl.value = title;
+    } else {
+        idEl.value = '';
+        titleEl.value = title;
+    }
+}
 
 function kwLoadList() {
     const search = document.getElementById('kw-filter-search').value.trim();
@@ -461,12 +558,13 @@ function kwLoadList() {
             });
             sel.value = currentVal;
 
-            // Peupler les datalists section + sous-section
-            var dlSection = document.getElementById('kw-section-list');
+            // Peupler les datalists combobox (section + sous-section)
+            _kwSectionsCache = sections;
+            var dlSection = document.getElementById('kw-section-combo');
             dlSection.innerHTML = '';
-            sections.forEach(s => {
+            sections.forEach(function(s) {
                 var opt = document.createElement('option');
-                opt.value = s.section_id;
+                opt.value = s.section_title;
                 opt.textContent = s.section_id + '. ' + s.section_title;
                 dlSection.appendChild(opt);
             });
@@ -474,11 +572,12 @@ function kwLoadList() {
             fetch(API + '/subsections')
                 .then(r => r.json())
                 .then(subs => {
-                    var dlSub = document.getElementById('kw-subsection-list');
+                    _kwSubsectionsCache = subs;
+                    var dlSub = document.getElementById('kw-subsection-combo');
                     dlSub.innerHTML = '';
-                    subs.forEach(sub => {
+                    subs.forEach(function(sub) {
                         var opt = document.createElement('option');
-                        opt.value = sub.subsection_id;
+                        opt.value = sub.subsection_title;
                         opt.textContent = sub.subsection_id + ' — ' + sub.subsection_title;
                         dlSub.appendChild(opt);
                     });
@@ -685,8 +784,13 @@ function kwEdit(kw) {
     document.getElementById('kw-form-title').textContent = '✎ Modifier ' + esc(kw.keyword);
     document.getElementById('kw-form-keyword').value = kw.keyword || '';
     document.getElementById('kw-form-desc').value = kw.description || '';
+    // Section : afficher le titre, stocker l'ID dans le hidden
+    document.getElementById('kw-form-section').value = kw.section_title || '';
     document.getElementById('kw-form-section-id').value = kw.section_id || '';
     document.getElementById('kw-form-section-title').value = kw.section_title || '';
+    if (kw.section_id) kwRefreshSubsectionCombo(kw.section_id);
+    // Sous-section : afficher le titre, stocker l'ID dans le hidden
+    document.getElementById('kw-form-subsection').value = kw.subsection_title || '';
     document.getElementById('kw-form-subsection-id').value = kw.subsection_id || '';
     document.getElementById('kw-form-subsection-title').value = kw.subsection_title || '';
     document.getElementById('kw-form-nsfw').checked = !!kw.nsfw;
@@ -700,8 +804,10 @@ function kwAddNew() {
     document.getElementById('kw-form-title').textContent = 'Nouveau mot-clé';
     document.getElementById('kw-form-keyword').value = '';
     document.getElementById('kw-form-desc').value = '';
+    document.getElementById('kw-form-section').value = '';
     document.getElementById('kw-form-section-id').value = '';
     document.getElementById('kw-form-section-title').value = '';
+    document.getElementById('kw-form-subsection').value = '';
     document.getElementById('kw-form-subsection-id').value = '';
     document.getElementById('kw-form-subsection-title').value = '';
     document.getElementById('kw-form-nsfw').checked = false;
@@ -1788,14 +1894,21 @@ async function _pendingBulkReview(action) {
     var errors = 0;
     for (var i = 0; i < ids.length; i++) {
         try {
+            var body = {action: action, notes: notes};
+            // Si approve : collecter les edits de la carte
+            if (action === 'approve') {
+                var edits = _pendingCollectEdits(ids[i]);
+                if (edits) body.edits = edits;
+            }
             var res = await fetch(API + '/keywords/' + ids[i] + '/review', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({action: action, notes: notes})
+                body: JSON.stringify(body)
             });
             var data = await safeJson(res);
             if (res.ok) {
                 done++;
+                delete _pendingFieldStore[ids[i]];
                 var tr = document.getElementById('kw-pending-row-' + ids[i]);
                 if (tr) {
                     tr.style.transition = 'opacity 0.3s';
@@ -1847,9 +1960,9 @@ async function kwLoadPending() {
         _pendingData = data;
         list.innerHTML = '';
 
-        // Toolbar : select all/none/invert + bulk actions
+        // Toolbar : bulk actions
         var toolbar = document.createElement('div');
-        toolbar.className = 'flex items-center gap-1.5 mb-2 flex-wrap';
+        toolbar.className = 'flex items-center gap-1.5 mb-2 flex-wrap shrink-0';
 
         function mkBtn(text, cls, fn) {
             var b = document.createElement('button');
@@ -1875,59 +1988,218 @@ async function kwLoadPending() {
 
         list.appendChild(toolbar);
 
-        // Lignes
+        // Cartes éditables
         data.forEach(function(kw) {
-            var row = document.createElement('div');
-            row.id = 'kw-pending-row-' + kw.id;
-            row.className = 'flex items-center gap-1.5 p-1.5 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-xs cursor-pointer select-none';
-            row.onclick = function(e) { _pendingToggle(kw.id, e); };
+            var card = document.createElement('div');
+            card.id = 'kw-pending-row-' + kw.id;
+            card.className = 'p-2 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-xs cursor-pointer select-none';
+            card.onclick = function(e) { if (e.target === card || e.target.tagName === 'STRONG' || e.target.tagName === 'SPAN') _pendingToggle(kw.id, e); };
 
+            // En-tête : checkbox + créateur
+            var header = document.createElement('div');
+            header.className = 'flex items-center gap-1.5 mb-1.5';
             var cb = document.createElement('input');
             cb.type = 'checkbox';
             cb.className = 'kw-pending-cb shrink-0';
             cb.onclick = function(e) { e.stopPropagation(); _pendingToggle(kw.id, e); };
-
+            header.appendChild(cb);
             var label = document.createElement('span');
-            label.className = 'flex-1';
-            label.innerHTML = '<strong>' + esc(kw.keyword) + '</strong> <span class="text-slate-400">par ' + esc(kw.creator_name || '?') + '</span>';
+            label.className = 'flex-1 text-slate-400 text-[10px]';
+            label.textContent = 'par ' + (kw.creator_name || '?');
+            header.appendChild(label);
 
-            var editBtn = document.createElement('button');
-            editBtn.textContent = '✎';
-            editBtn.className = 'px-1.5 py-0.5 text-xs border border-slate-300 rounded hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700';
-            editBtn.title = 'Voir/Modifier';
-            editBtn.onclick = function(e) {
-                e.stopPropagation();
-                kwEdit(kw);
-                document.getElementById('kw-form-keyword').scrollIntoView({behavior: 'smooth'});
-            };
+            // Boutons individuels
+            var indApprove = document.createElement('button');
+            indApprove.textContent = '✅';
+            indApprove.className = 'px-1.5 py-0.5 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-500';
+            indApprove.title = 'Valider';
+            indApprove.onclick = function(e) { e.stopPropagation(); _pendingReviewOne(kw.id, 'approve'); };
+            header.appendChild(indApprove);
 
-            var approveBtn = document.createElement('button');
-            approveBtn.textContent = '✅';
-            approveBtn.className = 'px-1.5 py-0.5 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-500';
-            approveBtn.title = 'Valider';
-            approveBtn.onclick = function(e) {
-                e.stopPropagation();
-                _pendingSelected.clear();
-                _pendingSelected.add(kw.id);
-                _pendingBulkReview('approve');
-            };
+            var indReject = document.createElement('button');
+            indReject.textContent = '❌';
+            indReject.className = 'px-1.5 py-0.5 text-xs bg-rose-600 text-white rounded hover:bg-rose-500';
+            indReject.title = 'Rejeter';
+            indReject.onclick = function(e) { e.stopPropagation(); _pendingReviewOne(kw.id, 'reject'); };
+            header.appendChild(indReject);
 
-            var rejectBtn = document.createElement('button');
-            rejectBtn.textContent = '❌';
-            rejectBtn.className = 'px-1.5 py-0.5 text-xs bg-rose-600 text-white rounded hover:bg-rose-500';
-            rejectBtn.title = 'Rejeter';
-            rejectBtn.onclick = function(e) {
-                e.stopPropagation();
-                _pendingSelected.clear();
-                _pendingSelected.add(kw.id);
-                _pendingBulkReview('reject');
-            };
+            card.appendChild(header);
 
-            row.append(cb, label, editBtn, approveBtn, rejectBtn);
-            list.appendChild(row);
+            // Champs éditables
+            var grid = document.createElement('div');
+            grid.className = 'grid grid-cols-2 gap-1.5';
+
+            // Keyword
+            var kwInput = document.createElement('input');
+            kwInput.type = 'text';
+            kwInput.value = kw.keyword || '';
+            kwInput.placeholder = 'Mot-clé';
+            kwInput.className = 'col-span-2 px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
+            kwInput.dataset.field = 'keyword';
+            kwInput.onclick = function(e) { e.stopPropagation(); };
+            grid.appendChild(kwInput);
+
+            // Description
+            var descInput = document.createElement('textarea');
+            descInput.rows = 2;
+            descInput.value = kw.description || '';
+            descInput.placeholder = 'Description';
+            descInput.className = 'col-span-2 px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
+            descInput.dataset.field = 'description';
+            descInput.style.resize = 'vertical';
+            descInput.onclick = function(e) { e.stopPropagation(); };
+            grid.appendChild(descInput);
+
+            // Section (combobox)
+            var secInput = document.createElement('input');
+            secInput.type = 'text';
+            secInput.value = kw.section_title || '';
+            secInput.placeholder = 'Section';
+            secInput.className = 'px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
+            secInput.dataset.field = 'section_title';
+            secInput.onclick = function(e) { e.stopPropagation(); };
+            secInput.onchange = function() { _pendingAutoSection(kw.id, secInput.value); };
+            grid.appendChild(secInput);
+
+            // Subsection (combobox)
+            var subInput = document.createElement('input');
+            subInput.type = 'text';
+            subInput.value = kw.subsection_title || '';
+            subInput.placeholder = 'Sous-section';
+            subInput.className = 'px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
+            subInput.dataset.field = 'subsection_title';
+            subInput.onclick = function(e) { e.stopPropagation(); };
+            subInput.onchange = function() { _pendingAutoSubsection(kw.id, subInput.value); };
+            grid.appendChild(subInput);
+
+            // NSFW
+            var nsfwLabel = document.createElement('label');
+            nsfwLabel.className = 'flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 col-span-2';
+            var nsfwCb = document.createElement('input');
+            nsfwCb.type = 'checkbox';
+            nsfwCb.checked = !!kw.nsfw;
+            nsfwCb.className = 'rounded';
+            nsfwCb.dataset.field = 'nsfw';
+            nsfwCb.onclick = function(e) { e.stopPropagation(); };
+            nsfwLabel.appendChild(nsfwCb);
+            nsfwLabel.appendChild(document.createTextNode(' NSFW'));
+            grid.appendChild(nsfwLabel);
+
+            card.appendChild(grid);
+            list.appendChild(card);
         });
     } catch (e) {
         list.innerHTML = '<p class="text-xs text-rose-400">Erreur: ' + e.message + '</p>';
+    }
+}
+
+// ── Helpers pending : auto-ID pour section/subsection ──
+
+function _pendingAutoSection(kwId, title) {
+    if (!title) return;
+    var found = _kwSectionsCache.find(function(s) { return s.section_title.toLowerCase() === title.toLowerCase(); });
+    if (found) {
+        _pendingSetField(kwId, 'section_id', found.section_id);
+        _pendingSetField(kwId, 'section_title', found.section_title);
+    } else {
+        var maxNum = 0;
+        _kwSectionsCache.forEach(function(s) { var n = _romanToNum(s.section_id); if (n > maxNum) maxNum = n; });
+        _pendingSetField(kwId, 'section_id', _numToRoman(maxNum + 1));
+        _pendingSetField(kwId, 'section_title', title.trim());
+    }
+}
+
+function _pendingAutoSubsection(kwId, title) {
+    if (!title) return;
+    var card = document.getElementById('kw-pending-row-' + kwId);
+    if (!card) return;
+    // Récupérer la section actuelle
+    var secInput = card.querySelector('[data-field="section_title"]');
+    var secTitle = secInput ? secInput.value.trim() : '';
+    var secFound = _kwSectionsCache.find(function(s) { return s.section_title.toLowerCase() === secTitle.toLowerCase(); });
+    var sectionId = secFound ? secFound.section_id : _pendingGetField(kwId, 'section_id');
+    var found = _kwSubsectionsCache.find(function(s) {
+        return s.subsection_title.toLowerCase() === title.toLowerCase() &&
+               (!sectionId || (s.subsection_id && s.subsection_id.startsWith(sectionId + '.')));
+    });
+    if (found) {
+        _pendingSetField(kwId, 'subsection_id', found.subsection_id);
+        _pendingSetField(kwId, 'subsection_title', found.subsection_title);
+    } else if (sectionId) {
+        var existing = _kwSubsectionsCache.filter(function(s) { return s.subsection_id && s.subsection_id.startsWith(sectionId + '.'); });
+        var nextLetter = 'A';
+        if (existing.length > 0) {
+            var lastLetter = existing.map(function(s) { return s.subsection_id.split('.')[1] || 'A'; }).sort().pop();
+            nextLetter = String.fromCharCode(lastLetter.charCodeAt(0) + 1);
+        }
+        _pendingSetField(kwId, 'subsection_id', sectionId + '.' + nextLetter);
+        _pendingSetField(kwId, 'subsection_title', title.trim());
+    } else {
+        _pendingSetField(kwId, 'subsection_title', title.trim());
+    }
+}
+
+// Stockage des IDs auto-déterminés pour les cartes pending
+var _pendingFieldStore = {};
+
+function _pendingSetField(kwId, field, value) {
+    if (!_pendingFieldStore[kwId]) _pendingFieldStore[kwId] = {};
+    _pendingFieldStore[kwId][field] = value;
+}
+
+function _pendingGetField(kwId, field) {
+    return (_pendingFieldStore[kwId] || {})[field] || '';
+}
+
+// Récupère les valeurs éditées d'une carte pending
+function _pendingCollectEdits(kwId) {
+    var card = document.getElementById('kw-pending-row-' + kwId);
+    if (!card) return null;
+    var edits = {};
+    card.querySelectorAll('[data-field]').forEach(function(el) {
+        var field = el.dataset.field;
+        if (el.type === 'checkbox') edits[field] = el.checked ? 1 : 0;
+        else edits[field] = el.value.trim();
+    });
+    // Fusionner avec les IDs auto-déterminés
+    var stored = _pendingFieldStore[kwId] || {};
+    if (stored.section_id) edits.section_id = stored.section_id;
+    if (stored.section_title) edits.section_title = stored.section_title;
+    if (stored.subsection_id) edits.subsection_id = stored.subsection_id;
+    if (stored.subsection_title) edits.subsection_title = stored.subsection_title;
+    // Si section_title est vide mais qu'on a un ID stocké, récupérer le titre
+    if (!edits.section_title && stored.section_id) {
+        var sec = _kwSectionsCache.find(function(s) { return s.section_id === stored.section_id; });
+        if (sec) edits.section_title = sec.section_title;
+    }
+    return edits;
+}
+
+// Valider/rejeter un seul keyword (avec edits)
+async function _pendingReviewOne(kwId, action) {
+    var edits = action === 'approve' ? _pendingCollectEdits(kwId) : null;
+    try {
+        var body = {action: action};
+        if (edits) body.edits = edits;
+        var res = await fetch(API + '/keywords/' + kwId + '/review', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        if (res.ok) {
+            var card = document.getElementById('kw-pending-row-' + kwId);
+            if (card) { card.style.transition = 'opacity 0.3s'; card.style.opacity = '0'; setTimeout(function() { if (card.parentNode) card.remove(); }, 300); }
+            _pendingData = _pendingData.filter(function(kw) { return kw.id !== kwId; });
+            delete _pendingFieldStore[kwId];
+            kwLoadList();
+            if (_pendingData.length === 0) {
+                document.getElementById('kw-pending-list').innerHTML = '<p class="text-xs text-slate-400">Rien en attente ✅</p>';
+            }
+        } else {
+            showModal('Erreur', 'Échec de la validation', 'error');
+        }
+    } catch(e) {
+        showModal('Erreur', e.message, 'error');
     }
 }
 

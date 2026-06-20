@@ -289,6 +289,20 @@ def review_keyword(keyword_id):
         conn.close()
         return jsonify({'error': 'Ce mot-clé n\'est pas en attente de modération'}), 400
 
+    # Si des champs édités sont fournis, on met à jour le keyword avant de valider/rejeter
+    edit_fields = data.get('edits')
+    if edit_fields and isinstance(edit_fields, dict):
+        updates = []
+        params = []
+        for field in ('keyword', 'description', 'section_id', 'section_title',
+                      'subsection_id', 'subsection_title', 'nsfw'):
+            if field in edit_fields:
+                updates.append(f"{field} = ?")
+                params.append(edit_fields[field])
+        if updates:
+            params.append(keyword_id)
+            cur.execute(f"UPDATE keywords SET {', '.join(updates)} WHERE id = ?", params)
+
     new_status = 'public' if action == 'approve' else 'private'
 
     cur.execute("""
