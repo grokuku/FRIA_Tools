@@ -768,9 +768,15 @@ function renderKwList(keywords) {
         cb.type = 'checkbox';
         cb.checked = isSelected;
         cb.className = 'kw-row-cb cursor-pointer rounded';
-        cb.onchange = function(e) { e.stopPropagation(); kwToggleSelection(kw.id, e); };
+        cb.onclick = function(e) { e.stopPropagation(); kwToggleSelection(kw.id, e); };
         tdCb.appendChild(cb);
         tr.appendChild(tdCb);
+
+        // Row click for shift+click selection (ignorer les inputs/boutons)
+        tr.onclick = function(e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'BUTTON') return;
+            kwToggleSelection(kw.id, e);
+        };
 
         // ── Col 1: Keyword ──
         var tdKw = document.createElement('td');

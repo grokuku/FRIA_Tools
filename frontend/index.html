@@ -776,18 +776,18 @@
             <button onclick="kwBulkDelete()" id="kw-btn-bulk-delete" class="ml-auto px-2 py-0.5 text-[10px] font-medium bg-rose-600 text-white rounded hover:bg-rose-500 transition">🗑 Supprimer (0)</button>
         </div>
         <!-- Liste principale (pleine largeur, tableau redimensionnable) -->
-        <div id="kw-list" class="flex-1 overflow-auto px-4 pb-4">
-          <table id="kw-table" class="w-full text-xs border-collapse">
-            <thead>
-              <tr id="kw-table-header-row" class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-                <th class="px-1 py-1 text-center w-8 relative">☐</th>
-                <th class="px-2 py-1 text-left relative" style="width:160px">Keyword</th>
-                <th class="px-2 py-1 text-left relative" style="width:280px">Description</th>
-                <th class="px-2 py-1 text-left relative" style="width:120px">Section</th>
-                <th class="px-2 py-1 text-left relative" style="width:120px">Sous-section</th>
-                <th class="px-1 py-1 text-center relative" style="width:50px">NSFW</th>
-                <th class="px-1 py-1 text-center relative" style="width:60px">Statut</th>
-                <th class="px-1 py-1 text-center relative" style="width:90px">Actions</th>
+        <div id="kw-list" class="flex-1 overflow-auto pb-4">
+          <table id="kw-table" class="w-full text-xs border-collapse table-fixed">
+            <thead class="sticky top-0 z-10">
+              <tr id="kw-table-header-row" class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shadow-sm">
+                <th class="px-1 py-1.5 text-center w-8 relative" style="width:32px">☐</th>
+                <th class="px-2 py-1.5 text-left relative" style="width:160px">Keyword</th>
+                <th class="px-2 py-1.5 text-left relative" style="width:280px">Description</th>
+                <th class="px-2 py-1.5 text-left relative" style="width:120px">Section</th>
+                <th class="px-2 py-1.5 text-left relative" style="width:120px">Sous-section</th>
+                <th class="px-1 py-1.5 text-center relative" style="width:50px">NSFW</th>
+                <th class="px-1 py-1.5 text-center relative" style="width:60px">Statut</th>
+                <th class="px-1 py-1.5 text-center relative" style="width:90px">Actions</th>
               </tr>
             </thead>
             <tbody id="kw-table-body"></tbody>

@@ -307,9 +307,10 @@
     .dark .modal-close:hover { color: var(--text-primary); background: var(--border); }
     th:not(:last-child), td:not(:last-child) { border-color: var(--border); }
     .dark th:not(:last-child), .dark td:not(:last-child) { border-color: var(--border); }
-    .col-resize-handle::before { background: var(--text-secondary); }
-    .dark .col-resize-handle::before { background: var(--text-secondary); }
-    .col-resize-handle:hover::before, .col-resize-handle:active::before { background: var(--accent); }
+    .col-resize-handle { position: absolute; top: 0; right: -2px; width: 4px; height: 100%; cursor: col-resize; z-index: 10; }
+    .col-resize-handle::before { content: ''; position: absolute; top: 0; left: 1px; width: 2px; height: 100%; background: var(--text-secondary); opacity: 0.3; }
+    .dark .col-resize-handle::before { background: var(--text-secondary); opacity: 0.3; }
+    .col-resize-handle:hover::before, .col-resize-handle:active::before { background: var(--accent); opacity: 1; }
     #divider-v:hover { background: var(--accent); opacity: 0.3; }
     .dark #divider-v:hover { background: var(--accent); opacity: 0.5; }
     #divider-h:hover { background: var(--accent); opacity: 0.3; }
