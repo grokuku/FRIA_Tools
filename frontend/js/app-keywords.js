@@ -430,8 +430,11 @@ let kwLastClickedId = null;
 let kwCurrentList = [];
 let _kwSectionsCache = [];
 let _kwSubsectionsCache = [];
+let _kwExpandedId = null;
+let isKwEditor = false;
+let _kwAuthorsCache = [];
 
-// ── Combobox section/subsection : auto-ID ──
+// ── Roman numeral helpers for auto section IDs ──
 
 function _romanToNum(s) {
     var roman = {'I':1,'V':5,'X':10,'L':50,'C':100,'D':500,'M':1000};
@@ -454,32 +457,39 @@ function _numToRoman(num) {
     return r;
 }
 
-function kwOnSectionChange() {
-    var title = document.getElementById('kw-form-section').value.trim();
-    var idEl = document.getElementById('kw-form-section-id');
-    var titleEl = document.getElementById('kw-form-section-title');
-    if (!title) { idEl.value = ''; titleEl.value = ''; return; }
-    // Chercher une section existante avec ce titre
+// ── Section/subsection combobox logic ──
+
+function _resolveSectionId(title) {
+    if (!title) return {id: '', title: ''};
     var found = _kwSectionsCache.find(function(s) { return s.section_title.toLowerCase() === title.toLowerCase(); });
-    if (found) {
-        idEl.value = found.section_id;
-        titleEl.value = found.section_title;
-    } else {
-        // Nouvelle section : auto-générer l'ID (max roman + 1)
-        var maxNum = 0;
-        _kwSectionsCache.forEach(function(s) {
-            var n = _romanToNum(s.section_id);
-            if (n > maxNum) maxNum = n;
-        });
-        idEl.value = _numToRoman(maxNum + 1);
-        titleEl.value = title;
+    if (found) return {id: found.section_id, title: found.section_title};
+    var maxNum = 0;
+    _kwSectionsCache.forEach(function(s) { var n = _romanToNum(s.section_id); if (n > maxNum) maxNum = n; });
+    return {id: _numToRoman(maxNum + 1), title: title.trim()};
+}
+
+function _resolveSubsectionId(title, sectionId) {
+    if (!title) return {id: '', title: ''};
+    var found = _kwSubsectionsCache.find(function(s) {
+        return s.subsection_title.toLowerCase() === title.toLowerCase() &&
+               (!sectionId || (s.subsection_id && s.subsection_id.startsWith(sectionId + '.')));
+    });
+    if (found) return {id: found.subsection_id, title: found.subsection_title};
+    if (sectionId) {
+        var existing = _kwSubsectionsCache.filter(function(s) { return s.subsection_id && s.subsection_id.startsWith(sectionId + '.'); });
+        var nextLetter = 'A';
+        if (existing.length > 0) {
+            var lastLetter = existing.map(function(s) { return s.subsection_id.split('.')[1] || 'A'; }).sort().pop();
+            nextLetter = String.fromCharCode(lastLetter.charCodeAt(0) + 1);
+        }
+        return {id: sectionId + '.' + nextLetter, title: title.trim()};
     }
-    // Rafraîchir le datalist des sous-sections pour cette section
-    kwRefreshSubsectionCombo(idEl.value);
+    return {id: '', title: title.trim()};
 }
 
 function kwRefreshSubsectionCombo(sectionId) {
     var dl = document.getElementById('kw-subsection-combo');
+    if (!dl) return;
     dl.innerHTML = '';
     var subs = sectionId
         ? _kwSubsectionsCache.filter(function(s) { return s.subsection_id && s.subsection_id.startsWith(sectionId + '.'); })
@@ -492,49 +502,37 @@ function kwRefreshSubsectionCombo(sectionId) {
     });
 }
 
-function kwOnSubsectionChange() {
-    var title = document.getElementById('kw-form-subsection').value.trim();
-    var idEl = document.getElementById('kw-form-subsection-id');
-    var titleEl = document.getElementById('kw-form-subsection-title');
-    var sectionId = document.getElementById('kw-form-section-id').value;
-    if (!title) { idEl.value = ''; titleEl.value = ''; return; }
-    // Chercher une sous-section existante
-    var found = _kwSubsectionsCache.find(function(s) {
-        return s.subsection_title.toLowerCase() === title.toLowerCase() &&
-               (!sectionId || (s.subsection_id && s.subsection_id.startsWith(sectionId + '.')));
-    });
-    if (found) {
-        idEl.value = found.subsection_id;
-        titleEl.value = found.subsection_title;
-    } else if (sectionId) {
-        // Nouvelle sous-section : auto-générer l'ID (section_id + .X)
-        var existing = _kwSubsectionsCache.filter(function(s) {
-            return s.subsection_id && s.subsection_id.startsWith(sectionId + '.');
-        });
-        var nextLetter = 'A';
-        if (existing.length > 0) {
-            var lastLetter = existing.map(function(s) {
-                return s.subsection_id.split('.')[1] || 'A';
-            }).sort().pop();
-            nextLetter = String.fromCharCode(lastLetter.charCodeAt(0) + 1);
-        }
-        idEl.value = sectionId + '.' + nextLetter;
-        titleEl.value = title;
-    } else {
-        idEl.value = '';
-        titleEl.value = title;
-    }
+// ── Modale combobox handlers ──
+
+function kwModalOnSectionChange() {
+    var title = document.getElementById('kw-modal-section').value.trim();
+    var res = _resolveSectionId(title);
+    document.getElementById('kw-modal-section-id').value = res.id;
+    document.getElementById('kw-modal-section-title').value = res.title;
+    kwRefreshSubsectionCombo(res.id);
 }
+
+function kwModalOnSubsectionChange() {
+    var title = document.getElementById('kw-modal-subsection').value.trim();
+    var sectionId = document.getElementById('kw-modal-section-id').value;
+    var res = _resolveSubsectionId(title, sectionId);
+    document.getElementById('kw-modal-subsection-id').value = res.id;
+    document.getElementById('kw-modal-subsection-title').value = res.title;
+}
+
+// ── Data loading ──
 
 function kwLoadList() {
     const search = document.getElementById('kw-filter-search').value.trim();
     const scope = document.getElementById('kw-filter-scope').value;
     const section = document.getElementById('kw-filter-section').value;
     const nsfw = document.getElementById('kw-filter-nsfw').value;
+    const author = document.getElementById('kw-filter-author').value;
 
     // Réinitialiser la sélection
     kwSelectedIds.clear();
     kwLastClickedId = null;
+    _kwExpandedId = null;
     kwUpdateSelectUI();
 
     const params = new URLSearchParams();
@@ -542,63 +540,77 @@ function kwLoadList() {
     if (scope) params.append('scope', scope);
     if (section) params.append('section', section);
     if (nsfw !== '') params.append('nsfw', nsfw);
+    if (author) params.append('author', author);
 
-    // Charger les sections pour le dropdown
-    fetch(API + '/sections')
-        .then(r => r.json())
-        .then(sections => {
-            const sel = document.getElementById('kw-filter-section');
-            const currentVal = sel.value;
-            sel.innerHTML = '<option value="">Toutes sections</option>';
-            sections.forEach(s => {
-                const opt = document.createElement('option');
-                opt.value = s.section_id;
-                opt.textContent = s.section_id + '. ' + s.section_title;
-                sel.appendChild(opt);
-            });
-            sel.value = currentVal;
+    // Charger les sections + sous-sections + auteurs pour les filtres/datalists
+    Promise.all([
+        fetch(API + '/sections').then(r => r.json()).catch(() => []),
+        fetch(API + '/subsections').then(r => r.json()).catch(() => []),
+        fetch(API + '/keywords/authors').then(r => r.json()).catch(() => [])
+    ]).then(([sections, subs, authors]) => {
+        _kwSectionsCache = sections;
+        _kwSubsectionsCache = subs;
+        _kwAuthorsCache = authors;
 
-            // Peupler les datalists combobox (section + sous-section)
-            _kwSectionsCache = sections;
-            var dlSection = document.getElementById('kw-section-combo');
-            dlSection.innerHTML = '';
-            sections.forEach(function(s) {
-                var opt = document.createElement('option');
-                opt.value = s.section_title;
-                opt.textContent = s.section_id + '. ' + s.section_title;
-                dlSection.appendChild(opt);
-            });
-            // Charger les sous-sections pour le datalist
-            fetch(API + '/subsections')
-                .then(r => r.json())
-                .then(subs => {
-                    _kwSubsectionsCache = subs;
-                    var dlSub = document.getElementById('kw-subsection-combo');
-                    dlSub.innerHTML = '';
-                    subs.forEach(function(sub) {
-                        var opt = document.createElement('option');
-                        opt.value = sub.subsection_title;
-                        opt.textContent = sub.subsection_id + ' — ' + sub.subsection_title;
-                        dlSub.appendChild(opt);
-                    });
-                }).catch(() => {});
-        }).catch(() => {});
+        // Dropdown sections
+        const secSel = document.getElementById('kw-filter-section');
+        const secVal = secSel.value;
+        secSel.innerHTML = '<option value="">Toutes sections</option>';
+        sections.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.section_id;
+            opt.textContent = s.section_id + '. ' + s.section_title;
+            secSel.appendChild(opt);
+        });
+        secSel.value = secVal;
 
-    const list = document.getElementById('kw-list');
-    list.innerHTML = '<p class="text-xs text-slate-400">Chargement...</p>';
-
-    fetch(API + '/keywords?' + params.toString())
-        .then(r => r.json())
-        .then(data => {
-            renderKwList(data);
-        })
-        .catch(() => {
-            list.innerHTML = '<p class="text-xs text-rose-400">Erreur de chargement</p>';
+        // Datalist section combobox (for modal)
+        var dlSec = document.getElementById('kw-section-combo');
+        dlSec.innerHTML = '';
+        sections.forEach(function(s) {
+            var opt = document.createElement('option');
+            opt.value = s.section_title;
+            opt.textContent = s.section_id + '. ' + s.section_title;
+            dlSec.appendChild(opt);
         });
 
-    // Vérifier si l'utilisateur est KW editor pour afficher le bouton pending
+        // Datalist subsection combobox
+        var dlSub = document.getElementById('kw-subsection-combo');
+        dlSub.innerHTML = '';
+        subs.forEach(function(sub) {
+            var opt = document.createElement('option');
+            opt.value = sub.subsection_title;
+            opt.textContent = sub.subsection_id + ' — ' + sub.subsection_title;
+            dlSub.appendChild(opt);
+        });
+
+        // Dropdown authors
+        const authSel = document.getElementById('kw-filter-author');
+        const authVal = authSel.value;
+        authSel.innerHTML = '<option value="">Tous auteurs</option>';
+        authors.forEach(a => {
+            const opt = document.createElement('option');
+            opt.value = a.user_id;
+            opt.textContent = a.display_name || a.username || a.user_id;
+            authSel.appendChild(opt);
+        });
+        authSel.value = authVal;
+
+        // Charger les keywords
+        const list = document.getElementById('kw-list');
+        list.innerHTML = '<p class="text-xs text-slate-400">Chargement...</p>';
+
+        fetch(API + '/keywords?' + params.toString())
+            .then(r => r.json())
+            .then(data => { renderKwList(data); })
+            .catch(() => { list.innerHTML = '<p class="text-xs text-rose-400">Erreur de chargement</p>'; });
+    });
+
+    // Vérifier le statut kw_editor
     checkKwEditorStatus();
 }
+
+// ── Render : liste compacte avec édition inline ──
 
 function renderKwList(keywords) {
     const list = document.getElementById('kw-list');
@@ -611,71 +623,382 @@ function renderKwList(keywords) {
     document.getElementById('kw-select-toolbar').classList.remove('hidden');
     list.innerHTML = '';
     keywords.forEach(kw => {
-        const privacyIcon = kw.privacy_status === 'public' ? '🌐' : (kw.privacy_status === 'public_pending' ? '🟡' : '🔒');
-        const nsfwBadge = kw.nsfw ? '<span class="text-rose-400 text-[10px]">NSFW</span>' : '';
-        const ownerLabel = kw.user_id ? '' : '<span class="text-[10px] text-slate-400">[global]</span>';
-        const preview = (kw.description || '').substring(0, 60);
-        const isSelected = kwSelectedIds.has(kw.id);
-
         const row = document.createElement('div');
-        row.className = 'flex items-center gap-1.5 p-1.5 rounded transition text-xs cursor-pointer';
-        if (isSelected) {
-            row.className += ' bg-indigo-100 dark:bg-indigo-900/40 ring-1 ring-indigo-300 dark:ring-indigo-700';
-        } else {
-            row.className += ' hover:bg-slate-100 dark:hover:bg-slate-700/50';
-        }
         row.dataset.kwId = kw.id;
+        row.className = 'mb-0.5 rounded border border-transparent transition';
+
+        // Compact line
+        const line = document.createElement('div');
+        line.className = 'flex items-center gap-1.5 px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700/50 cursor-pointer text-xs transition';
+        const isSelected = kwSelectedIds.has(kw.id);
+        if (isSelected) line.className += ' bg-indigo-100 dark:bg-indigo-900/40';
 
         // Checkbox
         const cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.checked = isSelected;
         cb.className = 'kw-row-cb shrink-0 cursor-pointer';
-        cb.dataset.kwId = kw.id;
         cb.onchange = function(e) { e.stopPropagation(); kwToggleSelection(kw.id, e); };
-        row.appendChild(cb);
+        line.appendChild(cb);
 
-        row.innerHTML += '<span class="text-xs">' + privacyIcon + '</span>'
-            + '<span class="flex-1 min-w-0"><strong class="text-slate-800 dark:text-slate-200">' + esc(kw.keyword) + '</strong>'
-            + ' <span class="text-slate-400">' + esc(preview) + (preview.length >= 60 ? '...' : '') + '</span>'
-            + '</span>'
-            + nsfwBadge + ' ' + ownerLabel;
+        // Privacy icon
+        const pIcon = kw.privacy_status === 'public' ? '🌐' : (kw.privacy_status === 'public_pending' ? '🟡' : '🔒');
+        line.innerHTML += '<span class="text-xs shrink-0">' + pIcon + '</span>';
 
-        // Click sur la ligne : sélection (pas édition directe)
-        row.onclick = function(e) { kwToggleSelection(kw.id, e); };
+        // Keyword + description (compact)
+        const preview = (kw.description || '').substring(0, 50);
+        line.innerHTML += '<span class="flex-1 min-w-0"><strong class="text-slate-800 dark:text-slate-200">' + esc(kw.keyword) + '</strong>'
+            + ' <span class="text-slate-400">' + esc(preview) + (preview.length >= 50 ? '…' : '') + '</span></span>';
 
-        // Boutons actions
-        const actions = document.createElement('div');
-        actions.className = 'flex gap-1 shrink-0';
+        // Section badge
+        if (kw.section_id) {
+            line.innerHTML += '<span class="text-[10px] text-slate-400 shrink-0 hidden sm:inline">' + esc(kw.section_id) + '</span>';
+        }
+        // NSFW badge
+        if (kw.nsfw) line.innerHTML += '<span class="text-rose-400 text-[10px] shrink-0">NSFW</span>';
 
+        // Edit button
         const editBtn = document.createElement('button');
         editBtn.textContent = '✎';
-        editBtn.className = 'text-slate-400 hover:text-indigo-500 p-0.5 text-xs';
+        editBtn.className = 'text-slate-400 hover:text-indigo-500 p-0.5 text-xs shrink-0';
         editBtn.title = 'Éditer';
-        editBtn.onclick = function(e) { e.stopPropagation(); kwEdit(kw); };
-        actions.appendChild(editBtn);
+        editBtn.onclick = function(e) { e.stopPropagation(); kwExpandRow(kw.id); };
+        line.appendChild(editBtn);
 
-        const delBtn = document.createElement('button');
-        delBtn.textContent = '🗑';
-        delBtn.className = 'text-slate-400 hover:text-rose-500 p-0.5 text-xs';
-        delBtn.title = 'Supprimer';
-        delBtn.onclick = function(e) { e.stopPropagation(); kwDelete(kw.id); };
-        actions.appendChild(delBtn);
+        // If pending: approve/reject buttons
+        if (kw.privacy_status === 'public_pending' && isKwEditor) {
+            const apBtn = document.createElement('button');
+            apBtn.textContent = '✅';
+            apBtn.className = 'text-xs px-1 py-0.5 bg-emerald-600 text-white rounded hover:bg-emerald-500 shrink-0';
+            apBtn.title = 'Valider';
+            apBtn.onclick = function(e) { e.stopPropagation(); kwQuickReview(kw.id, 'approve'); };
+            line.appendChild(apBtn);
 
-        row.appendChild(actions);
+            const rjBtn = document.createElement('button');
+            rjBtn.textContent = '❌';
+            rjBtn.className = 'text-xs px-1 py-0.5 bg-rose-600 text-white rounded hover:bg-rose-500 shrink-0';
+            rjBtn.title = 'Rejeter';
+            rjBtn.onclick = function(e) { e.stopPropagation(); kwQuickReview(kw.id, 'reject'); };
+            line.appendChild(rjBtn);
+        }
+
+        row.appendChild(line);
+
+        // Expanded edit panel (hidden by default)
+        const editPanel = document.createElement('div');
+        editPanel.id = 'kw-edit-panel-' + kw.id;
+        editPanel.className = 'hidden p-3 bg-slate-50 dark:bg-slate-800/50 rounded-b border border-slate-200 dark:border-slate-700 space-y-2';
+        row.appendChild(editPanel);
+
         list.appendChild(row);
     });
     kwUpdateSelectUI();
 }
 
-// ── Multi-sélection ─────────────────────────────────────────────
+// ── Inline edit : expand/collapse ──
+
+function kwExpandRow(kwId) {
+    // Collapse previous
+    if (_kwExpandedId && _kwExpandedId !== kwId) kwCollapseRow(_kwExpandedId);
+
+    var kw = kwCurrentList.find(function(k) { return k.id === kwId; });
+    if (!kw) return;
+
+    var panel = document.getElementById('kw-edit-panel-' + kwId);
+    if (!panel) return;
+
+    // Check permissions: owner or kw_editor/admin
+    var canEdit = (kw.user_id === (currentUser ? currentUser.id : '')) || isKwEditor;
+
+    // Build edit form
+    panel.innerHTML = '';
+
+    var grid = document.createElement('div');
+    grid.className = 'grid grid-cols-1 gap-2';
+
+    // Keyword + Description
+    var kwInput = document.createElement('input');
+    kwInput.type = 'text';
+    kwInput.value = kw.keyword || '';
+    kwInput.placeholder = 'Mot-clé';
+    kwInput.className = 'w-full px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
+    kwInput.id = 'kw-inline-keyword-' + kwId;
+    kwInput.disabled = !canEdit;
+    grid.appendChild(kwInput);
+
+    var descInput = document.createElement('textarea');
+    descInput.rows = 2;
+    descInput.value = kw.description || '';
+    descInput.placeholder = 'Description';
+    descInput.className = 'w-full px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
+    descInput.style.resize = 'vertical';
+    descInput.id = 'kw-inline-desc-' + kwId;
+    descInput.disabled = !canEdit;
+    grid.appendChild(descInput);
+
+    // Section + Subsection comboboxes
+    var flexDiv = document.createElement('div');
+    flexDiv.className = 'flex gap-2';
+
+    var secDiv = document.createElement('div');
+    secDiv.className = 'flex-1';
+    secDiv.innerHTML = '<label class="text-[10px] text-slate-400">Section</label>';
+    var secInput = document.createElement('input');
+    secInput.type = 'text';
+    secInput.value = kw.section_title || '';
+    secInput.placeholder = 'Section';
+    secInput.setAttribute('list', 'kw-section-combo');
+    secInput.className = 'w-full px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
+    secInput.id = 'kw-inline-section-' + kwId;
+    secInput.disabled = !canEdit;
+    secInput.onchange = function() {
+        var res = _resolveSectionId(secInput.value.trim());
+        document.getElementById('kw-inline-section-id-' + kwId).value = res.id;
+        document.getElementById('kw-inline-section-title-' + kwId).value = res.title;
+        kwRefreshSubsectionCombo(res.id);
+    };
+    secDiv.appendChild(secInput);
+    var secIdHidden = document.createElement('input');
+    secIdHidden.type = 'hidden';
+    secIdHidden.value = kw.section_id || '';
+    secIdHidden.id = 'kw-inline-section-id-' + kwId;
+    secDiv.appendChild(secIdHidden);
+    var secTitleHidden = document.createElement('input');
+    secTitleHidden.type = 'hidden';
+    secTitleHidden.value = kw.section_title || '';
+    secTitleHidden.id = 'kw-inline-section-title-' + kwId;
+    secDiv.appendChild(secTitleHidden);
+    flexDiv.appendChild(secDiv);
+
+    var subDiv = document.createElement('div');
+    subDiv.className = 'flex-1';
+    subDiv.innerHTML = '<label class="text-[10px] text-slate-400">Sous-section</label>';
+    var subInput = document.createElement('input');
+    subInput.type = 'text';
+    subInput.value = kw.subsection_title || '';
+    subInput.placeholder = 'Sous-section';
+    subInput.setAttribute('list', 'kw-subsection-combo');
+    subInput.className = 'w-full px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
+    subInput.id = 'kw-inline-subsection-' + kwId;
+    subInput.disabled = !canEdit;
+    subInput.onchange = function() {
+        var sectionId = document.getElementById('kw-inline-section-id-' + kwId).value;
+        var res = _resolveSubsectionId(subInput.value.trim(), sectionId);
+        document.getElementById('kw-inline-subsection-id-' + kwId).value = res.id;
+        document.getElementById('kw-inline-subsection-title-' + kwId).value = res.title;
+    };
+    subDiv.appendChild(subInput);
+    var subIdHidden = document.createElement('input');
+    subIdHidden.type = 'hidden';
+    subIdHidden.value = kw.subsection_id || '';
+    subIdHidden.id = 'kw-inline-subsection-id-' + kwId;
+    subDiv.appendChild(subIdHidden);
+    var subTitleHidden = document.createElement('input');
+    subTitleHidden.type = 'hidden';
+    subTitleHidden.value = kw.subsection_title || '';
+    subTitleHidden.id = 'kw-inline-subsection-title-' + kwId;
+    subDiv.appendChild(subTitleHidden);
+    flexDiv.appendChild(subDiv);
+
+    grid.appendChild(flexDiv);
+
+    // NSFW + Privacy
+    var optDiv = document.createElement('div');
+    optDiv.className = 'flex items-center gap-4';
+    var nsfwLabel = document.createElement('label');
+    nsfwLabel.className = 'inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400';
+    var nsfwCb = document.createElement('input');
+    nsfwCb.type = 'checkbox';
+    nsfwCb.checked = !!kw.nsfw;
+    nsfwCb.className = 'rounded';
+    nsfwCb.id = 'kw-inline-nsfw-' + kwId;
+    nsfwCb.disabled = !canEdit;
+    nsfwLabel.appendChild(nsfwCb);
+    nsfwLabel.appendChild(document.createTextNode(' NSFW'));
+    optDiv.appendChild(nsfwLabel);
+
+    var privSel = document.createElement('select');
+    privSel.className = 'text-xs px-2 py-1 border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
+    privSel.id = 'kw-inline-privacy-' + kwId;
+    privSel.disabled = !canEdit;
+    privSel.innerHTML = '<option value="private">🔒 Privé</option><option value="public_pending">🟡 Public (pending)</option><option value="public">🌐 Public</option>';
+    privSel.value = kw.privacy_status || 'private';
+    if (!isKwEditor) privSel.querySelector('option[value="public"]').disabled = true;
+    optDiv.appendChild(privSel);
+
+    grid.appendChild(optDiv);
+    panel.appendChild(grid);
+
+    // Action buttons
+    var btnDiv = document.createElement('div');
+    btnDiv.className = 'flex gap-2 pt-1';
+
+    if (canEdit) {
+        var saveBtn = document.createElement('button');
+        saveBtn.textContent = '✅ Sauvegarder';
+        saveBtn.className = 'px-3 py-1 text-xs font-medium bg-indigo-600 text-white rounded hover:bg-indigo-500 transition';
+        saveBtn.onclick = function() { kwInlineSave(kwId); };
+        btnDiv.appendChild(saveBtn);
+    }
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.textContent = '✕ Fermer';
+    cancelBtn.className = 'px-3 py-1 text-xs text-slate-500 hover:text-slate-700 border border-slate-300 rounded transition';
+    cancelBtn.onclick = function() { kwCollapseRow(kwId); };
+    btnDiv.appendChild(cancelBtn);
+
+    // Delete button (owner or admin)
+    var isOwner = (kw.user_id === (currentUser ? currentUser.id : ''));
+    if (isOwner || isKwEditor) {
+        var delBtn = document.createElement('button');
+        delBtn.textContent = '🗑 Supprimer';
+        delBtn.className = 'ml-auto px-3 py-1 text-xs font-medium bg-rose-600 text-white rounded hover:bg-rose-500 transition';
+        delBtn.onclick = function() { kwDelete(kwId); };
+        btnDiv.appendChild(delBtn);
+    }
+
+    // Pending review buttons
+    if (kw.privacy_status === 'public_pending' && isKwEditor) {
+        var approveBtn = document.createElement('button');
+        approveBtn.textContent = '✅ Valider';
+        approveBtn.className = 'px-3 py-1 text-xs font-medium bg-emerald-600 text-white rounded hover:bg-emerald-500 transition';
+        approveBtn.onclick = function() { kwInlineReview(kwId, 'approve'); };
+        btnDiv.appendChild(approveBtn);
+
+        var rejectBtn = document.createElement('button');
+        rejectBtn.textContent = '❌ Rejeter';
+        rejectBtn.className = 'px-3 py-1 text-xs font-medium bg-rose-600 text-white rounded hover:bg-rose-500 transition';
+        rejectBtn.onclick = function() { kwInlineReview(kwId, 'reject'); };
+        btnDiv.appendChild(rejectBtn);
+    }
+
+    panel.appendChild(btnDiv);
+
+    // Show panel
+    panel.classList.remove('hidden');
+    _kwExpandedId = kwId;
+
+    // Highlight the row
+    var row = panel.parentNode;
+    row.classList.add('border-slate-300', 'dark:border-slate-600');
+
+    // Refresh subsection combo for current section
+    if (kw.section_id) kwRefreshSubsectionCombo(kw.section_id);
+}
+
+function kwCollapseRow(kwId) {
+    var panel = document.getElementById('kw-edit-panel-' + kwId);
+    if (panel) panel.classList.add('hidden');
+    var row = panel ? panel.parentNode : null;
+    if (row) row.classList.remove('border-slate-300', 'dark:border-slate-600');
+    if (_kwExpandedId === kwId) _kwExpandedId = null;
+}
+
+// ── Inline save ──
+
+async function kwInlineSave(kwId) {
+    var keyword = document.getElementById('kw-inline-keyword-' + kwId).value.trim();
+    var description = document.getElementById('kw-inline-desc-' + kwId).value.trim();
+    var section_id = document.getElementById('kw-inline-section-id-' + kwId).value.trim();
+    var section_title = document.getElementById('kw-inline-section-title-' + kwId).value.trim();
+    var subsection_id = document.getElementById('kw-inline-subsection-id-' + kwId).value.trim();
+    var subsection_title = document.getElementById('kw-inline-subsection-title-' + kwId).value.trim();
+    var nsfw = document.getElementById('kw-inline-nsfw-' + kwId).checked ? 1 : 0;
+    var privacy = document.getElementById('kw-inline-privacy-' + kwId).value;
+
+    if (!keyword || !description) {
+        showModal('Erreur', 'Mot-clé et description requis', 'error');
+        return;
+    }
+
+    try {
+        var res = await fetch(API + '/keywords/' + kwId, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({keyword, description, section_id, section_title, subsection_id, subsection_title, nsfw, privacy_status: privacy})
+        });
+        var data = await safeJson(res);
+        if (!res.ok) { showModal('Erreur', data.error || 'Erreur', 'error'); return; }
+        showModal('Succès', 'Mot-clé mis à jour', 'success');
+        kwCollapseRow(kwId);
+        kwLoadList();
+    } catch(e) { showModal('Erreur', e.message, 'error'); }
+}
+
+// ── Quick review (approve/reject without editing) ──
+
+async function kwQuickReview(kwId, action) {
+    try {
+        var res = await fetch(API + '/keywords/' + kwId + '/review', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: action})
+        });
+        if (res.ok) {
+            showModal('Succès', action === 'approve' ? 'Mot-clé validé' : 'Mot-clé rejeté', 'success');
+            kwLoadList();
+        } else {
+            var data = await safeJson(res);
+            showModal('Erreur', data.error || 'Erreur', 'error');
+        }
+    } catch(e) { showModal('Erreur', e.message, 'error'); }
+}
+
+// ── Inline review (approve with edits) ──
+
+async function kwInlineReview(kwId, action) {
+    var edits = {};
+    var kwEl = document.getElementById('kw-inline-keyword-' + kwId);
+    if (!kwEl) { kwQuickReview(kwId, action); return; }
+    edits.keyword = kwEl.value.trim();
+    edits.description = document.getElementById('kw-inline-desc-' + kwId).value.trim();
+    edits.section_id = document.getElementById('kw-inline-section-id-' + kwId).value.trim();
+    edits.section_title = document.getElementById('kw-inline-section-title-' + kwId).value.trim();
+    edits.subsection_id = document.getElementById('kw-inline-subsection-id-' + kwId).value.trim();
+    edits.subsection_title = document.getElementById('kw-inline-subsection-title-' + kwId).value.trim();
+    edits.nsfw = document.getElementById('kw-inline-nsfw-' + kwId).checked ? 1 : 0;
+
+    try {
+        var body = {action: action};
+        if (action === 'approve') body.edits = edits;
+        var res = await fetch(API + '/keywords/' + kwId + '/review', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        if (res.ok) {
+            showModal('Succès', action === 'approve' ? 'Mot-clé validé et mis à jour' : 'Mot-clé rejeté', 'success');
+            kwLoadList();
+        } else {
+            var data = await safeJson(res);
+            showModal('Erreur', data.error || 'Erreur', 'error');
+        }
+    } catch(e) { showModal('Erreur', e.message, 'error'); }
+}
+
+// ── Delete ──
+
+async function kwDelete(id) {
+    showConfirm('Confirmer', 'Supprimer ce mot-clé ?', async function(ok) {
+        if (!ok) return;
+        try {
+            var res = await fetch(API + '/keywords/' + id, { method: 'DELETE' });
+            var data = await safeJson(res);
+            if (!res.ok) { showModal('Erreur', data.error || 'Erreur', 'error'); return; }
+            showModal('Succès', 'Mot-clé supprimé', 'success');
+            kwCollapseRow(id);
+            kwLoadList();
+        } catch(e) { showModal('Erreur', e.message, 'error'); }
+    });
+}
+
+// ── Multi-selection ──
 
 function kwToggleSelection(id, event) {
     var isCtrl = event && (event.ctrlKey || event.metaKey);
     var isShift = event && event.shiftKey;
 
     if (isShift && kwLastClickedId !== null) {
-        // Shift+click : sélection de la plage
         var ids = kwCurrentList.map(function(k) { return k.id; });
         var startIdx = ids.indexOf(kwLastClickedId);
         var endIdx = ids.indexOf(id);
@@ -683,40 +1006,30 @@ function kwToggleSelection(id, event) {
         var from = Math.min(startIdx, endIdx);
         var to = Math.max(startIdx, endIdx);
         if (!isCtrl) kwSelectedIds.clear();
-        for (var i = from; i <= to; i++) {
-            kwSelectedIds.add(ids[i]);
-        }
+        for (var i = from; i <= to; i++) kwSelectedIds.add(ids[i]);
     } else if (isCtrl) {
-        // Ctrl+click : toggle
         if (kwSelectedIds.has(id)) kwSelectedIds.delete(id);
         else kwSelectedIds.add(id);
     } else {
-        // Click simple : sélection unique
-        if (kwSelectedIds.size === 1 && kwSelectedIds.has(id)) {
-            kwSelectedIds.clear();
-        } else {
-            kwSelectedIds.clear();
-            kwSelectedIds.add(id);
-        }
+        if (kwSelectedIds.size === 1 && kwSelectedIds.has(id)) kwSelectedIds.clear();
+        else { kwSelectedIds.clear(); kwSelectedIds.add(id); }
     }
     kwLastClickedId = id;
     kwRenderSelection();
 }
 
 function kwRenderSelection() {
-    var rows = document.querySelectorAll('#kw-list > div[data-kw-id]');
-    var isDark = document.documentElement.classList.contains('dark');
-    rows.forEach(function(row) {
-        var id = parseInt(row.dataset.kwId);
+    kwCurrentList.forEach(function(kw) {
+        var row = document.querySelector('[data-kw-id="' + kw.id + '"] > div:first-child');
+        if (!row) return;
         var cb = row.querySelector('.kw-row-cb');
-        var selected = kwSelectedIds.has(id);
+        var selected = kwSelectedIds.has(kw.id);
         if (cb) cb.checked = selected;
         if (selected) {
-            row.className = row.className.replace(/hover:bg-slate-100 dark:hover:bg-slate-700\/50/g, '');
-            row.classList.add('bg-indigo-100', 'dark:bg-indigo-900/40', 'ring-1', 'ring-indigo-300', 'dark:ring-indigo-700');
+            row.classList.add('bg-indigo-100', 'dark:bg-indigo-900/40');
             row.classList.remove('hover:bg-slate-100', 'dark:hover:bg-slate-700/50');
         } else {
-            row.classList.remove('bg-indigo-100', 'dark:bg-indigo-900/40', 'ring-1', 'ring-indigo-300', 'dark:ring-indigo-700');
+            row.classList.remove('bg-indigo-100', 'dark:bg-indigo-900/40');
             row.classList.add('hover:bg-slate-100', 'dark:hover:bg-slate-700/50');
         }
     });
@@ -747,9 +1060,7 @@ function kwSelectNone() {
 
 function kwSelectInverse() {
     var newSel = new Set();
-    kwCurrentList.forEach(function(k) {
-        if (!kwSelectedIds.has(k.id)) newSel.add(k.id);
-    });
+    kwCurrentList.forEach(function(k) { if (!kwSelectedIds.has(k.id)) newSel.add(k.id); });
     kwSelectedIds = newSel;
     kwRenderSelection();
 }
@@ -759,169 +1070,143 @@ async function kwBulkDelete() {
     if (ids.length === 0) return;
     showConfirm('Confirmer', 'Supprimer ' + ids.length + ' mot' + (ids.length > 1 ? 's' : '') + '-clé' + (ids.length > 1 ? 's' : '') + ' ?', async function(ok) {
         if (!ok) return;
-        var deleted = 0;
-        var errors = [];
+        var deleted = 0, errors = 0;
         for (var i = 0; i < ids.length; i++) {
             try {
                 var res = await fetch(API + '/keywords/' + ids[i], { method: 'DELETE' });
-                if (res.ok) deleted++;
-                else errors.push(ids[i]);
-            } catch(e) { errors.push(ids[i]); }
+                if (res.ok) deleted++; else errors++;
+            } catch(e) { errors++; }
         }
         kwSelectedIds.clear();
-        if (errors.length > 0) {
-            showModal('Résultat', deleted + ' supprimé(s), ' + errors.length + ' erreur(s)', 'warning');
-        } else {
-            showModal('Succès', deleted + ' mot' + (deleted > 1 ? 's' : '') + '-clé' + (deleted > 1 ? 's' : '') + ' supprimé' + (deleted > 1 ? 's' : ''), 'success');
-        }
-        if (kwEditingId && ids.includes(kwEditingId)) kwAddNew();
+        if (errors > 0) showModal('Résultat', deleted + ' supprimé(s), ' + errors + ' erreur(s)', 'warning');
+        else showModal('Succès', deleted + ' mot-clé supprimé(s)', 'success');
         kwLoadList();
     });
 }
 
-function kwEdit(kw) {
-    kwEditingId = kw.id;
-    document.getElementById('kw-form-title').textContent = '✎ Modifier ' + esc(kw.keyword);
-    document.getElementById('kw-form-keyword').value = kw.keyword || '';
-    document.getElementById('kw-form-desc').value = kw.description || '';
-    // Section : afficher le titre, stocker l'ID dans le hidden
-    document.getElementById('kw-form-section').value = kw.section_title || '';
-    document.getElementById('kw-form-section-id').value = kw.section_id || '';
-    document.getElementById('kw-form-section-title').value = kw.section_title || '';
-    if (kw.section_id) kwRefreshSubsectionCombo(kw.section_id);
-    // Sous-section : afficher le titre, stocker l'ID dans le hidden
-    document.getElementById('kw-form-subsection').value = kw.subsection_title || '';
-    document.getElementById('kw-form-subsection-id').value = kw.subsection_id || '';
-    document.getElementById('kw-form-subsection-title').value = kw.subsection_title || '';
-    document.getElementById('kw-form-nsfw').checked = !!kw.nsfw;
-    document.getElementById('kw-form-privacy').value = kw.privacy_status || 'private';
-    document.getElementById('btn-kw-save').textContent = 'Sauvegarder';
-    document.getElementById('btn-kw-clear').classList.remove('hidden');
+// ── Duplicate checker ──
+
+async function kwCheckDuplicates() {
+    var keyword = document.getElementById('kw-modal-keyword').value.trim();
+    if (!keyword) {
+        showModal('Info', 'Entre d\'abord un mot-clé pour vérifier les doublons', 'info');
+        return;
+    }
+    try {
+        var res = await fetch(API + '/keywords/check-duplicates', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({keyword, threshold: 0.85})
+        });
+        var data = await safeJson(res);
+        if (!res.ok) { showModal('Erreur', data.error || 'Erreur', 'error'); return; }
+        var msg = '';
+        if (data.exact_matches && data.exact_matches.length > 0) {
+            msg += '⚠️ <b>Doublons exacts :</b><br>';
+            data.exact_matches.forEach(function(m) { msg += '• ' + esc(m.keyword) + ' (' + m.privacy_status + ')<br>'; });
+        }
+        if (data.semantic_matches && data.semantic_matches.length > 0) {
+            msg += '<br>🔍 <b>Similaires (≥85%) :</b><br>';
+            data.semantic_matches.forEach(function(m) { msg += '• ' + esc(m.keyword) + ' (' + (m.similarity * 100).toFixed(0) + '%)<br>'; });
+        }
+        if (!msg) msg = '✅ Aucun doublon trouvé';
+        showModal('Résultat vérification', msg, data.exact_matches.length > 0 ? 'warning' : 'success');
+    } catch(e) { showModal('Erreur', e.message, 'error'); }
 }
 
-function kwAddNew() {
-    kwEditingId = null;
-    document.getElementById('kw-form-title').textContent = 'Nouveau mot-clé';
-    document.getElementById('kw-form-keyword').value = '';
-    document.getElementById('kw-form-desc').value = '';
-    document.getElementById('kw-form-section').value = '';
-    document.getElementById('kw-form-section-id').value = '';
-    document.getElementById('kw-form-section-title').value = '';
-    document.getElementById('kw-form-subsection').value = '';
-    document.getElementById('kw-form-subsection-id').value = '';
-    document.getElementById('kw-form-subsection-title').value = '';
-    document.getElementById('kw-form-nsfw').checked = false;
-    document.getElementById('kw-form-privacy').value = 'private';
-    document.getElementById('btn-kw-save').textContent = 'Ajouter';
-    document.getElementById('btn-kw-clear').classList.add('hidden');
+// ── Modale création/édition ──
+
+function kwOpenAddModal() {
+    document.getElementById('kw-edit-modal-title').textContent = 'Nouveau mot-clé';
+    document.getElementById('kw-modal-keyword').value = '';
+    document.getElementById('kw-modal-desc').value = '';
+    document.getElementById('kw-modal-section').value = '';
+    document.getElementById('kw-modal-subsection').value = '';
+    document.getElementById('kw-modal-section-id').value = '';
+    document.getElementById('kw-modal-section-title').value = '';
+    document.getElementById('kw-modal-subsection-id').value = '';
+    document.getElementById('kw-modal-subsection-title').value = '';
+    document.getElementById('kw-modal-editing-id').value = '';
+    document.getElementById('kw-modal-nsfw').checked = false;
+    document.getElementById('kw-modal-privacy').value = 'private';
+    document.getElementById('kw-modal-save-btn').textContent = 'Ajouter';
+    document.getElementById('kw-modal-delete-btn').classList.add('hidden');
+    document.getElementById('modal-kw-edit').classList.remove('hidden');
+    document.getElementById('modal-kw-edit').classList.add('flex');
+    makeModalDraggable('kw-edit-modal-header', 'kw-edit-modal');
+    document.getElementById('kw-modal-keyword').focus();
 }
 
-function kwClearForm() {
-    kwAddNew();
+function kwCloseAddModal() {
+    document.getElementById('modal-kw-edit').classList.add('hidden');
+    document.getElementById('modal-kw-edit').classList.remove('flex');
 }
 
-async function kwSave() {
-    const keyword = document.getElementById('kw-form-keyword').value.trim();
-    const description = document.getElementById('kw-form-desc').value.trim();
-    const section_id = document.getElementById('kw-form-section-id').value.trim();
-    const section_title = document.getElementById('kw-form-section-title').value.trim();
-    const subsection_id = document.getElementById('kw-form-subsection-id').value.trim();
-    const subsection_title = document.getElementById('kw-form-subsection-title').value.trim();
-    const nsfw = document.getElementById('kw-form-nsfw').checked ? 1 : 0;
-    const privacy = document.getElementById('kw-form-privacy').value;
+async function kwModalSave() {
+    var keyword = document.getElementById('kw-modal-keyword').value.trim();
+    var description = document.getElementById('kw-modal-desc').value.trim();
+    var section_id = document.getElementById('kw-modal-section-id').value.trim();
+    var section_title = document.getElementById('kw-modal-section-title').value.trim();
+    var subsection_id = document.getElementById('kw-modal-subsection-id').value.trim();
+    var subsection_title = document.getElementById('kw-modal-subsection-title').value.trim();
+    var nsfw = document.getElementById('kw-modal-nsfw').checked ? 1 : 0;
+    var privacy = document.getElementById('kw-modal-privacy').value;
+    var editingId = document.getElementById('kw-modal-editing-id').value;
 
     if (!keyword || !description) {
         showModal('Erreur', 'Mot-clé et description requis', 'error');
         return;
     }
 
-    const body = {
-        keyword, description,
-        section_id, section_title,
-        subsection_id, subsection_title,
-        nsfw, privacy_status: privacy
-    };
+    var body = {keyword, description, section_id, section_title, subsection_id, subsection_title, nsfw, privacy_status: privacy};
 
     try {
-        let res;
-        if (kwEditingId) {
-            res = await fetch(API + '/keywords/' + kwEditingId, {
+        var res, msg;
+        if (editingId) {
+            res = await fetch(API + '/keywords/' + editingId, {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(body)
             });
+            msg = 'Mot-clé mis à jour';
         } else {
             res = await fetch(API + '/keywords', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(body)
             });
+            msg = 'Mot-clé créé';
         }
-        const data = await safeJson(res);
-        if (!res.ok) {
-            showModal('Erreur', data.error || 'Erreur inconnue', 'error');
-            return;
-        }
-        showModal('Succès', kwEditingId ? 'Mot-clé mis à jour' : 'Mot-clé créé', 'success');
-        kwAddNew();
+        var data = await safeJson(res);
+        if (!res.ok) { showModal('Erreur', data.error || 'Erreur inconnue', 'error'); return; }
+        showModal('Succès', msg, 'success');
+        kwCloseAddModal();
         kwLoadList();
-    } catch (e) {
-        showModal('Erreur', e.message, 'error');
+    } catch(e) { showModal('Erreur', e.message, 'error'); }
+}
+
+function kwModalDelete() {
+    var editingId = document.getElementById('kw-modal-editing-id').value;
+    if (editingId) {
+        kwCloseAddModal();
+        kwDelete(parseInt(editingId));
     }
 }
 
-async function kwDelete(id) {
-    showConfirm('Confirmer', 'Supprimer ce mot-clé ?', async (ok) => {
-        if (!ok) return;
-        try {
-            const res = await fetch(API + '/keywords/' + id, { method: 'DELETE' });
-            const data = await safeJson(res);
-            if (!res.ok) {
-                showModal('Erreur', data.error || 'Erreur', 'error');
-                return;
-            }
-            if (kwEditingId === id) kwAddNew();
-            kwLoadList();
-        } catch (e) {
-            showModal('Erreur', e.message, 'error');
-        }
-    });
-}
+// ── KW Editor status ──
 
-async function kwCheckDuplicates() {
-    const keyword = document.getElementById('kw-form-keyword').value.trim();
-    if (!keyword) {
-        showModal('Info', 'Entre d\'abord un mot-clé pour vérifier les doublons', 'info');
-        return;
-    }
+async function checkKwEditorStatus() {
     try {
-        const res = await fetch(API + '/keywords/check-duplicates', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({keyword, threshold: 0.85})
-        });
-        const data = await safeJson(res);
-        if (!res.ok) {
-            showModal('Erreur', data.error || 'Erreur', 'error');
+        var res = await fetch(API + '/keywords/pending');
+        if (res.status === 403) {
+            isKwEditor = false;
             return;
         }
-        let msg = '';
-        if (data.exact_matches && data.exact_matches.length > 0) {
-            msg += '⚠️ <b>Doublons exacts :</b><br>';
-            data.exact_matches.forEach(m => {
-                msg += '• ' + esc(m.keyword) + ' (' + m.privacy_status + ')<br>';
-            });
-        }
-        if (data.semantic_matches && data.semantic_matches.length > 0) {
-            msg += '<br>🔍 <b>Similaires (≥85%) :</b><br>';
-            data.semantic_matches.forEach(m => {
-                msg += '• ' + esc(m.keyword) + ' (' + (m.similarity * 100).toFixed(0) + '%)<br>';
-            });
-        }
-        if (!msg) msg = '✅ Aucun doublon trouvé';
-        showModal('Résultat vérification', msg, data.exact_matches.length > 0 ? 'warning' : 'success');
-    } catch (e) {
-        showModal('Erreur', e.message, 'error');
+        isKwEditor = true;
+        var pubOpt = document.getElementById('kw-modal-privacy-public');
+        if (pubOpt) pubOpt.disabled = false;
+    } catch {
+        isKwEditor = false;
     }
 }
 
@@ -1786,432 +2071,9 @@ function kwExport() {
     window.open(API + '/keywords/export?scope=' + scope, '_blank');
 }
 
-// ── Moderation (KW editors) — Multi-selection ──────────────────
-
-let _pendingSelected = new Set();
-let _pendingLastClicked = null;
-let _pendingData = [];
-let isKwEditor = false;
-
-async function checkKwEditorStatus() {
-    try {
-        const res = await fetch(API + '/keywords/pending');
-        if (res.status === 403) {
-            document.getElementById('kw-btn-pending').classList.add('hidden');
-            document.getElementById('kw-pending-section').classList.add('hidden');
-            isKwEditor = false;
-            return;
-        }
-        isKwEditor = true;
-        document.getElementById('kw-privacy-public-opt').disabled = false;
-        document.getElementById('kw-btn-pending').classList.remove('hidden');
-    } catch {
-        isKwEditor = false;
-    }
-}
-
-function _pendingUpdateButtons() {
-    var count = _pendingSelected.size;
-    var appBtn = document.getElementById('kw-pending-approve-btn');
-    var rejBtn = document.getElementById('kw-pending-reject-btn');
-    if (appBtn) { appBtn.textContent = '✅ Valider (' + count + ')'; appBtn.disabled = count === 0; }
-    if (rejBtn) { rejBtn.textContent = '❌ Rejeter (' + count + ')'; rejBtn.disabled = count === 0; }
-}
-
-function _pendingToggle(id, e) {
-    var tr = document.getElementById('kw-pending-row-' + id);
-    if (!tr) return;
-
-    if (e.shiftKey && _pendingLastClicked !== null) {
-        var ids = _pendingData.map(function(x) { return x.id; });
-        var startIdx = ids.indexOf(_pendingLastClicked);
-        var endIdx = ids.indexOf(id);
-        if (startIdx !== -1 && endIdx !== -1) {
-            var from = Math.min(startIdx, endIdx);
-            var to = Math.max(startIdx, endIdx);
-            if (!e.ctrlKey && !e.metaKey) _pendingSelected.clear();
-            for (var i = from; i <= to; i++) _pendingSelected.add(ids[i]);
-        }
-    } else if (e.ctrlKey || e.metaKey) {
-        if (_pendingSelected.has(id)) _pendingSelected.delete(id);
-        else _pendingSelected.add(id);
-    } else {
-        _pendingSelected.clear();
-        _pendingSelected.add(id);
-    }
-    _pendingLastClicked = id;
-    _pendingRenderRows();
-    _pendingUpdateButtons();
-}
-
-function _pendingRenderRows() {
-    _pendingData.forEach(function(kw) {
-        var tr = document.getElementById('kw-pending-row-' + kw.id);
-        if (!tr) return;
-        var selected = _pendingSelected.has(kw.id);
-        tr.classList.toggle('ring-2', selected);
-        tr.classList.toggle('ring-indigo-400', selected);
-        tr.classList.toggle('bg-indigo-50', selected);
-        tr.classList.toggle('dark:bg-indigo-900/30', selected);
-        tr.classList.toggle('bg-amber-50', !selected);
-        tr.classList.toggle('dark:bg-amber-900/20', !selected);
-        var cb = tr.querySelector('.kw-pending-cb');
-        if (cb) cb.checked = selected;
-    });
-}
-
-function _pendingSelectAll() {
-    _pendingSelected = new Set(_pendingData.map(function(x) { return x.id; }));
-    _pendingRenderRows();
-    _pendingUpdateButtons();
-}
-
-function _pendingSelectNone() {
-    _pendingSelected.clear();
-    _pendingRenderRows();
-    _pendingUpdateButtons();
-}
-
-function _pendingSelectInvert() {
-    var all = _pendingData.map(function(x) { return x.id; });
-    _pendingSelected = new Set(all.filter(function(id) { return !_pendingSelected.has(id); }));
-    _pendingRenderRows();
-    _pendingUpdateButtons();
-}
-
-async function _pendingBulkReview(action) {
-    if (_pendingSelected.size === 0) return;
-
-    var ids = [..._pendingSelected];
-    var notes = '';
-    if (action === 'reject') {
-        notes = await new Promise(function(resolve) {
-            showPrompt('Rejeter', 'Raison du rejet (optionnelle) :', '', function(n) { resolve(n || ''); });
-        });
-    }
-
-    var done = 0;
-    var errors = 0;
-    for (var i = 0; i < ids.length; i++) {
-        try {
-            var body = {action: action, notes: notes};
-            // Si approve : collecter les edits de la carte
-            if (action === 'approve') {
-                var edits = _pendingCollectEdits(ids[i]);
-                if (edits) body.edits = edits;
-            }
-            var res = await fetch(API + '/keywords/' + ids[i] + '/review', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(body)
-            });
-            var data = await safeJson(res);
-            if (res.ok) {
-                done++;
-                delete _pendingFieldStore[ids[i]];
-                var tr = document.getElementById('kw-pending-row-' + ids[i]);
-                if (tr) {
-                    tr.style.transition = 'opacity 0.3s';
-                    tr.style.opacity = '0';
-                    setTimeout(function() { if (tr.parentNode) tr.remove(); }, 300);
-                }
-            } else {
-                errors++;
-            }
-        } catch(e) {
-            errors++;
-        }
-    }
-
-    _pendingSelected.clear();
-    _pendingData = _pendingData.filter(function(kw) { return !ids.includes(kw.id); });
-    _pendingUpdateButtons();
-    kwLoadList();
-
-    var list = document.getElementById('kw-pending-list');
-    if (list.children.length === 0) {
-        list.innerHTML = '<p class="text-xs text-slate-400">Rien en attente ✅</p>';
-    }
-
-    showModal('Terminé', done + '/' + ids.length + ' traités' + (errors > 0 ? ', ' + errors + ' erreur(s)' : ''), errors > 0 ? 'warning' : 'success');
-}
-
-async function kwLoadPending() {
-    if (!isKwEditor) return;
-    var section = document.getElementById('kw-pending-section');
-    var list = document.getElementById('kw-pending-list');
-    section.classList.remove('hidden');
-    list.innerHTML = '<p class="text-xs text-slate-400">Chargement...</p>';
-    _pendingSelected.clear();
-    _pendingLastClicked = null;
-
-    try {
-        var res = await fetch(API + '/keywords/pending');
-        var data = await safeJson(res);
-        if (!res.ok || !Array.isArray(data)) {
-            list.innerHTML = '<p class="text-xs text-rose-400">Erreur</p>';
-            return;
-        }
-        if (data.length === 0) {
-            list.innerHTML = '<p class="text-xs text-slate-400">Rien en attente ✅</p>';
-            return;
-        }
-
-        _pendingData = data;
-        list.innerHTML = '';
-
-        // Toolbar : bulk actions
-        var toolbar = document.createElement('div');
-        toolbar.className = 'flex items-center gap-1.5 mb-2 flex-wrap shrink-0';
-
-        function mkBtn(text, cls, fn) {
-            var b = document.createElement('button');
-            b.textContent = text;
-            b.className = 'px-2 py-0.5 text-xs rounded ' + cls;
-            b.onclick = fn;
-            return b;
-        }
-
-        toolbar.appendChild(mkBtn('☐ All', 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200', _pendingSelectAll));
-        toolbar.appendChild(mkBtn('☐ None', 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200', _pendingSelectNone));
-        toolbar.appendChild(mkBtn('🔄 Invert', 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200', _pendingSelectInvert));
-
-        var approveBtn = mkBtn('✅ Valider (0)', 'bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-40', function() { _pendingBulkReview('approve'); });
-        approveBtn.id = 'kw-pending-approve-btn';
-        approveBtn.disabled = true;
-        toolbar.appendChild(approveBtn);
-
-        var rejectBtn = mkBtn('❌ Rejeter (0)', 'bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-40', function() { _pendingBulkReview('reject'); });
-        rejectBtn.id = 'kw-pending-reject-btn';
-        rejectBtn.disabled = true;
-        toolbar.appendChild(rejectBtn);
-
-        list.appendChild(toolbar);
-
-        // Cartes éditables
-        data.forEach(function(kw) {
-            var card = document.createElement('div');
-            card.id = 'kw-pending-row-' + kw.id;
-            card.className = 'p-2 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-xs cursor-pointer select-none';
-            card.onclick = function(e) { if (e.target === card || e.target.tagName === 'STRONG' || e.target.tagName === 'SPAN') _pendingToggle(kw.id, e); };
-
-            // En-tête : checkbox + créateur
-            var header = document.createElement('div');
-            header.className = 'flex items-center gap-1.5 mb-1.5';
-            var cb = document.createElement('input');
-            cb.type = 'checkbox';
-            cb.className = 'kw-pending-cb shrink-0';
-            cb.onclick = function(e) { e.stopPropagation(); _pendingToggle(kw.id, e); };
-            header.appendChild(cb);
-            var label = document.createElement('span');
-            label.className = 'flex-1 text-slate-400 text-[10px]';
-            label.textContent = 'par ' + (kw.creator_name || '?');
-            header.appendChild(label);
-
-            // Boutons individuels
-            var indApprove = document.createElement('button');
-            indApprove.textContent = '✅';
-            indApprove.className = 'px-1.5 py-0.5 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-500';
-            indApprove.title = 'Valider';
-            indApprove.onclick = function(e) { e.stopPropagation(); _pendingReviewOne(kw.id, 'approve'); };
-            header.appendChild(indApprove);
-
-            var indReject = document.createElement('button');
-            indReject.textContent = '❌';
-            indReject.className = 'px-1.5 py-0.5 text-xs bg-rose-600 text-white rounded hover:bg-rose-500';
-            indReject.title = 'Rejeter';
-            indReject.onclick = function(e) { e.stopPropagation(); _pendingReviewOne(kw.id, 'reject'); };
-            header.appendChild(indReject);
-
-            card.appendChild(header);
-
-            // Champs éditables
-            var grid = document.createElement('div');
-            grid.className = 'grid grid-cols-2 gap-1.5';
-
-            // Keyword
-            var kwInput = document.createElement('input');
-            kwInput.type = 'text';
-            kwInput.value = kw.keyword || '';
-            kwInput.placeholder = 'Mot-clé';
-            kwInput.className = 'col-span-2 px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
-            kwInput.dataset.field = 'keyword';
-            kwInput.onclick = function(e) { e.stopPropagation(); };
-            grid.appendChild(kwInput);
-
-            // Description
-            var descInput = document.createElement('textarea');
-            descInput.rows = 2;
-            descInput.value = kw.description || '';
-            descInput.placeholder = 'Description';
-            descInput.className = 'col-span-2 px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
-            descInput.dataset.field = 'description';
-            descInput.style.resize = 'vertical';
-            descInput.onclick = function(e) { e.stopPropagation(); };
-            grid.appendChild(descInput);
-
-            // Section (combobox)
-            var secInput = document.createElement('input');
-            secInput.type = 'text';
-            secInput.value = kw.section_title || '';
-            secInput.placeholder = 'Section';
-            secInput.className = 'px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
-            secInput.dataset.field = 'section_title';
-            secInput.onclick = function(e) { e.stopPropagation(); };
-            secInput.onchange = function() { _pendingAutoSection(kw.id, secInput.value); };
-            grid.appendChild(secInput);
-
-            // Subsection (combobox)
-            var subInput = document.createElement('input');
-            subInput.type = 'text';
-            subInput.value = kw.subsection_title || '';
-            subInput.placeholder = 'Sous-section';
-            subInput.className = 'px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
-            subInput.dataset.field = 'subsection_title';
-            subInput.onclick = function(e) { e.stopPropagation(); };
-            subInput.onchange = function() { _pendingAutoSubsection(kw.id, subInput.value); };
-            grid.appendChild(subInput);
-
-            // NSFW
-            var nsfwLabel = document.createElement('label');
-            nsfwLabel.className = 'flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 col-span-2';
-            var nsfwCb = document.createElement('input');
-            nsfwCb.type = 'checkbox';
-            nsfwCb.checked = !!kw.nsfw;
-            nsfwCb.className = 'rounded';
-            nsfwCb.dataset.field = 'nsfw';
-            nsfwCb.onclick = function(e) { e.stopPropagation(); };
-            nsfwLabel.appendChild(nsfwCb);
-            nsfwLabel.appendChild(document.createTextNode(' NSFW'));
-            grid.appendChild(nsfwLabel);
-
-            card.appendChild(grid);
-            list.appendChild(card);
-        });
-    } catch (e) {
-        list.innerHTML = '<p class="text-xs text-rose-400">Erreur: ' + e.message + '</p>';
-    }
-}
-
-// ── Helpers pending : auto-ID pour section/subsection ──
-
-function _pendingAutoSection(kwId, title) {
-    if (!title) return;
-    var found = _kwSectionsCache.find(function(s) { return s.section_title.toLowerCase() === title.toLowerCase(); });
-    if (found) {
-        _pendingSetField(kwId, 'section_id', found.section_id);
-        _pendingSetField(kwId, 'section_title', found.section_title);
-    } else {
-        var maxNum = 0;
-        _kwSectionsCache.forEach(function(s) { var n = _romanToNum(s.section_id); if (n > maxNum) maxNum = n; });
-        _pendingSetField(kwId, 'section_id', _numToRoman(maxNum + 1));
-        _pendingSetField(kwId, 'section_title', title.trim());
-    }
-}
-
-function _pendingAutoSubsection(kwId, title) {
-    if (!title) return;
-    var card = document.getElementById('kw-pending-row-' + kwId);
-    if (!card) return;
-    // Récupérer la section actuelle
-    var secInput = card.querySelector('[data-field="section_title"]');
-    var secTitle = secInput ? secInput.value.trim() : '';
-    var secFound = _kwSectionsCache.find(function(s) { return s.section_title.toLowerCase() === secTitle.toLowerCase(); });
-    var sectionId = secFound ? secFound.section_id : _pendingGetField(kwId, 'section_id');
-    var found = _kwSubsectionsCache.find(function(s) {
-        return s.subsection_title.toLowerCase() === title.toLowerCase() &&
-               (!sectionId || (s.subsection_id && s.subsection_id.startsWith(sectionId + '.')));
-    });
-    if (found) {
-        _pendingSetField(kwId, 'subsection_id', found.subsection_id);
-        _pendingSetField(kwId, 'subsection_title', found.subsection_title);
-    } else if (sectionId) {
-        var existing = _kwSubsectionsCache.filter(function(s) { return s.subsection_id && s.subsection_id.startsWith(sectionId + '.'); });
-        var nextLetter = 'A';
-        if (existing.length > 0) {
-            var lastLetter = existing.map(function(s) { return s.subsection_id.split('.')[1] || 'A'; }).sort().pop();
-            nextLetter = String.fromCharCode(lastLetter.charCodeAt(0) + 1);
-        }
-        _pendingSetField(kwId, 'subsection_id', sectionId + '.' + nextLetter);
-        _pendingSetField(kwId, 'subsection_title', title.trim());
-    } else {
-        _pendingSetField(kwId, 'subsection_title', title.trim());
-    }
-}
-
-// Stockage des IDs auto-déterminés pour les cartes pending
-var _pendingFieldStore = {};
-
-function _pendingSetField(kwId, field, value) {
-    if (!_pendingFieldStore[kwId]) _pendingFieldStore[kwId] = {};
-    _pendingFieldStore[kwId][field] = value;
-}
-
-function _pendingGetField(kwId, field) {
-    return (_pendingFieldStore[kwId] || {})[field] || '';
-}
-
-// Récupère les valeurs éditées d'une carte pending
-function _pendingCollectEdits(kwId) {
-    var card = document.getElementById('kw-pending-row-' + kwId);
-    if (!card) return null;
-    var edits = {};
-    card.querySelectorAll('[data-field]').forEach(function(el) {
-        var field = el.dataset.field;
-        if (el.type === 'checkbox') edits[field] = el.checked ? 1 : 0;
-        else edits[field] = el.value.trim();
-    });
-    // Fusionner avec les IDs auto-déterminés
-    var stored = _pendingFieldStore[kwId] || {};
-    if (stored.section_id) edits.section_id = stored.section_id;
-    if (stored.section_title) edits.section_title = stored.section_title;
-    if (stored.subsection_id) edits.subsection_id = stored.subsection_id;
-    if (stored.subsection_title) edits.subsection_title = stored.subsection_title;
-    // Si section_title est vide mais qu'on a un ID stocké, récupérer le titre
-    if (!edits.section_title && stored.section_id) {
-        var sec = _kwSectionsCache.find(function(s) { return s.section_id === stored.section_id; });
-        if (sec) edits.section_title = sec.section_title;
-    }
-    return edits;
-}
-
-// Valider/rejeter un seul keyword (avec edits)
-async function _pendingReviewOne(kwId, action) {
-    var edits = action === 'approve' ? _pendingCollectEdits(kwId) : null;
-    try {
-        var body = {action: action};
-        if (edits) body.edits = edits;
-        var res = await fetch(API + '/keywords/' + kwId + '/review', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(body)
-        });
-        if (res.ok) {
-            var card = document.getElementById('kw-pending-row-' + kwId);
-            if (card) { card.style.transition = 'opacity 0.3s'; card.style.opacity = '0'; setTimeout(function() { if (card.parentNode) card.remove(); }, 300); }
-            _pendingData = _pendingData.filter(function(kw) { return kw.id !== kwId; });
-            delete _pendingFieldStore[kwId];
-            kwLoadList();
-            if (_pendingData.length === 0) {
-                document.getElementById('kw-pending-list').innerHTML = '<p class="text-xs text-slate-400">Rien en attente ✅</p>';
-            }
-        } else {
-            showModal('Erreur', 'Échec de la validation', 'error');
-        }
-    } catch(e) {
-        showModal('Erreur', e.message, 'error');
-    }
-}
-
 // ── Initialisation ───────────────────────────────────────────────
 
-// Charger la liste au premier affichage de l'onglet
-// On utilise un observer simple sur la visibilité du conteneur
 document.addEventListener('DOMContentLoaded', function() {
-    // Pas de chargement auto, on attend le clic sur l'onglet.
     // Le switchMainTab appelle kwLoadList() quand l'onglet keywords est activé
 });
-
-// Hook dans switchMainTab : on surcharge l'appel pour detecter l'onglet keywords
-// (fait dans app-core.js via un event custom)
 

@@ -33,7 +33,8 @@ def list_or_create_keywords():
     section = request.args.get('section', '').strip()
     subsection = request.args.get('subsection', '').strip()
     nsfw_raw = request.args.get('nsfw', '').strip()
-    scope = request.args.get('scope', '').strip()  # 'mine' | 'public' | '' (tout visible)
+    scope = request.args.get('scope', '').strip()  # 'mine' | 'public' | 'private' | 'pending' | '' (tout visible)
+    author = request.args.get('author', '').strip()  # user_id de l'auteur
 
     conditions = ["1=1"]
     params = []
@@ -53,6 +54,17 @@ def list_or_create_keywords():
         conditions.append("k.privacy_status = 'private'")
         conditions.append("k.user_id = ?")
         params.append(user_id)
+    elif scope == 'pending':
+        # En attente : kw_editor/admin voit tous les pending, les autres voient les leurs
+        conditions.append("k.privacy_status = 'public_pending'")
+        if not is_kw_editor(user_id):
+            conditions.append("k.user_id = ?")
+            params.append(user_id)
+
+    # Filtre par auteur
+    if author:
+        conditions.append("k.user_id = ?")
+        params.append(author)
 
     if q:
         like = f"%{q}%"
@@ -83,6 +95,27 @@ def list_or_create_keywords():
         ORDER BY k.section_id, k.subsection_id, k.keyword
     """
     cur.execute(sql, params)
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return jsonify(rows)
+
+
+@app.route('/api/keywords/authors', methods=['GET'])
+def list_keyword_authors():
+    """Liste les auteurs ayant créé au moins un keyword."""
+    guard = _login_required()
+    if guard: return guard
+    user_id = _get_current_user_id()
+    privacy_where, privacy_params = _privacy_filter(user_id)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(f"""
+        SELECT DISTINCT k.user_id, u.username, u.display_name
+        FROM keywords k
+        LEFT JOIN users u ON u.id = k.user_id
+        WHERE k.user_id IS NOT NULL AND {privacy_where}
+        ORDER BY u.display_name, u.username
+    """, privacy_params)
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return jsonify(rows)
