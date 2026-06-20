@@ -630,40 +630,123 @@ var _kwDirtyIds = new Set();
 
 function _kwMarkDirty(kwId) {
     _kwDirtyIds.add(kwId);
-    var row = document.querySelector('[data-kw-id="' + kwId + '"]');
-    if (row) {
-        // Add a subtle left border indicator
-        row.classList.add('border-amber-400', 'dark:border-amber-600');
-        row.classList.remove('border-slate-200', 'dark:border-slate-700', 'border-slate-300', 'dark:border-slate-600', 'border-indigo-300', 'dark:border-indigo-700');
+    var tr = document.getElementById('kw-tr-' + kwId);
+    if (tr) {
+        tr.classList.add('border-l-4', 'border-l-amber-400');
+        tr.classList.remove('border-l-4', 'border-l-transparent');
     }
 }
 
 function _kwClearDirty(kwId) {
     _kwDirtyIds.delete(kwId);
-    var row = document.querySelector('[data-kw-id="' + kwId + '"]');
-    if (row) {
-        row.classList.remove('border-amber-400', 'dark:border-amber-600');
-        // Restore normal border
-        if (kwSelectedIds.has(kwId)) {
-            row.classList.add('border-indigo-300', 'dark:border-indigo-700');
-        } else {
-            row.classList.add('border-slate-200', 'dark:border-slate-700');
-        }
+    var tr = document.getElementById('kw-tr-' + kwId);
+    if (tr) {
+        tr.classList.remove('border-l-amber-400');
+        tr.classList.add('border-l-transparent');
     }
 }
 
-// ── Render : liste avec édition directe (2 lignes par keyword) ──
+// ── Column resize for kw-table ──
+
+var _kwColResize = null;
+
+function kwInitColResize() {
+    var headers = document.querySelectorAll('#kw-table-header-row th');
+    headers.forEach(function(th, idx) {
+        if (idx === headers.length - 1) return;
+        if (th.querySelector('.col-resize-handle')) return;
+        var handle = document.createElement('div');
+        handle.className = 'col-resize-handle';
+        handle.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            var next = headers[idx + 1];
+            _kwColResize = {
+                th: th, nextTh: next,
+                startX: e.clientX,
+                w: th.offsetWidth,
+                wNext: next.offsetWidth,
+                idx: idx
+            };
+            document.body.classList.add('col-resizing');
+        }, true);
+        th.appendChild(handle);
+    });
+}
+
+document.addEventListener('mousemove', function(e) {
+    if (!_kwColResize) return;
+    var dx = e.clientX - _kwColResize.startX;
+    var w = Math.max(40, _kwColResize.w + dx);
+    var wNext = Math.max(40, _kwColResize.wNext - dx);
+    _kwColResize.th.style.width = w + 'px';
+    _kwColResize.nextTh.style.width = wNext + 'px';
+    var rows = document.querySelectorAll('#kw-table-body tr');
+    for (var r = 0; r < rows.length; r++) {
+        var tds = rows[r].children;
+        if (tds[_kwColResize.idx]) tds[_kwColResize.idx].style.width = w + 'px';
+        if (tds[_kwColResize.idx + 1]) tds[_kwColResize.idx + 1].style.width = wNext + 'px';
+    }
+});
+
+document.addEventListener('mouseup', function() {
+    if (_kwColResize) {
+        _kwColResize = null;
+        document.body.classList.remove('col-resizing');
+        kwSaveColWidths();
+    }
+});
+
+function kwSaveColWidths() {
+    if (!currentUser) return;
+    var headers = document.querySelectorAll('#kw-table-header-row th');
+    var widths = {};
+    var labels = ['checkbox', 'keyword', 'description', 'section', 'subsection', 'nsfw', 'status', 'actions'];
+    headers.forEach(function(th, idx) {
+        widths[labels[idx] || ('col' + idx)] = th.offsetWidth;
+    });
+    var settings = (currentUser.settings || {});
+    settings.kwManagerColumns = widths;
+    fetch(API + '/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(settings)
+    }).catch(function(){});
+}
+
+function kwLoadColWidths() {
+    if (!currentUser || !currentUser.settings || !currentUser.settings.kwManagerColumns) return;
+    var headers = document.querySelectorAll('#kw-table-header-row th');
+    var cols = currentUser.settings.kwManagerColumns;
+    var labels = ['checkbox', 'keyword', 'description', 'section', 'subsection', 'nsfw', 'status', 'actions'];
+    headers.forEach(function(th, idx) {
+        var w = cols[labels[idx]];
+        if (w && w > 30) {
+            th.style.width = w + 'px';
+            var rows = document.querySelectorAll('#kw-table-body tr');
+            for (var r = 0; r < rows.length; r++) {
+                var td = rows[r].children[idx];
+                if (td) td.style.width = w + 'px';
+            }
+        }
+    });
+}
+
+// ── Render : tableau avec édition directe (1 ligne par keyword) ──
 
 function renderKwList(keywords) {
-    const list = document.getElementById('kw-list');
+    const tbody = document.getElementById('kw-table-body');
     kwCurrentList = keywords || [];
     if (!keywords || keywords.length === 0) {
-        list.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">Aucun mot-clé trouvé</p>';
+        tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-8 text-center text-slate-400">Aucun mot-clé trouvé</td></tr>';
         document.getElementById('kw-select-toolbar').classList.add('hidden');
         return;
     }
     document.getElementById('kw-select-toolbar').classList.remove('hidden');
-    list.innerHTML = '';
+    tbody.innerHTML = '';
+    var isDark = document.documentElement.classList.contains('dark');
+
     keywords.forEach(kw => {
         const isSelected = kwSelectedIds.has(kw.id);
         const canEdit = (kw.user_id === (currentUser ? currentUser.id : '')) || isKwEditor;
@@ -671,208 +754,185 @@ function renderKwList(keywords) {
         const canDelete = isOwner || isKwEditor;
         const isPending = kw.privacy_status === 'public_pending';
 
-        var row = document.createElement('div');
-        row.dataset.kwId = kw.id;
-        row.className = 'mb-1 p-1.5 rounded border transition';
-        if (isSelected) {
-            row.className += ' border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20';
-        } else {
-            row.className += ' border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600';
-        }
+        var tr = document.createElement('tr');
+        tr.id = 'kw-tr-' + kw.id;
+        tr.dataset.kwId = kw.id;
+        tr.className = 'border-b border-slate-100 dark:border-slate-700 border-l-4 border-l-transparent transition';
+        if (kw.nsfw) tr.className += isDark ? ' bg-rose-950/20' : ' bg-rose-50/30';
+        if (isSelected) tr.className += ' bg-indigo-50 dark:bg-indigo-900/20';
 
-        // ── Ligne 1 : keyword / section / subsection / nsfw / privacy ──
-        var line1 = document.createElement('div');
-        line1.className = 'flex items-center gap-1.5 mb-1';
-
-        // Checkbox (multi-selection)
+        // ── Col 0: Checkbox ──
+        var tdCb = document.createElement('td');
+        tdCb.className = 'px-1 py-1 text-center';
         var cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.checked = isSelected;
-        cb.className = 'kw-row-cb shrink-0 cursor-pointer';
+        cb.className = 'kw-row-cb cursor-pointer rounded';
         cb.onchange = function(e) { e.stopPropagation(); kwToggleSelection(kw.id, e); };
-        line1.appendChild(cb);
+        tdCb.appendChild(cb);
+        tr.appendChild(tdCb);
 
-        // Privacy icon (visual only)
-        var pIcon = kw.privacy_status === 'public' ? '🌐' : (kw.privacy_status === 'public_pending' ? '🟡' : '🔒');
-        line1.innerHTML += '<span class="text-xs shrink-0">' + pIcon + '</span>';
-
-        // Keyword input
+        // ── Col 1: Keyword ──
+        var tdKw = document.createElement('td');
+        tdKw.className = 'px-2 py-1';
         var kwInput = document.createElement('input');
         kwInput.type = 'text';
         kwInput.value = kw.keyword || '';
-        kwInput.placeholder = 'Mot-clé';
-        kwInput.className = 'flex-1 min-w-0 px-2 py-0.5 text-xs font-medium border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
+        kwInput.className = 'w-full px-1.5 py-0.5 text-xs font-medium border border-transparent rounded hover:border-slate-300 dark:bg-transparent dark:hover:border-slate-600 dark:text-slate-200 focus:border-indigo-400 focus:dark:border-indigo-500 focus:outline-none';
+        if (!canEdit) { kwInput.disabled = true; kwInput.className += ' opacity-70'; }
         kwInput.id = 'kw-row-kw-' + kw.id;
-        kwInput.disabled = !canEdit;
-        line1.appendChild(kwInput);
+        tdKw.appendChild(kwInput);
+        tr.appendChild(tdKw);
 
-        // Section combobox
+        // ── Col 2: Description ──
+        var tdDesc = document.createElement('td');
+        tdDesc.className = 'px-2 py-1';
+        var descInput = document.createElement('input');
+        descInput.type = 'text';
+        descInput.value = kw.description || '';
+        descInput.className = 'w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-slate-300 dark:bg-transparent dark:hover:border-slate-600 dark:text-slate-300 focus:border-indigo-400 focus:dark:border-indigo-500 focus:outline-none';
+        if (!canEdit) { descInput.disabled = true; descInput.className += ' opacity-70'; }
+        descInput.id = 'kw-row-desc-' + kw.id;
+        tdDesc.appendChild(descInput);
+        tr.appendChild(tdDesc);
+
+        // ── Col 3: Section ──
+        var tdSec = document.createElement('td');
+        tdSec.className = 'px-2 py-1';
         var secInput = document.createElement('input');
         secInput.type = 'text';
         secInput.value = kw.section_title || '';
-        secInput.placeholder = 'Section';
         secInput.setAttribute('list', 'kw-section-combo');
-        secInput.className = 'w-28 px-1 py-0.5 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 shrink-0';
+        secInput.className = 'w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-slate-300 dark:bg-transparent dark:hover:border-slate-600 dark:text-slate-300 focus:border-indigo-400 focus:dark:border-indigo-500 focus:outline-none';
+        if (!canEdit) { secInput.disabled = true; secInput.className += ' opacity-70'; }
         secInput.id = 'kw-row-sec-' + kw.id;
-        secInput.disabled = !canEdit;
         secInput.onchange = function() {
             var res = _resolveSectionId(secInput.value.trim());
             document.getElementById('kw-row-secid-' + kw.id).value = res.id;
             document.getElementById('kw-row-sectitle-' + kw.id).value = res.title;
             kwRefreshSubsectionCombo(res.id);
         };
-        line1.appendChild(secInput);
+        tdSec.appendChild(secInput);
+        tr.appendChild(tdSec);
 
-        // Subsection combobox
+        // ── Col 4: Subsection ──
+        var tdSub = document.createElement('td');
+        tdSub.className = 'px-2 py-1';
         var subInput = document.createElement('input');
         subInput.type = 'text';
         subInput.value = kw.subsection_title || '';
-        subInput.placeholder = 'Sous-sec';
         subInput.setAttribute('list', 'kw-subsection-combo');
-        subInput.className = 'w-28 px-1 py-0.5 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 shrink-0';
+        subInput.className = 'w-full px-1.5 py-0.5 text-xs border border-transparent rounded hover:border-slate-300 dark:bg-transparent dark:hover:border-slate-600 dark:text-slate-300 focus:border-indigo-400 focus:dark:border-indigo-500 focus:outline-none';
+        if (!canEdit) { subInput.disabled = true; subInput.className += ' opacity-70'; }
         subInput.id = 'kw-row-sub-' + kw.id;
-        subInput.disabled = !canEdit;
         subInput.onchange = function() {
             var sectionId = document.getElementById('kw-row-secid-' + kw.id).value;
             var res = _resolveSubsectionId(subInput.value.trim(), sectionId);
             document.getElementById('kw-row-subid-' + kw.id).value = res.id;
             document.getElementById('kw-row-subtitle-' + kw.id).value = res.title;
         };
-        line1.appendChild(subInput);
+        tdSub.appendChild(subInput);
+        tr.appendChild(tdSub);
 
-        // NSFW checkbox
-        var nsfwLabel = document.createElement('label');
-        nsfwLabel.className = 'inline-flex items-center gap-0.5 text-xs text-slate-500 dark:text-slate-400 shrink-0';
+        // Hidden fields
+        ['secid', 'sectitle', 'subid', 'subtitle'].forEach(function(suffix) {
+            var h = document.createElement('input');
+            h.type = 'hidden';
+            h.id = 'kw-row-' + suffix + '-' + kw.id;
+            var fieldMap = {'secid': 'section_id', 'sectitle': 'section_title', 'subid': 'subsection_id', 'subtitle': 'subsection_title'};
+            h.value = kw[fieldMap[suffix]] || '';
+            tr.appendChild(h);
+        });
+
+        // ── Col 5: NSFW ──
+        var tdNsfw = document.createElement('td');
+        tdNsfw.className = 'px-1 py-1 text-center';
         var nsfwCb = document.createElement('input');
         nsfwCb.type = 'checkbox';
         nsfwCb.checked = !!kw.nsfw;
-        nsfwCb.className = 'rounded';
+        nsfwCb.className = 'rounded cursor-pointer';
         nsfwCb.id = 'kw-row-nsfw-' + kw.id;
         nsfwCb.disabled = !canEdit;
-        nsfwLabel.appendChild(nsfwCb);
-        nsfwLabel.appendChild(document.createTextNode('NSFW'));
-        line1.appendChild(nsfwLabel);
+        tdNsfw.appendChild(nsfwCb);
+        tr.appendChild(tdNsfw);
 
-        // Privacy dropdown
+        // ── Col 6: Privacy ──
+        var tdPriv = document.createElement('td');
+        tdPriv.className = 'px-1 py-1 text-center';
         var privSel = document.createElement('select');
-        privSel.className = 'text-xs px-1 py-0.5 border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 shrink-0';
+        privSel.className = 'text-xs px-1 py-0.5 border border-transparent rounded dark:bg-transparent dark:text-slate-300 focus:outline-none focus:border-indigo-400';
         privSel.id = 'kw-row-priv-' + kw.id;
         privSel.disabled = !canEdit;
         privSel.innerHTML = '<option value="private">🔒</option><option value="public_pending">🟡</option><option value="public">🌐</option>';
         privSel.value = kw.privacy_status || 'private';
         if (!isKwEditor) privSel.querySelector('option[value="public"]').disabled = true;
-        line1.appendChild(privSel);
+        tdPriv.appendChild(privSel);
+        tr.appendChild(tdPriv);
 
-        // Hidden fields for section/subsection IDs
-        var hiddenSecId = document.createElement('input');
-        hiddenSecId.type = 'hidden';
-        hiddenSecId.value = kw.section_id || '';
-        hiddenSecId.id = 'kw-row-secid-' + kw.id;
-        line1.appendChild(hiddenSecId);
+        // ── Col 7: Actions ──
+        var tdAct = document.createElement('td');
+        tdAct.className = 'px-1 py-1 text-center whitespace-nowrap';
 
-        var hiddenSecTitle = document.createElement('input');
-        hiddenSecTitle.type = 'hidden';
-        hiddenSecTitle.value = kw.section_title || '';
-        hiddenSecTitle.id = 'kw-row-sectitle-' + kw.id;
-        line1.appendChild(hiddenSecTitle);
+        // Pending: approve/reject
+        if (isPending && isKwEditor) {
+            var apBtn = document.createElement('button');
+            apBtn.textContent = '✅';
+            apBtn.className = 'px-1 py-0.5 text-xs rounded hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition';
+            apBtn.title = 'Valider (avec modifications)';
+            apBtn.onclick = function(e) { e.stopPropagation(); kwInlineReview(kw.id, 'approve'); };
+            tdAct.appendChild(apBtn);
 
-        var hiddenSubId = document.createElement('input');
-        hiddenSubId.type = 'hidden';
-        hiddenSubId.value = kw.subsection_id || '';
-        hiddenSubId.id = 'kw-row-subid-' + kw.id;
-        line1.appendChild(hiddenSubId);
+            var rjBtn = document.createElement('button');
+            rjBtn.textContent = '❌';
+            rjBtn.className = 'px-1 py-0.5 text-xs rounded hover:bg-rose-100 dark:hover:bg-rose-900/30 transition';
+            rjBtn.title = 'Rejeter';
+            rjBtn.onclick = function(e) { e.stopPropagation(); kwInlineReview(kw.id, 'reject'); };
+            tdAct.appendChild(rjBtn);
+        }
 
-        var hiddenSubTitle = document.createElement('input');
-        hiddenSubTitle.type = 'hidden';
-        hiddenSubTitle.value = kw.subsection_title || '';
-        hiddenSubTitle.id = 'kw-row-subtitle-' + kw.id;
-        line1.appendChild(hiddenSubTitle);
+        // Save
+        if (canEdit) {
+            var saveBtn = document.createElement('button');
+            saveBtn.textContent = '💾';
+            saveBtn.className = 'px-1 py-0.5 text-xs rounded hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition';
+            saveBtn.title = 'Sauvegarder (Ctrl+Enter)';
+            saveBtn.onclick = function(e) { e.stopPropagation(); kwInlineSave(kw.id); };
+            tdAct.appendChild(saveBtn);
+        }
 
-        row.appendChild(line1);
+        // Delete
+        if (canDelete) {
+            var delBtn = document.createElement('button');
+            delBtn.textContent = '🗑';
+            delBtn.className = 'px-1 py-0.5 text-xs rounded hover:bg-rose-100 dark:hover:bg-rose-900/30 transition';
+            delBtn.title = 'Supprimer';
+            delBtn.onclick = function(e) { e.stopPropagation(); kwDelete(kw.id); };
+            tdAct.appendChild(delBtn);
+        }
 
-        // ── Ligne 2 : description + boutons d'action ──
-        var line2 = document.createElement('div');
-        line2.className = 'flex items-start gap-1.5';
+        tr.appendChild(tdAct);
 
-        // Description textarea (auto-resize)
-        var descInput = document.createElement('textarea');
-        descInput.rows = 1;
-        descInput.value = kw.description || '';
-        descInput.placeholder = 'Description';
-        descInput.className = 'flex-1 min-w-0 px-2 py-0.5 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 resize-none overflow-hidden';
-        descInput.id = 'kw-row-desc-' + kw.id;
-        descInput.disabled = !canEdit;
-        // Auto-resize
-        descInput.oninput = function() {
-            this.style.height = 'auto';
-            this.style.height = Math.max(this.scrollHeight, 20) + 'px';
-            _kwMarkDirty(kw.id);
-        };
-        // Initial auto-resize after render
-        setTimeout(function() { if (descInput) { descInput.style.height = 'auto'; descInput.style.height = Math.max(descInput.scrollHeight, 20) + 'px'; } }, 0);
-        line2.appendChild(descInput);
-
-        // Keyboard shortcut: Ctrl+Enter = save
+        // Dirty tracking + Ctrl+Enter
         if (canEdit) {
             [kwInput, descInput, secInput, subInput].forEach(function(el) {
+                el.addEventListener('input', function() { _kwMarkDirty(kw.id); });
                 el.addEventListener('keydown', function(e) {
                     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
                         e.preventDefault();
                         kwInlineSave(kw.id);
                     }
                 });
-                el.addEventListener('input', function() { _kwMarkDirty(kw.id); });
             });
             nsfwCb.addEventListener('change', function() { _kwMarkDirty(kw.id); });
             privSel.addEventListener('change', function() { _kwMarkDirty(kw.id); });
         }
 
-        // Action buttons (right side)
-        var btnGroup = document.createElement('div');
-        btnGroup.className = 'flex items-center gap-1 shrink-0';
-
-        // Pending : approve/reject
-        if (isPending && isKwEditor) {
-            var apBtn = document.createElement('button');
-            apBtn.textContent = '✅';
-            apBtn.className = 'px-1.5 py-0.5 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-500 transition';
-            apBtn.title = 'Valider (avec modifications)';
-            apBtn.onclick = function(e) { e.stopPropagation(); kwInlineReview(kw.id, 'approve'); };
-            btnGroup.appendChild(apBtn);
-
-            var rjBtn = document.createElement('button');
-            rjBtn.textContent = '❌';
-            rjBtn.className = 'px-1.5 py-0.5 text-xs bg-rose-600 text-white rounded hover:bg-rose-500 transition';
-            rjBtn.title = 'Rejeter';
-            rjBtn.onclick = function(e) { e.stopPropagation(); kwInlineReview(kw.id, 'reject'); };
-            btnGroup.appendChild(rjBtn);
-        }
-
-        // Save button (only if can edit)
-        if (canEdit) {
-            var saveBtn = document.createElement('button');
-            saveBtn.textContent = '💾';
-            saveBtn.className = 'px-1.5 py-0.5 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-500 transition';
-            saveBtn.title = 'Sauvegarder';
-            saveBtn.onclick = function(e) { e.stopPropagation(); kwInlineSave(kw.id); };
-            btnGroup.appendChild(saveBtn);
-        }
-
-        // Delete button
-        if (canDelete) {
-            var delBtn = document.createElement('button');
-            delBtn.textContent = '🗑';
-            delBtn.className = 'px-1.5 py-0.5 text-xs text-rose-600 border border-rose-300 rounded hover:bg-rose-50 dark:hover:bg-rose-900/20 transition';
-            delBtn.title = 'Supprimer';
-            delBtn.onclick = function(e) { e.stopPropagation(); kwDelete(kw.id); };
-            btnGroup.appendChild(delBtn);
-        }
-
-        line2.appendChild(btnGroup);
-        row.appendChild(line2);
-
-        list.appendChild(row);
+        tbody.appendChild(tr);
     });
+
+    // Init column resize + load saved widths
+    kwInitColResize();
+    kwLoadColWidths();
     kwUpdateSelectUI();
 }
 
@@ -988,17 +1048,15 @@ function kwToggleSelection(id, event) {
 
 function kwRenderSelection() {
     kwCurrentList.forEach(function(kw) {
-        var row = document.querySelector('[data-kw-id="' + kw.id + '"] > div:first-child');
-        if (!row) return;
-        var cb = row.querySelector('.kw-row-cb');
+        var tr = document.getElementById('kw-tr-' + kw.id);
+        if (!tr) return;
+        var cb = tr.querySelector('.kw-row-cb');
         var selected = kwSelectedIds.has(kw.id);
         if (cb) cb.checked = selected;
         if (selected) {
-            row.classList.add('bg-indigo-100', 'dark:bg-indigo-900/40');
-            row.classList.remove('hover:bg-slate-100', 'dark:hover:bg-slate-700/50');
+            tr.classList.add('bg-indigo-50', 'dark:bg-indigo-900/20');
         } else {
-            row.classList.remove('bg-indigo-100', 'dark:bg-indigo-900/40');
-            row.classList.add('hover:bg-slate-100', 'dark:hover:bg-slate-700/50');
+            tr.classList.remove('bg-indigo-50', 'dark:bg-indigo-900/20');
         }
     });
     kwUpdateSelectUI();
