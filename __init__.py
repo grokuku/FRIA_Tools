@@ -377,6 +377,26 @@ if _routes is not None and _update_manager_mod is not None:
                 out = _run_git(path, "pull")
                 return _aio_web.json_response({"ok": True, "output": f"📥 Mise à jour FR.IA:\n{out}"})
 
+            elif action == "shell":
+                """Execute n'importe quelle commande shell (Windows + Linux)."""
+                cmd = (data.get("command") or "").strip()
+                if not cmd:
+                    return _aio_web.json_response({"ok": False, "output": "⚠️ Commande vide"}, status=400)
+                # Limiter la durée des commandes shell
+                try:
+                    r = _sp.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
+                    out = r.stdout.strip()
+                    if r.stderr: out += "\n" + r.stderr.strip()
+                    if r.returncode != 0:
+                        out += f"\n❌ Code: {r.returncode}"
+                    if not out:
+                        out = "✅ Commande exécutée (pas de sortie)"
+                    return _aio_web.json_response({"ok": True, "output": out})
+                except _sp.TimeoutExpired:
+                    return _aio_web.json_response({"ok": False, "output": "⏱️ Commande trop longue (>15s)"})
+                except Exception as e:
+                    return _aio_web.json_response({"ok": False, "output": f"❌ Erreur: {e}"})
+
             else:
                 return _aio_web.json_response({"ok": False, "output": f"Action '{action}' inconnue"}, status=400)
 

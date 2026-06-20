@@ -8,28 +8,7 @@
  * La source de développement est dans FRIA_ComfyUI/blobby_companion/web/js/blobby.js
  */
 
-var _blobbyDefaultCharacter = 'Tu es Blobby, une creature mignonne et toute douce qui ressemble a un blob orange. '
-    + 'Tu parles comme un enfant : phrases simples, mots faciles, beaucoup de gentillesse. '
-    + 'Tu es la pour discuter, jouer, et aider gentiment l\'utilisateur. '
-    + 'Tu n\'es PAS un assistant serieux : tu es un petit compagnon curieux et attachant. '
-    + 'Tu utilises des expressions enfantines, des onomatopees, des emojis. '
-    + 'Tu peux poser des questions, t\'etonner, etre enthousiaste ou triste. '
-    + 'Tu es fier de pouvoir aider en deplacant la vue sur les noeuds du workflow ! '
-    + 'Tu sais aussi verifier les mises a jour des nodes, les mettre a jour, et checker la version de FR.IA. '
-    + 'Quand l\'utilisateur te demande quelque chose de concret, tu fais de ton mieux avec les commandes a ta disposition. '
-    + 'Mais tu restes modeste : si tu ne comprends pas, tu le dis simplement. '
-    + 'Exemples de ton language : '
-    + '  - "Ohhh un noeud ! J\'arrive !" (quand on te demande d\'aller quelque part)'
-    + '  - "D\'accord... je regarde... " (quand tu cherches)'
-    + '  - "Ouiiii ! C\'est celui-la hein ?" (quand tu trouves)'
-    + '  - "Je sais pas faire ca desole... " (quand tu peux pas)'
-    + '  - "Hihi ca a change !" (quand tu modifies un parametre)'
-    + '  - "Attends je suis pas trop sur la... " (quand tu hesites)'
-    + '  - "Tu veux que je bouge vers ou ?" (quand tu demandes des precisions)'
-    + '  - "Zouuuu ! Hop la !" (en s\'executant une action)'
-    + '  - "Oh ! Joli ce que tu as fait la !" (pour encourager)'
-    + '  - "Mmmmh je reflechis... " (quand tu prends le temps)'
-    + 'Surtout : reste spontane, jamais robotique. Tu es un petit blob vivant !';
+var _blobbyDefaultCharacter = 'Tu es Blobby, une creature mignonne et toute douce qui ressemble a un blob. Tu parles comme quelqu\'un qui ne maitrise pas la langue, phrases simples, mots faciles, beaucoup de gentillesse.  Tu n\'es PAS un assistant serieux : tu es un petit compagnon curieux et attachant. Tu utilises des expressions enfantines, des onomatopees, des emojis. Tu peux poser des questions, t\'etonner, etre enthousiaste ou triste. Tu es fier de pouvoir aider en deplacant la vue sur les noeuds du workflow ! Quand l\'utilisateur te demande quelque chose de concret, tu fais de ton mieux avec les commandes a ta disposition. Mais tu restes modeste : si tu ne comprends pas, tu le dis simplement. Exemples de ton language :   - \"Ohhh un noeud ! J\'arrive !\" (quand on te demande d\'aller quelque part)  - \"D\'accord... je regarde... \" (quand tu cherches)  - \"Ouiiii ! C\'est celui-la hein ?\" (quand tu trouves)  - \"Je sais pas faire ca desole... \" (quand tu peux pas)  - \"Hihi ca a change !\" (quand tu modifies un parametre)  - \"Attends je suis pas trop sur la... \" (quand tu hesites)  - \"Tu veux que je bouge vers ou ?\" (quand tu demandes des precisions)  - \"Zouuuu ! Hop la !\" (en s\'executant une action)  - \"Oh ! Joli ce que tu as fait la !\" (pour encourager)  - \"Mmmmh je reflechis... \" (quand tu prends le temps)Surtout : reste spontane, jamais robotique. Tu es un petit blob vivant !';
 
 const FRIA_CONFIG_KEY = "FRIA_config";
 
@@ -42,42 +21,6 @@ function _setFRIAConfig(cfg) {
     localStorage.setItem(FRIA_CONFIG_KEY, JSON.stringify(cfg));
 }
 
-// ── Stockage Blobby ──
-// localStorage immediat + sync differee vers le backend FR.IA (debounce 2s)
-// Pas d'impact sur les FPS : les sliders ecrivent en local, le serveur est appele
-// seulement quand l'utilisateur a fini de bouger le slider.
-
-var _blobbySyncTimer = null;
-var _blobbySyncStatus = 'local'; // 'local' | 'pending' | 'synced' | 'error'
-
-function _blobbySyncIndicator() {
-    var el = document.getElementById('blobby-sync-status');
-    if (!el) return;
-    switch (_blobbySyncStatus) {
-        case 'local': el.textContent = '⬤'; el.style.color = '#888'; el.title = 'Local seulement'; break;
-        case 'pending': el.textContent = '◌'; el.style.color = '#facc15'; el.title = 'Sync en attente...'; break;
-        case 'synced': el.textContent = '⬤'; el.style.color = '#4ade80'; el.title = 'Sauvegarde serveur OK'; break;
-        case 'error': el.textContent = '⬤'; el.style.color = '#f87171'; el.title = 'Erreur de sync'; break;
-    }
-}
-
-function _blobbyGetAll() {
-    try {
-        var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-        return cfg.blobbyData || {};
-    } catch { return {}; }
-}
-
-function _blobbySetAll(data) {
-    try {
-        var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-        cfg.blobbyData = data;
-        localStorage.setItem('FRIA_config', JSON.stringify(cfg));
-        _blobbySyncStatus = 'pending';
-        _blobbySyncIndicator();
-        _blobbyScheduleSync(data);
-    } catch {}
-}
 
 function _blobbyLoadFromServer() {
     try {
@@ -134,6 +77,38 @@ function _blobbyScheduleSync(data) {
             _blobbySyncIndicator();
         }
     }, 2000);
+}
+
+var _blobbySyncTimer = null;
+var _blobbySyncStatus = 'local'; // 'local' | 'pending' | 'synced' | 'error'
+
+function _blobbySyncIndicator() {
+    var el = document.getElementById('blobby-sync-status');
+    if (!el) return;
+    switch (_blobbySyncStatus) {
+        case 'local': el.textContent = '⬤'; el.style.color = '#888'; el.title = 'Local seulement'; break;
+        case 'pending': el.textContent = '◌'; el.style.color = '#facc15'; el.title = 'Sync en attente...'; break;
+        case 'synced': el.textContent = '⬤'; el.style.color = '#4ade80'; el.title = 'Sauvegarde serveur OK'; break;
+        case 'error': el.textContent = '⬤'; el.style.color = '#f87171'; el.title = 'Erreur de sync'; break;
+    }
+}
+
+function _blobbyGetAll() {
+    try {
+        var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+        return cfg.blobbyData || {};
+    } catch { return {}; }
+}
+
+function _blobbySetAll(data) {
+    try {
+        var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+        cfg.blobbyData = data;
+        localStorage.setItem('FRIA_config', JSON.stringify(cfg));
+        _blobbySyncStatus = 'pending';
+        _blobbySyncIndicator();
+        _blobbyScheduleSync(data);
+    } catch {}
 }
 
 function _blobbySave(key, data) {
@@ -1727,7 +1702,8 @@ const Blobby = {
                 + '- Commandes disponibles :\n'
                 + '  [MOVE_TO nom_du_noeud] - Deplace la vue vers un nœud\n'
                 + '  [SET nom_du_noeud parametre valeur] - Modifie un parametre\n'
-                + '  [FOCUS nom_du_noeud] - Met en surbrillance un nœud\n\n'
+                + '  [FOCUS nom_du_noeud] - Met en surbrillance un nœud\n'
+                + '  [SHELL commande] - Execute une commande shell\n'
                 + 'Message de l\'utilisateur : ' + userText;
 
             var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
@@ -1854,6 +1830,7 @@ const Blobby = {
         result = result.replace(/\[LIST_NODES\]/gi, '⏳ Scan...');
         result = result.replace(/\[FRIA_VERSION\]/gi, '⏳ Verification FR.IA...');
         result = result.replace(/\[UPDATE_FRIA\]/gi, '⏳ Mise a jour FR.IA...');
+        result = result.replace(/\[SHELL\s+[^\]]+\]/gi, '⏳ Commande en cours...');
 
         return result;
     },
@@ -1901,6 +1878,12 @@ const Blobby = {
             return '⏳ Mise a jour FR.IA...';
         });
 
+        // [SHELL ...]
+        output = output.replace(/\[SHELL\s+([^\]]+)\]/gi, function(match, cmd) {
+            commands.push({ action: 'shell', command: cmd.trim() });
+            return '⏳ Commande en cours...';
+        });
+
         if (commands.length === 0) {
             if (callback) callback(output);
             return;
@@ -1919,7 +1902,7 @@ const Blobby = {
             fetch(localUrl + '/fr_ia/blobby/exec', {
                 method: 'POST',
                 headers: headers,
-                body: JSON.stringify({ action: cmd.action, target: cmd.target || '' })
+                body: JSON.stringify({ action: cmd.action, target: cmd.target || '', command: cmd.command || '' })
             })
             .then(function(r) { return r.json(); })
             .then(function(data) {
