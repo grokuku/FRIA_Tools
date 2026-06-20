@@ -430,7 +430,6 @@ let kwLastClickedId = null;
 let kwCurrentList = [];
 let _kwSectionsCache = [];
 let _kwSubsectionsCache = [];
-let _kwExpandedId = null;
 let isKwEditor = false;
 let _kwAuthorsCache = [];
 
@@ -532,7 +531,7 @@ function kwLoadList() {
     // Réinitialiser la sélection
     kwSelectedIds.clear();
     kwLastClickedId = null;
-    _kwExpandedId = null;
+    _kwDirtyIds.clear();
     kwUpdateSelectUI();
 
     const params = new URLSearchParams();
@@ -610,7 +609,35 @@ function kwLoadList() {
     checkKwEditorStatus();
 }
 
-// ── Render : liste compacte avec édition inline ──
+// ── Dirty tracking (modifié non sauvegardé) ──
+
+var _kwDirtyIds = new Set();
+
+function _kwMarkDirty(kwId) {
+    _kwDirtyIds.add(kwId);
+    var row = document.querySelector('[data-kw-id="' + kwId + '"]');
+    if (row) {
+        // Add a subtle left border indicator
+        row.classList.add('border-amber-400', 'dark:border-amber-600');
+        row.classList.remove('border-slate-200', 'dark:border-slate-700', 'border-slate-300', 'dark:border-slate-600', 'border-indigo-300', 'dark:border-indigo-700');
+    }
+}
+
+function _kwClearDirty(kwId) {
+    _kwDirtyIds.delete(kwId);
+    var row = document.querySelector('[data-kw-id="' + kwId + '"]');
+    if (row) {
+        row.classList.remove('border-amber-400', 'dark:border-amber-600');
+        // Restore normal border
+        if (kwSelectedIds.has(kwId)) {
+            row.classList.add('border-indigo-300', 'dark:border-indigo-700');
+        } else {
+            row.classList.add('border-slate-200', 'dark:border-slate-700');
+        }
+    }
+}
+
+// ── Render : liste avec édition directe (2 lignes par keyword) ──
 
 function renderKwList(keywords) {
     const list = document.getElementById('kw-list');
@@ -623,288 +650,228 @@ function renderKwList(keywords) {
     document.getElementById('kw-select-toolbar').classList.remove('hidden');
     list.innerHTML = '';
     keywords.forEach(kw => {
-        const row = document.createElement('div');
-        row.dataset.kwId = kw.id;
-        row.className = 'mb-0.5 rounded border border-transparent transition';
-
-        // Compact line
-        const line = document.createElement('div');
-        line.className = 'flex items-center gap-1.5 px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700/50 cursor-pointer text-xs transition';
         const isSelected = kwSelectedIds.has(kw.id);
-        if (isSelected) line.className += ' bg-indigo-100 dark:bg-indigo-900/40';
+        const canEdit = (kw.user_id === (currentUser ? currentUser.id : '')) || isKwEditor;
+        const isOwner = (kw.user_id === (currentUser ? currentUser.id : ''));
+        const canDelete = isOwner || isKwEditor;
+        const isPending = kw.privacy_status === 'public_pending';
 
-        // Checkbox
-        const cb = document.createElement('input');
+        var row = document.createElement('div');
+        row.dataset.kwId = kw.id;
+        row.className = 'mb-1 p-1.5 rounded border transition';
+        if (isSelected) {
+            row.className += ' border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20';
+        } else {
+            row.className += ' border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600';
+        }
+
+        // ── Ligne 1 : keyword / section / subsection / nsfw / privacy ──
+        var line1 = document.createElement('div');
+        line1.className = 'flex items-center gap-1.5 mb-1';
+
+        // Checkbox (multi-selection)
+        var cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.checked = isSelected;
         cb.className = 'kw-row-cb shrink-0 cursor-pointer';
         cb.onchange = function(e) { e.stopPropagation(); kwToggleSelection(kw.id, e); };
-        line.appendChild(cb);
+        line1.appendChild(cb);
 
-        // Privacy icon
-        const pIcon = kw.privacy_status === 'public' ? '🌐' : (kw.privacy_status === 'public_pending' ? '🟡' : '🔒');
-        line.innerHTML += '<span class="text-xs shrink-0">' + pIcon + '</span>';
+        // Privacy icon (visual only)
+        var pIcon = kw.privacy_status === 'public' ? '🌐' : (kw.privacy_status === 'public_pending' ? '🟡' : '🔒');
+        line1.innerHTML += '<span class="text-xs shrink-0">' + pIcon + '</span>';
 
-        // Keyword + description (compact)
-        const preview = (kw.description || '').substring(0, 50);
-        line.innerHTML += '<span class="flex-1 min-w-0"><strong class="text-slate-800 dark:text-slate-200">' + esc(kw.keyword) + '</strong>'
-            + ' <span class="text-slate-400">' + esc(preview) + (preview.length >= 50 ? '…' : '') + '</span></span>';
+        // Keyword input
+        var kwInput = document.createElement('input');
+        kwInput.type = 'text';
+        kwInput.value = kw.keyword || '';
+        kwInput.placeholder = 'Mot-clé';
+        kwInput.className = 'flex-1 min-w-0 px-2 py-0.5 text-xs font-medium border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
+        kwInput.id = 'kw-row-kw-' + kw.id;
+        kwInput.disabled = !canEdit;
+        line1.appendChild(kwInput);
 
-        // Section badge
-        if (kw.section_id) {
-            line.innerHTML += '<span class="text-[10px] text-slate-400 shrink-0 hidden sm:inline">' + esc(kw.section_id) + '</span>';
+        // Section combobox
+        var secInput = document.createElement('input');
+        secInput.type = 'text';
+        secInput.value = kw.section_title || '';
+        secInput.placeholder = 'Section';
+        secInput.setAttribute('list', 'kw-section-combo');
+        secInput.className = 'w-28 px-1 py-0.5 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 shrink-0';
+        secInput.id = 'kw-row-sec-' + kw.id;
+        secInput.disabled = !canEdit;
+        secInput.onchange = function() {
+            var res = _resolveSectionId(secInput.value.trim());
+            document.getElementById('kw-row-secid-' + kw.id).value = res.id;
+            document.getElementById('kw-row-sectitle-' + kw.id).value = res.title;
+            kwRefreshSubsectionCombo(res.id);
+        };
+        line1.appendChild(secInput);
+
+        // Subsection combobox
+        var subInput = document.createElement('input');
+        subInput.type = 'text';
+        subInput.value = kw.subsection_title || '';
+        subInput.placeholder = 'Sous-sec';
+        subInput.setAttribute('list', 'kw-subsection-combo');
+        subInput.className = 'w-28 px-1 py-0.5 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 shrink-0';
+        subInput.id = 'kw-row-sub-' + kw.id;
+        subInput.disabled = !canEdit;
+        subInput.onchange = function() {
+            var sectionId = document.getElementById('kw-row-secid-' + kw.id).value;
+            var res = _resolveSubsectionId(subInput.value.trim(), sectionId);
+            document.getElementById('kw-row-subid-' + kw.id).value = res.id;
+            document.getElementById('kw-row-subtitle-' + kw.id).value = res.title;
+        };
+        line1.appendChild(subInput);
+
+        // NSFW checkbox
+        var nsfwLabel = document.createElement('label');
+        nsfwLabel.className = 'inline-flex items-center gap-0.5 text-xs text-slate-500 dark:text-slate-400 shrink-0';
+        var nsfwCb = document.createElement('input');
+        nsfwCb.type = 'checkbox';
+        nsfwCb.checked = !!kw.nsfw;
+        nsfwCb.className = 'rounded';
+        nsfwCb.id = 'kw-row-nsfw-' + kw.id;
+        nsfwCb.disabled = !canEdit;
+        nsfwLabel.appendChild(nsfwCb);
+        nsfwLabel.appendChild(document.createTextNode('NSFW'));
+        line1.appendChild(nsfwLabel);
+
+        // Privacy dropdown
+        var privSel = document.createElement('select');
+        privSel.className = 'text-xs px-1 py-0.5 border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 shrink-0';
+        privSel.id = 'kw-row-priv-' + kw.id;
+        privSel.disabled = !canEdit;
+        privSel.innerHTML = '<option value="private">🔒</option><option value="public_pending">🟡</option><option value="public">🌐</option>';
+        privSel.value = kw.privacy_status || 'private';
+        if (!isKwEditor) privSel.querySelector('option[value="public"]').disabled = true;
+        line1.appendChild(privSel);
+
+        // Hidden fields for section/subsection IDs
+        var hiddenSecId = document.createElement('input');
+        hiddenSecId.type = 'hidden';
+        hiddenSecId.value = kw.section_id || '';
+        hiddenSecId.id = 'kw-row-secid-' + kw.id;
+        line1.appendChild(hiddenSecId);
+
+        var hiddenSecTitle = document.createElement('input');
+        hiddenSecTitle.type = 'hidden';
+        hiddenSecTitle.value = kw.section_title || '';
+        hiddenSecTitle.id = 'kw-row-sectitle-' + kw.id;
+        line1.appendChild(hiddenSecTitle);
+
+        var hiddenSubId = document.createElement('input');
+        hiddenSubId.type = 'hidden';
+        hiddenSubId.value = kw.subsection_id || '';
+        hiddenSubId.id = 'kw-row-subid-' + kw.id;
+        line1.appendChild(hiddenSubId);
+
+        var hiddenSubTitle = document.createElement('input');
+        hiddenSubTitle.type = 'hidden';
+        hiddenSubTitle.value = kw.subsection_title || '';
+        hiddenSubTitle.id = 'kw-row-subtitle-' + kw.id;
+        line1.appendChild(hiddenSubTitle);
+
+        row.appendChild(line1);
+
+        // ── Ligne 2 : description + boutons d'action ──
+        var line2 = document.createElement('div');
+        line2.className = 'flex items-start gap-1.5';
+
+        // Description textarea (auto-resize)
+        var descInput = document.createElement('textarea');
+        descInput.rows = 1;
+        descInput.value = kw.description || '';
+        descInput.placeholder = 'Description';
+        descInput.className = 'flex-1 min-w-0 px-2 py-0.5 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 resize-none overflow-hidden';
+        descInput.id = 'kw-row-desc-' + kw.id;
+        descInput.disabled = !canEdit;
+        // Auto-resize
+        descInput.oninput = function() {
+            this.style.height = 'auto';
+            this.style.height = Math.max(this.scrollHeight, 20) + 'px';
+            _kwMarkDirty(kw.id);
+        };
+        // Initial auto-resize after render
+        setTimeout(function() { if (descInput) { descInput.style.height = 'auto'; descInput.style.height = Math.max(descInput.scrollHeight, 20) + 'px'; } }, 0);
+        line2.appendChild(descInput);
+
+        // Keyboard shortcut: Ctrl+Enter = save
+        if (canEdit) {
+            [kwInput, descInput, secInput, subInput].forEach(function(el) {
+                el.addEventListener('keydown', function(e) {
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                        e.preventDefault();
+                        kwInlineSave(kw.id);
+                    }
+                });
+                el.addEventListener('input', function() { _kwMarkDirty(kw.id); });
+            });
+            nsfwCb.addEventListener('change', function() { _kwMarkDirty(kw.id); });
+            privSel.addEventListener('change', function() { _kwMarkDirty(kw.id); });
         }
-        // NSFW badge
-        if (kw.nsfw) line.innerHTML += '<span class="text-rose-400 text-[10px] shrink-0">NSFW</span>';
 
-        // Edit button
-        const editBtn = document.createElement('button');
-        editBtn.textContent = '✎';
-        editBtn.className = 'text-slate-400 hover:text-indigo-500 p-0.5 text-xs shrink-0';
-        editBtn.title = 'Éditer';
-        editBtn.onclick = function(e) { e.stopPropagation(); kwExpandRow(kw.id); };
-        line.appendChild(editBtn);
+        // Action buttons (right side)
+        var btnGroup = document.createElement('div');
+        btnGroup.className = 'flex items-center gap-1 shrink-0';
 
-        // If pending: approve/reject buttons
-        if (kw.privacy_status === 'public_pending' && isKwEditor) {
-            const apBtn = document.createElement('button');
+        // Pending : approve/reject
+        if (isPending && isKwEditor) {
+            var apBtn = document.createElement('button');
             apBtn.textContent = '✅';
-            apBtn.className = 'text-xs px-1 py-0.5 bg-emerald-600 text-white rounded hover:bg-emerald-500 shrink-0';
-            apBtn.title = 'Valider';
-            apBtn.onclick = function(e) { e.stopPropagation(); kwQuickReview(kw.id, 'approve'); };
-            line.appendChild(apBtn);
+            apBtn.className = 'px-1.5 py-0.5 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-500 transition';
+            apBtn.title = 'Valider (avec modifications)';
+            apBtn.onclick = function(e) { e.stopPropagation(); kwInlineReview(kw.id, 'approve'); };
+            btnGroup.appendChild(apBtn);
 
-            const rjBtn = document.createElement('button');
+            var rjBtn = document.createElement('button');
             rjBtn.textContent = '❌';
-            rjBtn.className = 'text-xs px-1 py-0.5 bg-rose-600 text-white rounded hover:bg-rose-500 shrink-0';
+            rjBtn.className = 'px-1.5 py-0.5 text-xs bg-rose-600 text-white rounded hover:bg-rose-500 transition';
             rjBtn.title = 'Rejeter';
-            rjBtn.onclick = function(e) { e.stopPropagation(); kwQuickReview(kw.id, 'reject'); };
-            line.appendChild(rjBtn);
+            rjBtn.onclick = function(e) { e.stopPropagation(); kwInlineReview(kw.id, 'reject'); };
+            btnGroup.appendChild(rjBtn);
         }
 
-        row.appendChild(line);
+        // Save button (only if can edit)
+        if (canEdit) {
+            var saveBtn = document.createElement('button');
+            saveBtn.textContent = '💾';
+            saveBtn.className = 'px-1.5 py-0.5 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-500 transition';
+            saveBtn.title = 'Sauvegarder';
+            saveBtn.onclick = function(e) { e.stopPropagation(); kwInlineSave(kw.id); };
+            btnGroup.appendChild(saveBtn);
+        }
 
-        // Expanded edit panel (hidden by default)
-        const editPanel = document.createElement('div');
-        editPanel.id = 'kw-edit-panel-' + kw.id;
-        editPanel.className = 'hidden p-3 bg-slate-50 dark:bg-slate-800/50 rounded-b border border-slate-200 dark:border-slate-700 space-y-2';
-        row.appendChild(editPanel);
+        // Delete button
+        if (canDelete) {
+            var delBtn = document.createElement('button');
+            delBtn.textContent = '🗑';
+            delBtn.className = 'px-1.5 py-0.5 text-xs text-rose-600 border border-rose-300 rounded hover:bg-rose-50 dark:hover:bg-rose-900/20 transition';
+            delBtn.title = 'Supprimer';
+            delBtn.onclick = function(e) { e.stopPropagation(); kwDelete(kw.id); };
+            btnGroup.appendChild(delBtn);
+        }
+
+        line2.appendChild(btnGroup);
+        row.appendChild(line2);
 
         list.appendChild(row);
     });
     kwUpdateSelectUI();
 }
 
-// ── Inline edit : expand/collapse ──
-
-function kwExpandRow(kwId) {
-    // Collapse previous
-    if (_kwExpandedId && _kwExpandedId !== kwId) kwCollapseRow(_kwExpandedId);
-
-    var kw = kwCurrentList.find(function(k) { return k.id === kwId; });
-    if (!kw) return;
-
-    var panel = document.getElementById('kw-edit-panel-' + kwId);
-    if (!panel) return;
-
-    // Check permissions: owner or kw_editor/admin
-    var canEdit = (kw.user_id === (currentUser ? currentUser.id : '')) || isKwEditor;
-
-    // Build edit form
-    panel.innerHTML = '';
-
-    var grid = document.createElement('div');
-    grid.className = 'grid grid-cols-1 gap-2';
-
-    // Keyword + Description
-    var kwInput = document.createElement('input');
-    kwInput.type = 'text';
-    kwInput.value = kw.keyword || '';
-    kwInput.placeholder = 'Mot-clé';
-    kwInput.className = 'w-full px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
-    kwInput.id = 'kw-inline-keyword-' + kwId;
-    kwInput.disabled = !canEdit;
-    grid.appendChild(kwInput);
-
-    var descInput = document.createElement('textarea');
-    descInput.rows = 2;
-    descInput.value = kw.description || '';
-    descInput.placeholder = 'Description';
-    descInput.className = 'w-full px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
-    descInput.style.resize = 'vertical';
-    descInput.id = 'kw-inline-desc-' + kwId;
-    descInput.disabled = !canEdit;
-    grid.appendChild(descInput);
-
-    // Section + Subsection comboboxes
-    var flexDiv = document.createElement('div');
-    flexDiv.className = 'flex gap-2';
-
-    var secDiv = document.createElement('div');
-    secDiv.className = 'flex-1';
-    secDiv.innerHTML = '<label class="text-[10px] text-slate-400">Section</label>';
-    var secInput = document.createElement('input');
-    secInput.type = 'text';
-    secInput.value = kw.section_title || '';
-    secInput.placeholder = 'Section';
-    secInput.setAttribute('list', 'kw-section-combo');
-    secInput.className = 'w-full px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
-    secInput.id = 'kw-inline-section-' + kwId;
-    secInput.disabled = !canEdit;
-    secInput.onchange = function() {
-        var res = _resolveSectionId(secInput.value.trim());
-        document.getElementById('kw-inline-section-id-' + kwId).value = res.id;
-        document.getElementById('kw-inline-section-title-' + kwId).value = res.title;
-        kwRefreshSubsectionCombo(res.id);
-    };
-    secDiv.appendChild(secInput);
-    var secIdHidden = document.createElement('input');
-    secIdHidden.type = 'hidden';
-    secIdHidden.value = kw.section_id || '';
-    secIdHidden.id = 'kw-inline-section-id-' + kwId;
-    secDiv.appendChild(secIdHidden);
-    var secTitleHidden = document.createElement('input');
-    secTitleHidden.type = 'hidden';
-    secTitleHidden.value = kw.section_title || '';
-    secTitleHidden.id = 'kw-inline-section-title-' + kwId;
-    secDiv.appendChild(secTitleHidden);
-    flexDiv.appendChild(secDiv);
-
-    var subDiv = document.createElement('div');
-    subDiv.className = 'flex-1';
-    subDiv.innerHTML = '<label class="text-[10px] text-slate-400">Sous-section</label>';
-    var subInput = document.createElement('input');
-    subInput.type = 'text';
-    subInput.value = kw.subsection_title || '';
-    subInput.placeholder = 'Sous-section';
-    subInput.setAttribute('list', 'kw-subsection-combo');
-    subInput.className = 'w-full px-2 py-1 text-xs border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
-    subInput.id = 'kw-inline-subsection-' + kwId;
-    subInput.disabled = !canEdit;
-    subInput.onchange = function() {
-        var sectionId = document.getElementById('kw-inline-section-id-' + kwId).value;
-        var res = _resolveSubsectionId(subInput.value.trim(), sectionId);
-        document.getElementById('kw-inline-subsection-id-' + kwId).value = res.id;
-        document.getElementById('kw-inline-subsection-title-' + kwId).value = res.title;
-    };
-    subDiv.appendChild(subInput);
-    var subIdHidden = document.createElement('input');
-    subIdHidden.type = 'hidden';
-    subIdHidden.value = kw.subsection_id || '';
-    subIdHidden.id = 'kw-inline-subsection-id-' + kwId;
-    subDiv.appendChild(subIdHidden);
-    var subTitleHidden = document.createElement('input');
-    subTitleHidden.type = 'hidden';
-    subTitleHidden.value = kw.subsection_title || '';
-    subTitleHidden.id = 'kw-inline-subsection-title-' + kwId;
-    subDiv.appendChild(subTitleHidden);
-    flexDiv.appendChild(subDiv);
-
-    grid.appendChild(flexDiv);
-
-    // NSFW + Privacy
-    var optDiv = document.createElement('div');
-    optDiv.className = 'flex items-center gap-4';
-    var nsfwLabel = document.createElement('label');
-    nsfwLabel.className = 'inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400';
-    var nsfwCb = document.createElement('input');
-    nsfwCb.type = 'checkbox';
-    nsfwCb.checked = !!kw.nsfw;
-    nsfwCb.className = 'rounded';
-    nsfwCb.id = 'kw-inline-nsfw-' + kwId;
-    nsfwCb.disabled = !canEdit;
-    nsfwLabel.appendChild(nsfwCb);
-    nsfwLabel.appendChild(document.createTextNode(' NSFW'));
-    optDiv.appendChild(nsfwLabel);
-
-    var privSel = document.createElement('select');
-    privSel.className = 'text-xs px-2 py-1 border border-slate-300 rounded dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200';
-    privSel.id = 'kw-inline-privacy-' + kwId;
-    privSel.disabled = !canEdit;
-    privSel.innerHTML = '<option value="private">🔒 Privé</option><option value="public_pending">🟡 Public (pending)</option><option value="public">🌐 Public</option>';
-    privSel.value = kw.privacy_status || 'private';
-    if (!isKwEditor) privSel.querySelector('option[value="public"]').disabled = true;
-    optDiv.appendChild(privSel);
-
-    grid.appendChild(optDiv);
-    panel.appendChild(grid);
-
-    // Action buttons
-    var btnDiv = document.createElement('div');
-    btnDiv.className = 'flex gap-2 pt-1';
-
-    if (canEdit) {
-        var saveBtn = document.createElement('button');
-        saveBtn.textContent = '✅ Sauvegarder';
-        saveBtn.className = 'px-3 py-1 text-xs font-medium bg-indigo-600 text-white rounded hover:bg-indigo-500 transition';
-        saveBtn.onclick = function() { kwInlineSave(kwId); };
-        btnDiv.appendChild(saveBtn);
-    }
-
-    var cancelBtn = document.createElement('button');
-    cancelBtn.textContent = '✕ Fermer';
-    cancelBtn.className = 'px-3 py-1 text-xs text-slate-500 hover:text-slate-700 border border-slate-300 rounded transition';
-    cancelBtn.onclick = function() { kwCollapseRow(kwId); };
-    btnDiv.appendChild(cancelBtn);
-
-    // Delete button (owner or admin)
-    var isOwner = (kw.user_id === (currentUser ? currentUser.id : ''));
-    if (isOwner || isKwEditor) {
-        var delBtn = document.createElement('button');
-        delBtn.textContent = '🗑 Supprimer';
-        delBtn.className = 'ml-auto px-3 py-1 text-xs font-medium bg-rose-600 text-white rounded hover:bg-rose-500 transition';
-        delBtn.onclick = function() { kwDelete(kwId); };
-        btnDiv.appendChild(delBtn);
-    }
-
-    // Pending review buttons
-    if (kw.privacy_status === 'public_pending' && isKwEditor) {
-        var approveBtn = document.createElement('button');
-        approveBtn.textContent = '✅ Valider';
-        approveBtn.className = 'px-3 py-1 text-xs font-medium bg-emerald-600 text-white rounded hover:bg-emerald-500 transition';
-        approveBtn.onclick = function() { kwInlineReview(kwId, 'approve'); };
-        btnDiv.appendChild(approveBtn);
-
-        var rejectBtn = document.createElement('button');
-        rejectBtn.textContent = '❌ Rejeter';
-        rejectBtn.className = 'px-3 py-1 text-xs font-medium bg-rose-600 text-white rounded hover:bg-rose-500 transition';
-        rejectBtn.onclick = function() { kwInlineReview(kwId, 'reject'); };
-        btnDiv.appendChild(rejectBtn);
-    }
-
-    panel.appendChild(btnDiv);
-
-    // Show panel
-    panel.classList.remove('hidden');
-    _kwExpandedId = kwId;
-
-    // Highlight the row
-    var row = panel.parentNode;
-    row.classList.add('border-slate-300', 'dark:border-slate-600');
-
-    // Refresh subsection combo for current section
-    if (kw.section_id) kwRefreshSubsectionCombo(kw.section_id);
-}
-
-function kwCollapseRow(kwId) {
-    var panel = document.getElementById('kw-edit-panel-' + kwId);
-    if (panel) panel.classList.add('hidden');
-    var row = panel ? panel.parentNode : null;
-    if (row) row.classList.remove('border-slate-300', 'dark:border-slate-600');
-    if (_kwExpandedId === kwId) _kwExpandedId = null;
-}
-
-// ── Inline save ──
+// ── Inline save (lit les champs de la ligne) ──
 
 async function kwInlineSave(kwId) {
-    var keyword = document.getElementById('kw-inline-keyword-' + kwId).value.trim();
-    var description = document.getElementById('kw-inline-desc-' + kwId).value.trim();
-    var section_id = document.getElementById('kw-inline-section-id-' + kwId).value.trim();
-    var section_title = document.getElementById('kw-inline-section-title-' + kwId).value.trim();
-    var subsection_id = document.getElementById('kw-inline-subsection-id-' + kwId).value.trim();
-    var subsection_title = document.getElementById('kw-inline-subsection-title-' + kwId).value.trim();
-    var nsfw = document.getElementById('kw-inline-nsfw-' + kwId).checked ? 1 : 0;
-    var privacy = document.getElementById('kw-inline-privacy-' + kwId).value;
+    var keyword = document.getElementById('kw-row-kw-' + kwId).value.trim();
+    var description = document.getElementById('kw-row-desc-' + kwId).value.trim();
+    var section_id = document.getElementById('kw-row-secid-' + kwId).value.trim();
+    var section_title = document.getElementById('kw-row-sectitle-' + kwId).value.trim();
+    var subsection_id = document.getElementById('kw-row-subid-' + kwId).value.trim();
+    var subsection_title = document.getElementById('kw-row-subtitle-' + kwId).value.trim();
+    var nsfw = document.getElementById('kw-row-nsfw-' + kwId).checked ? 1 : 0;
+    var privacy = document.getElementById('kw-row-priv-' + kwId).value;
 
     if (!keyword || !description) {
         showModal('Erreur', 'Mot-clé et description requis', 'error');
@@ -920,7 +887,7 @@ async function kwInlineSave(kwId) {
         var data = await safeJson(res);
         if (!res.ok) { showModal('Erreur', data.error || 'Erreur', 'error'); return; }
         showModal('Succès', 'Mot-clé mis à jour', 'success');
-        kwCollapseRow(kwId);
+        _kwClearDirty(kwId);
         kwLoadList();
     } catch(e) { showModal('Erreur', e.message, 'error'); }
 }
@@ -944,19 +911,19 @@ async function kwQuickReview(kwId, action) {
     } catch(e) { showModal('Erreur', e.message, 'error'); }
 }
 
-// ── Inline review (approve with edits) ──
+// ── Inline review (approve/reject with edits from the row) ──
 
 async function kwInlineReview(kwId, action) {
     var edits = {};
-    var kwEl = document.getElementById('kw-inline-keyword-' + kwId);
+    var kwEl = document.getElementById('kw-row-kw-' + kwId);
     if (!kwEl) { kwQuickReview(kwId, action); return; }
     edits.keyword = kwEl.value.trim();
-    edits.description = document.getElementById('kw-inline-desc-' + kwId).value.trim();
-    edits.section_id = document.getElementById('kw-inline-section-id-' + kwId).value.trim();
-    edits.section_title = document.getElementById('kw-inline-section-title-' + kwId).value.trim();
-    edits.subsection_id = document.getElementById('kw-inline-subsection-id-' + kwId).value.trim();
-    edits.subsection_title = document.getElementById('kw-inline-subsection-title-' + kwId).value.trim();
-    edits.nsfw = document.getElementById('kw-inline-nsfw-' + kwId).checked ? 1 : 0;
+    edits.description = document.getElementById('kw-row-desc-' + kwId).value.trim();
+    edits.section_id = document.getElementById('kw-row-secid-' + kwId).value.trim();
+    edits.section_title = document.getElementById('kw-row-sectitle-' + kwId).value.trim();
+    edits.subsection_id = document.getElementById('kw-row-subid-' + kwId).value.trim();
+    edits.subsection_title = document.getElementById('kw-row-subtitle-' + kwId).value.trim();
+    edits.nsfw = document.getElementById('kw-row-nsfw-' + kwId).checked ? 1 : 0;
 
     try {
         var body = {action: action};
@@ -977,20 +944,6 @@ async function kwInlineReview(kwId, action) {
 }
 
 // ── Delete ──
-
-async function kwDelete(id) {
-    showConfirm('Confirmer', 'Supprimer ce mot-clé ?', async function(ok) {
-        if (!ok) return;
-        try {
-            var res = await fetch(API + '/keywords/' + id, { method: 'DELETE' });
-            var data = await safeJson(res);
-            if (!res.ok) { showModal('Erreur', data.error || 'Erreur', 'error'); return; }
-            showModal('Succès', 'Mot-clé supprimé', 'success');
-            kwCollapseRow(id);
-            kwLoadList();
-        } catch(e) { showModal('Erreur', e.message, 'error'); }
-    });
-}
 
 // ── Multi-selection ──
 
