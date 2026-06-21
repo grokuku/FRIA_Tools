@@ -134,6 +134,132 @@
   - [ ] Détecter l'échec de sync et basculer en mode local-only silencieux
   - [ ] Le chat LLM pourrait passer par le serveur ComfyUI local (proxy) au lieu d'appeler directement le backend
 
+### ⬜ Blobby — Système de mémoire vectorielle (à planifier)
+
+> Objectif : Blobby retient les conversations passées et évolue au fil du temps.
+> Recherche sémantique des souvenirs pertinents avant chaque envoi au LLM.
+> L'utilisateur ressent une continuité et une évolution du personnage.
+
+#### Architecture
+
+```
+User: "tu te souviens de mon projet de workflow flux?"
+    │
+    ├─► 1. Embedding du message utilisateur
+    ├─► 2. Recherche sémantique dans les souvenirs
+    │      (cosine_similarity vs embeddings stockés)
+    ├─► 3. Injection dans le prompt :
+    │      [SOUVENIRS PERTINENTS]
+    │      • Il y a 3 jours : l'utilisateur travaille sur un workflow flux.8
+    │      • Il y a 1 semaine : l'utilisateur a demandé de l'aide pour des upscalers
+    │      [PERSONNALITÉ]
+    │      • Blobby est devenu plus confiant, aime aider avec les workflows
+    │      [FAITS SUR L'UTILISATEUR]
+    │      • Utilise souvent KSampler
+    │      • Préfère les workflows simples
+    │
+    └─► 4. Envoi au LLM + affichage réponse
+         └─► 5. Sauvegarde du nouveau souvenir (arrière-plan, fire-and-forget)
+              → POST /api/blobby/memory (texte + embedding + métadonnées)
+```
+
+#### 5 niveaux de mémoire
+
+| Niveau | Description | Stockage | Limite |
+|--------|-------------|---------|--------|
+| **1. Épisodes** | Événements marquants avec date + importance (1-5) | BDD vectorielle | 50 max, purge par importance |
+| **2. Faits** | Infos durables sur l'utilisateur (confirmés 3x) | BDD (JSON) | 30 max |
+| **3. Personnalité** | Traits de caractère évolutifs + histoire | BDD (JSON) | Évolution max 5% par mise à jour |
+| **4. Relation** | Familiarité, confiance, humeur | BDD (JSON) | Évolution max 10% par interaction |
+| **5. Historique** | Derniers messages du chat | localStorage | 15 messages max |
+
+#### Backend — nouveau
+
+- **Table BDD** : `blobby_memories`
+  - `id INTEGER PRIMARY KEY AUTOINCREMENT`
+  - `user_id TEXT NOT NULL` (FK users)
+  - `type TEXT` ('episode' | 'fact' | 'personality' | 'relationship')
+  - `content TEXT NOT NULL` (texte du souvenir)
+  - `embedding TEXT` (vecteur JSON, calculé via `generate_embedding()`)
+  - `importance INTEGER DEFAULT 3` (1-5, pour épisodes)
+  - `created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`
+  - `last_accessed TIMESTAMP` (mise à jour à chaque récupération)
+  - `access_count INTEGER DEFAULT 0` (plus c'est accédé, plus c'est important)
+
+- **Endpoints** :
+  - `POST /api/blobby/memory` — sauvegarde un souvenir (calcule l'embedding via `generate_embedding()`)
+  - `GET /api/blobby/memory/search?q=...&limit=5` — recherche sémantique (cosine_similarity) + tri par pertinence/importance
+  - `GET /api/blobby/memory/list` — liste tous les souvenirs (pour debug/affichage)
+  - `DELETE /api/blobby/memory/<id>` — supprime un souvenir
+  - `POST /api/blobby/memory/forget` — tout oublier (reset complet)
+  - `POST /api/blobby/memory/update` — met à jour personnalité/relation (appelé en arrière-plan après chaque conversation)
+
+- **Recherche** :
+  - Calcul de l'embedding de la requête via `generate_embedding()`
+  - Chargement de tous les embeddings en mémoire (quelques centaines max)
+  - `cosine_similarity()` sur chaque souvenir
+  - Tri par score * (importance / 5) → pertinence + importance
+  - Top N (configurable selon `max_context` du modèle)
+
+- **Fallback local** (si backend inaccessible) :
+  - Stockage dans `localStorage.blobbyMemories` (JSON, sans embeddings)
+  - Recherche par mots-clés (correspondance simple, pas de sémantique)
+  - Basculement automatique : essaie le backend, si échec → local
+
+#### Frontend (JS) — nouveau
+
+- **Avant chaque message** :
+  1. Appel `GET /api/blobby/memory/search?q=` + message utilisateur
+  2. Construction du prompt : [SOUVENIRS] + [PERSONNALITÉ] + [FAITS] + [HISTORIQUE] + [MESSAGE]
+  3. Envoi au LLM
+
+- **Après chaque réponse** (fire-and-forget, pas d'attente) :
+  1. Appel `POST /api/blobby/memory` avec le résumé de l'échange
+  2. Tous les 5 messages : appel `POST /api/blobby/memory/update` pour mettre à jour personnalité + relation
+  3. Si la réponse contient `⚠️ NOUVEL APPRENTISSAGE` : sauvegarde immédiate comme épisode
+
+- **Gestion de la taille de contexte** :
+  - Détectée via `max_context` (déjà implémenté, retourné par `/api/keywords/llm-process`)
+  - Modèle 4k → 3 souvenirs + 10 messages d'historique
+  - Modèle 32k+ → 10 souvenirs + 20 messages d'historique
+  - Si total dépasse le contexte : réduire d'abord l'historique, puis les souvenirs
+
+- **Évolution progressive de la personnalité** :
+  - Mise à jour tous les 5 messages (pas après chaque message)
+  - Le LLM reçoit l'ancienne personnalité + la conversation récente
+  - Garde 80% de l'ancienne + max 20% de nouveau
+  - Un seul message ne peut pas changer radicalement la personnalité
+  - Si quelqu'un dit "parle comme un pirate" 1 fois → Blobby le fait pour rire, mais sa personnalité ne change pas. Si 100 fois → Blobby intègre lentement un trait "humour pirate"
+
+- **Boutons chat** :
+  - 🗑 Clear (existant) — efface l'historique du chat
+  - 🧹 Oublier — réinitialise TOUS les souvenirs (épisodes, faits, personnalité, relation) avec confirmation
+  - 📦 Compact (existant) — toggle mode compact
+
+- **Persistance** :
+  - Souvenirs → BDD backend (survie entre machines si même compte)
+  - Historique récent → localStorage (local, rapide)
+  - Skills → localStorage (existant, déjà implémenté)
+  - Apparence/Caractère → localStorage + sync serveur (existant)
+
+#### Dépendances
+
+- **Embeddings** : utilise l'infrastructure existante (`embeddings.py` → Ollama ou Gemini)
+- **Cosine similarity** : `embeddings.py` déjà implémenté
+- **BDD** : SQLite existant, nouvelle table
+- **LLM** : utilise le même preset que pour le chat (`/api/keywords/llm-process`)
+- **Auth** : utilise le token Bearer existant
+
+#### Questions ouvertes / points d'attention
+
+- [ ] **Latence** : l'embedding + recherche ajoute ~200-500ms avant chaque message. Acceptable ?
+- [ ] **Coût LLM** : la mise à jour mémoire (tous les 5 messages) fait un appel LLM supplémentaire. Négligeable ?
+- [ ] **Privacy** : les souvenirs sont stockés sur le serveur. Faut-il un toggle "mémoire locale uniquement" ?
+- [ ] **Partage de souvenirs** : si l'utilisateur utilise Blobby sur 2 machines (ComfyUI local + distant), les souvenirs sont partagés via le backend. C'est le comportement attendu ?
+- [ ] **Purge automatique** : algorithme de purge quand on dépasse 50 épisodes : supprimer d'abord les moins importants ET les plus anciens non accédés récemment. Score de purge = `importance * access_count / age`.
+- [ ] **Métadonnées des souvenirs** : doit-on stocker le type de souvenir (positif/négatif/neutre) pour que Blobby adapte son ton ?
+- [ ] **Détection de "moments marquants"** : le LLM peut marquer certains échanges comme importants dans sa réponse (ex: `⚠️ MEMORABLE`), ce qui augmente l'importance de l'épisode.
+
 ---
 
 ## 🚀 Session en cours (19/06/2026)

@@ -164,7 +164,146 @@ function _blobbyListSkills() {
     return _blobbyGetSkills();
 }
 
+// ── Memory system (Blobby's vector memory) ──
 
+var _blobbyMsgCounter = 0;
+var _blobbyLocalMemories = []; // fallback local si backend inaccessible
+var _blobbyBackendAvailable = true;
+
+function _blobbyGetBackendUrl() {
+    try { return JSON.parse(localStorage.getItem('FRIA_config'))?.serverUrl?.replace(/\/+$/, '') || 'https://kw.holaf.fr'; }
+    catch { return 'https://kw.holaf.fr'; }
+}
+
+function _blobbyGetApiKey() {
+    try { return JSON.parse(localStorage.getItem('FRIA_config'))?.apiKey || ''; }
+    catch { return ''; }
+}
+
+async function _blobbySearchMemories(query, limit) {
+    limit = limit || 5;
+    var url = _blobbyGetBackendUrl() + '/api/blobby/memory/search?q=' + encodeURIComponent(query) + '&limit=' + limit;
+    var headers = { 'Content-Type': 'application/json' };
+    var apiKey = _blobbyGetApiKey();
+    if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
+    try {
+        var res = await fetch(url, { headers: headers, timeout: 3000 });
+        if (!res.ok) { _blobbyBackendAvailable = false; return _blobbyLocalSearch(query, limit); }
+        var data = await res.json();
+        _blobbyBackendAvailable = true;
+        return data.results || [];
+    } catch(e) {
+        _blobbyBackendAvailable = false;
+        return _blobbyLocalSearch(query, limit);
+    }
+}
+
+function _blobbyLocalSearch(query, limit) {
+    // Fallback : recherche par mots-clés dans localStorage
+    var q = query.toLowerCase();
+    var words = q.split(/\s+/).filter(function(w) { return w.length > 2; });
+    var scored = _blobbyLocalMemories.map(function(m) {
+        var content = (m.content || '').toLowerCase();
+        var score = 0;
+        words.forEach(function(w) { if (content.indexOf(w) >= 0) score += 1; });
+        return { id: m.id || 0, type: m.type || 'episode', content: m.content, importance: m.importance || 3, created_at: m.created_at || '', score: score };
+    });
+    scored.sort(function(a, b) { return b.score - a.score; });
+    return scored.slice(0, limit).filter(function(s) { return s.score > 0; });
+}
+
+async function _blobbySaveMemory(content, memType, importance) {
+    memType = memType || 'episode';
+    importance = importance || 3;
+    // Local backup
+    _blobbyLocalMemories.push({ content: content, type: memType, importance: importance, created_at: new Date().toISOString() });
+    if (_blobbyLocalMemories.length > 50) _blobbyLocalMemories = _blobbyLocalMemories.slice(-50);
+    try { localStorage.setItem('blobbyLocalMemories', JSON.stringify(_blobbyLocalMemories)); } catch {}
+    // Backend save (fire-and-forget)
+    if (!_blobbyBackendAvailable) return;
+    var url = _blobbyGetBackendUrl() + '/api/blobby/memory';
+    var headers = { 'Content-Type': 'application/json' };
+    var apiKey = _blobbyGetApiKey();
+    if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
+    try {
+        await fetch(url, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({ content: content, type: memType, importance: importance })
+        });
+    } catch(e) { /* silent fail */ }
+}
+
+async function _blobbyForgetAll() {
+    // Local
+    _blobbyLocalMemories = [];
+    try { localStorage.removeItem('blobbyLocalMemories'); } catch {}
+    // Backend
+    var url = _blobbyGetBackendUrl() + '/api/blobby/memory/forget';
+    var headers = { 'Content-Type': 'application/json' };
+    var apiKey = _blobbyGetApiKey();
+    if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
+    try { await fetch(url, { method: 'POST', headers: headers }); } catch {}
+}
+
+// Charger les souvenirs locaux au démarrage
+try { _blobbyLocalMemories = JSON.parse(localStorage.getItem('blobbyLocalMemories')) || []; } catch {}
+
+
+
+
+
+
+// ── Populate Blobby tab in FR.IA settings modal ──
+
+function _blobbyPopulateSettings() {
+    var container = document.getElementById('blobby-settings-container');
+    if (!container || container.children.length > 0) return; // Already populated
+
+    var _self = window.Blobby || Blobby;
+    container.innerHTML = '';
+
+    // FPS slider
+    var fpsDiv = document.createElement('div');
+    fpsDiv.innerHTML = '<label class="text-xs text-slate-500 dark:text-slate-400">FPS animation (0 = auto)</label>';
+    var fpsSlider = document.createElement('input');
+    fpsSlider.type = 'range';
+    fpsSlider.min = 0; fpsSlider.max = 165; fpsSlider.value = _blobbyLoadFps(0);
+    fpsSlider.className = 'w-full';
+    Object.assign(fpsSlider.style, { accentColor: '#FF8F00' });
+    var fpsVal = document.createElement('span');
+    fpsVal.textContent = fpsSlider.value;
+    fpsVal.className = 'text-xs text-slate-400 ml-2';
+    fpsSlider.oninput = function() {
+        fpsVal.textContent = this.value;
+        _blobbySaveFps(parseInt(this.value));
+        if (typeof Blobby !== 'undefined' && Blobby._loadAppearance) Blobby._loadAppearance();
+    };
+    fpsDiv.appendChild(fpsSlider);
+    fpsDiv.appendChild(fpsVal);
+    container.appendChild(fpsDiv);
+
+    // Note
+    var note = document.createElement('p');
+    note.textContent = 'L\'apparence (couleurs, yeux, bouche, particules) se regle dans la modale Blobby du chat.';
+    Object.assign(note.style, { fontSize: '11px', color: '#64748b', marginTop: '8px' });
+    container.appendChild(note);
+
+    // Status mémoire
+    var memDiv = document.createElement('div');
+    memDiv.style.marginTop = '12px';
+    var memTitle = document.createElement('h3');
+    memTitle.textContent = 'Memoire';
+    memTitle.className = 'text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2';
+    memDiv.appendChild(memTitle);
+
+    var localCount = _blobbyLocalMemories.length;
+    var memInfo = document.createElement('p');
+    memInfo.className = 'text-xs text-slate-500 dark:text-slate-400';
+    memInfo.innerHTML = 'Souvenirs locaux: ' + localCount + '<br>La personnalite de Blobby evolue naturellement au fil des conversations. Utilise le bouton 🧹 dans le chat pour tout oublier.';
+    memDiv.appendChild(memInfo);
+    container.appendChild(memDiv);
+}
 
 const Blobby = {
     x: 400,
@@ -954,6 +1093,16 @@ const Blobby = {
 // ─── Chat modal ────────────────────────────────────────────────
 
     _openChatSettings() {
+        // Ouvrir la modale FR.IA et switcher sur l'onglet Blobby
+        var friaModal = document.getElementById('modal-user-settings');
+        if (friaModal) {
+            friaModal.classList.remove('hidden');
+            friaModal.classList.add('flex');
+            var blobbyTab = friaModal.querySelector('[data-tab="blobby"]');
+            if (blobbyTab) switchSettingsTab('blobby', blobbyTab);
+            return;
+        }
+        // Fallback : si la modale FR.IA n'existe pas, on crée la notre
         var existing = document.getElementById('blobby-chat-settings');
         if (existing) { existing.style.display = 'flex'; return; }
 
@@ -992,8 +1141,8 @@ const Blobby = {
             display: 'flex', borderBottom: '1px solid #333', background: '#1a1a1e', flexShrink: '0',
         });
 
-        var tabNames = ['provider', 'character', 'appearance'];
-        var tabLabels = { provider: 'Général', character: 'Caractère', appearance: 'Apparence' };
+        var tabNames = ['provider', 'appearance'];
+        var tabLabels = { provider: 'Général', appearance: 'Apparence' };
         var tabContent = document.createElement('div');
         Object.assign(tabContent.style, { padding: '14px', overflowY: 'auto', flex: '1', display: 'flex', flexDirection: 'column', gap: '12px' });
 
@@ -1128,56 +1277,6 @@ const Blobby = {
         provContent.appendChild(fpsNote);
 
         // ── Tab Caractere ──
-        var charContent = document.createElement('div');
-        charContent.id = 'bcs-content-character';
-        charContent.className = 'bcs-tab-content';
-        Object.assign(charContent.style, { display: 'none', flexDirection: 'column', gap: '12px' });
-
-        var cLabel = document.createElement('label');
-        cLabel.textContent = 'Personnalite de Blobby';
-        Object.assign(cLabel.style, { fontSize: '12px', color: '#94a3b8', fontWeight: '600' });
-
-        var cNote = document.createElement('p');
-        cNote.textContent = 'Ce texte definit comment Blobby se comporte. Plus c\'est detaille, mieux c\'est.';
-        Object.assign(cNote.style, { fontSize: '11px', color: '#64748b', lineHeight: '1.4', margin: '0' });
-
-        var ta = document.createElement('textarea');
-        ta.id = 'blobby-chat-character';
-        Object.assign(ta.style, {
-            width: '100%', minHeight: '140px', padding: '8px 10px', borderRadius: '6px',
-            border: '1px solid #555', background: '#1a1a1e', color: '#fff',
-            fontSize: '12px', outline: 'none', resize: 'vertical',
-            fontFamily: 'inherit', lineHeight: '1.5',
-        });
-
-        // Charger le caractere sauvegarde ou celui par defaut
-        try {
-            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-            ta.value = cfg.blobbyCharacter || _blobbyDefaultCharacter;
-        } catch { ta.value = _blobbyDefaultCharacter; }
-
-        // Reset au defaut
-        var resetBtn = document.createElement('button');
-        resetBtn.textContent = '↺ Reset defaut';
-        Object.assign(resetBtn.style, {
-            alignSelf: 'flex-start', padding: '4px 10px', borderRadius: '4px',
-            border: '1px solid #555', background: 'transparent', color: '#94a3b8',
-            cursor: 'pointer', fontSize: '11px',
-        });
-        resetBtn.onmouseenter = () => resetBtn.style.background = '#333';
-        resetBtn.onmouseleave = () => resetBtn.style.background = 'transparent';
-        resetBtn.onclick = function() {
-            ta.value = _blobbyDefaultCharacter;
-            _self._saveChatCharacter(ta.value);
-        };
-
-        ta.oninput = function() { _self._saveChatCharacter(ta.value); };
-
-        charContent.appendChild(cLabel);
-        charContent.appendChild(cNote);
-        charContent.appendChild(ta);
-        charContent.appendChild(resetBtn);
-
         // ── Tab Apparence ──
         var appContent = document.createElement('div');
         appContent.id = 'bcs-content-appearance';
@@ -1339,7 +1438,6 @@ const Blobby = {
         });
 
         tabContent.appendChild(provContent);
-        tabContent.appendChild(charContent);
         tabContent.appendChild(appContent);
 
         modal.appendChild(header);
@@ -1378,12 +1476,10 @@ const Blobby = {
         switchTab('provider');
     },
 
-    _saveChatCharacter(text) {
-        _blobbySaveCharacter(text);
-    },
-
     getCharacter: function() {
-        return _blobbyLoadCharacter(_blobbyDefaultCharacter);
+        // La personnalite evolue via le systeme memoire, pas par edition manuelle
+        // L'ADN de base est le point de depart, les souvenirs l'enrichissent
+        return _blobbyDefaultCharacter;
     },
 
     _saveChatHistory() {
@@ -1520,6 +1616,22 @@ const Blobby = {
             }
         };
         headerRight.appendChild(clearBtn);
+        // Bouton Oublier (reset mémoire)
+        var forgetBtn = document.createElement('button');
+        forgetBtn.textContent = '🧹';
+        forgetBtn.title = 'Tout oublier (mémoire)';
+        Object.assign(forgetBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '12px', padding: '0 4px' });
+        forgetBtn.onmouseenter = () => forgetBtn.style.color = '#f87171';
+        forgetBtn.onmouseleave = () => forgetBtn.style.color = '#888';
+        forgetBtn.onclick = function(e) {
+            e.stopPropagation();
+            if (confirm('Blobby va tout oublier de vos conversations passées. Continuer ?')) {
+                _blobbyForgetAll();
+                _blobbyMsgCounter = 0;
+                _self._addChatMessage(document.getElementById('blobby-chat-msgs'), 'system', '🧹 Blobby a tout oublié. C\'est reparti !');
+            }
+        };
+        headerRight.appendChild(forgetBtn);
         // Bouton Compact
         var compactBtn = document.createElement('button');
         compactBtn.textContent = '📦';
@@ -1778,12 +1890,28 @@ const Blobby = {
                 return;
             }
 
+            // ── Recherche de souvenirs pertinents ──
+            var memories = [];
+            try {
+                memories = await _blobbySearchMemories(userText, 5);
+            } catch {}
+            
+            // Construire le bloc mémoire
+            var memoryBlock = '';
+            if (memories && memories.length > 0) {
+                memoryBlock = '\n\n[SOUVENIRS PERTINENTS]\n';
+                memories.forEach(function(m) {
+                    memoryBlock += '• ' + (m.content || '') + '\n';
+                });
+            }
+            
+            // ── Construire le prompt ──
             var character = this.getCharacter();
             var moodDesc = this.mood === 'happy' ? '😊 Tout content et joyeux !'
                 : this.mood === 'surprised' ? '😮 Surpris et curieux !'
                 : this.mood === 'sleepy' ? '😴 Endormi et lent...'
                 : '😐 Neutre';
-            var instruction = character + '\n\n'
+            var instruction = character + memoryBlock + '\n\n'
                 + 'Humeur actuelle : ' + moodDesc + '\n'
                 + '(Ton \"Blobby\" doit refletter cette humeur)\n\n'
                 + 'Workflow actuel :\n' + workflowDesc + '\n\n'
@@ -1844,6 +1972,39 @@ const Blobby = {
                     lastMsg.innerHTML = updatedReply;
                 }
             });
+
+            // ── Sauvegarder le souvenir (fire-and-forget) ──
+            _blobbyMsgCounter++;
+            var memText = 'User: ' + userText + ' → Blobby: ' + (data.output || '').substring(0, 200);
+            var importance = 3;
+            // Détecter les moments marquants
+            if (data.output && data.output.indexOf('⚠️ MEMORABLE') >= 0) importance = 5;
+            _blobbySaveMemory(memText, 'episode', importance);
+
+            // ── Mise à jour personnalité tous les 5 messages ──
+            if (_blobbyMsgCounter % 5 === 0) {
+                // Demander au LLM de mettre à jour la personnalité (fire-and-forget)
+                var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
+                var updateHeaders = { 'Content-Type': 'application/json' };
+                if (cfg.apiKey) updateHeaders['Authorization'] = 'Bearer ' + cfg.apiKey;
+                var updateInstruction = 'Tu es Blobby. Voici ta personnalite actuelle et la conversation recente. '
+                    + 'Mets a jour ta personnalite en gardant 80% de l\'ancienne et en ajoutant max 20% de nouveau. '
+                    + 'Reste concis (max 200 caracteres). Reponds UNIQUEMENT avec la nouvelle description de personnalite.\n\n'
+                    + 'Personnalite actuelle: ' + character + '\n\n'
+                    + 'Derniers echanges: ' + userText.substring(0, 200);
+                fetch(baseUrl + '/api/keywords/llm-process', {
+                    method: 'POST',
+                    headers: updateHeaders,
+                    body: JSON.stringify({ preset_id: parseInt(presetId), instruction: updateInstruction })
+                }).then(function(r) { return r.json(); })
+                .then(function(d) {
+                    if (d.output) {
+                        // Sauvegarder la nouvelle personnalite
+                        _blobbySaveCharacter(d.output.trim().substring(0, 300));
+                        _blobbySaveMemory('Personnalite mise a jour: ' + d.output.trim().substring(0, 100), 'personality', 4);
+                    }
+                }).catch(function() {});
+            }
 
         } catch (e) {
             var thinking = container.querySelector('div:last-child');

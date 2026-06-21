@@ -192,6 +192,7 @@
         el.classList.add('text-slate-500', 'dark:text-slate-400', 'border-transparent');
       });
       document.getElementById('tab-' + tab).classList.remove('hidden');
+      if (tab === 'blobby') _blobbyPopulateSettings();
       btn.classList.remove('text-slate-500', 'dark:text-slate-400', 'border-transparent');
       btn.classList.add('text-indigo-600', 'dark:text-indigo-400', 'border-indigo-500', 'dark:border-indigo-400');
     }

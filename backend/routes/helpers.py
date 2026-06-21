@@ -370,6 +370,24 @@ def _init_db():
     conn.execute("CREATE INDEX IF NOT EXISTS idx_enhance_sessions_user ON enhance_sessions(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_enhance_sessions_expires ON enhance_sessions(expires_at)")
 
+    # ── Table Blobby memories (mémoire vectorielle) ──
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS blobby_memories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            type TEXT NOT NULL DEFAULT 'episode',
+            content TEXT NOT NULL,
+            embedding TEXT,
+            importance INTEGER DEFAULT 3,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_accessed TIMESTAMP,
+            access_count INTEGER DEFAULT 0,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_blobby_memories_user ON blobby_memories(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_blobby_memories_type ON blobby_memories(type)")
+
     # Créer les templates par défaut si aucun n'existe
     existing = conn.execute("SELECT COUNT(*) FROM prompt_templates").fetchone()[0]
     if existing == 0:
