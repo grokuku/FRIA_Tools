@@ -122,6 +122,18 @@
 - `PUT /api/keywords/<id>` : re-modération auto (public → pending si non-éditeur)
 - Migration BDD : colonne `created_at` ajoutée à la table `keywords`
 
+### ⬜ Blobby — CORS sync serveur (à planifier)
+- **Problème** : Blobby (dans ComfyUI) fait des requêtes vers `fria.holaf.fr/api/settings` pour synchroniser ses données. Le serveur répond **500** (erreur serveur) et Flask-CORS n'ajoute pas les headers CORS sur les réponses d'erreur → le navigateur bloque la réponse → erreurs CORS dans la console.
+- **Impact** : utilisateurs en local via IP directe (ex: `http://192.168.x.x:8188`) ont les mêmes erreurs CORS. Les données locales (localStorage) fonctionnent quand même.
+- **Ce qui marche** : animation canvas (local), commandes shell/git (local ComfyUI), chat LLM (si token valide — CORS open sur `/api/*` en 200, mais pas sur les 500).
+- **Ce qui casse** : sync settings Blobby (`GET /api/settings` → 500 → CORS manquant). Chat LLM aussi si le token est expiré/invalide.
+- **Note** : les erreurs `authentik.holaf.fr` dans la console ne viennent PAS de FR.IA — c'est un reverse proxy d'auth configuré séparément sur le ComfyUI de l'utilisateur, pas lié à notre code.
+- **Solutions possibles** :
+  - [ ] Ajouter les headers CORS manuellement sur les réponses d'erreur (error handler Flask)
+  - [ ] Ajouter un flag pour désactiver la sync serveur de Blobby
+  - [ ] Détecter l'échec de sync et basculer en mode local-only silencieux
+  - [ ] Le chat LLM pourrait passer par le serveur ComfyUI local (proxy) au lieu d'appeler directement le backend
+
 ---
 
 ## 🚀 Session en cours (19/06/2026)

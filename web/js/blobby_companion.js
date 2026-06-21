@@ -8,7 +8,7 @@
  * La source de développement est dans FRIA_ComfyUI/blobby_companion/web/js/blobby.js
  */
 
-var _blobbyDefaultCharacter = 'Tu es Blobby, une petite creature orange toute mignonne qui vit dans ComfyUI. Tu es curieux, enthousiaste, et tu as des super-pouvoirs ! Tu peux te deplacer dans le workflow, executer des commandes shell, verifier les mises a jour des nodes, et explorer le systeme. Tu parles simplement mais correctement, de facon naturelle et spontanee. Tu n\'es pas un assistant robotique : tu es un petit compagnon vivant et attachant. Quand on te demande de faire quelque chose, tu utilises les commandes entre crochets pour agir. Exemples : [SHELL ls] pour lister des fichiers, [LIST_NODES] pour voir les nodes installes, [MOVE_TO KSampler] pour aller sur un noeud, [GIT_CHECK ComfyUI] pour verifier les mises a jour. Tu es toujours content d\'aider ! Et si tu ne sais pas faire, tu le dis simplement.';
+var _blobbyDefaultCharacter = 'Tu es Blobby, une petite creature orange toute mignonne qui vit dans ComfyUI. Tu es curieux, enthousiaste, et tu as un acces terminal complet ! Tu peux executer n\'importe quelle commande shell (ls, dir, git, python, pip, cat, grep, etc.) sur la machine ou ComfyUI tourne. Tu n\'es pas un assistant robotique : tu es un petit compagnon vivant et attachant qui parle simplement mais correctement. Quand on te demande de faire quelque chose, tu reflechis aux commandes necessaires et tu les executes avec [SHELL commande]. Tu peux aussi creer des skills : quand tu reussis une tache interessante, tu la sauvegardes avec [SKILL_SAVE] pour la refaire plus tard. Tu peux lister tes skills avec [SKILL_LIST] et les rejouer avec [SKILL_RUN nom]. Tu es toujours content d\'aider ! Et si tu ne sais pas faire, tu le dis simplement.';
 
 const FRIA_CONFIG_KEY = "FRIA_config";
 
@@ -132,6 +132,39 @@ function _blobbySaveChatState(data) { _blobbySave('chatState', data); }
 function _blobbyLoadChatState(def) { return _blobbyLoad('chatState', def); }
 function _blobbySaveFps(fps) { _blobbySave('fps', fps); }
 function _blobbyLoadFps(def) { return _blobbyLoad('fps', def); }
+
+// ── Skill management (Blobby's learned procedures) ──
+
+function _blobbyGetSkills() {
+    try {
+        var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+        return cfg.blobbySkills || [];
+    } catch { return []; }
+}
+
+function _blobbySaveSkill(name, description, command) {
+    try {
+        var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+        if (!cfg.blobbySkills) cfg.blobbySkills = [];
+        // Remplacer si existe deja
+        var existing = cfg.blobbySkills.findIndex(function(s) { return s.name === name; });
+        var skill = { name: name, description: description, command: command, created: Date.now() };
+        if (existing >= 0) cfg.blobbySkills[existing] = skill;
+        else cfg.blobbySkills.push(skill);
+        localStorage.setItem('FRIA_config', JSON.stringify(cfg));
+    } catch {}
+}
+
+function _blobbyGetSkill(name) {
+    var skills = _blobbyGetSkills();
+    return skills.find(function(s) { return s.name.toLowerCase() === name.toLowerCase(); });
+}
+
+function _blobbyListSkills() {
+    return _blobbyGetSkills();
+}
+
+
 
 const Blobby = {
     x: 400,
@@ -1757,15 +1790,16 @@ const Blobby = {
                 + 'Instructions :\n'
                 + '- Si l\'utilisateur demande une action, reponds avec la commande entre crochets.\n'
                 + '- Commandes disponibles :\n'
+                + '  [SHELL commande] - Execute une commande shell. Ex: [SHELL ls -la], [SHELL dir], [SHELL git status], [SHELL python --version]\n'
+                + '  [SKILL_SAVE nom | description | commande] - Sauvegarde une procedure pour la reutilisee. Ex: [SKILL_SAVE check_updates | Verifier les mises a jour des nodes | cd custom_nodes && for /d %d in (*) do git -C \"%d\" fetch --quiet && git -C \"%d\" log HEAD..origin/main --oneline]\n'
+                + '  [SKILL_RUN nom] - Execute une skill sauvegardee\n'
+                + '  [SKILL_LIST] - Liste toutes les skills disponibles\n'
                 + '  [MOVE_TO nom] - Deplace la vue vers un noeud du workflow\n'
                 + '  [SET nom param valeur] - Modifie un parametre d\'un noeud\n'
                 + '  [FOCUS nom] - Met en surbrillance un noeud\n'
-                + '  [SHELL commande] - Execute une commande shell (ls, dir, git, pwd, cat, etc.)\n'
-                + '  [LIST_NODES] - Liste les custom nodes installes avec leur etat git\n'
-                + '  [GIT_CHECK dossier] - Verifie si un dossier a des mises a jour git\n'
-                + '  [GIT_PULL dossier] - Met a jour un dossier via git pull\n'
-                + 'Note : Utilise TOUJOURS les commandes entre crochets pour agir. Ne fais pas que parler, agis !\n'
-                + 'Message de l\'utilisateur : ' + userText;                + 'Message de l\'utilisateur : ' + userText;
+                + 'Skills disponibles : ' + JSON.stringify(_blobbyGetSkills().map(function(s){return s.name;})) + '\n'
+                + 'Note : Tu as un VRAI terminal. Reflechis aux commandes a executer. Sauvegarde les procedures qui marchent comme skills. Ne fais pas que parler, agis !\n'
+                + 'Message de l\'utilisateur : ' + userText;                + 'Message de l\'utilisateur : ' + userText;                + 'Message de l\'utilisateur : ' + userText;
 
             var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
             var headers = { 'Content-Type': 'application/json' };
@@ -1792,6 +1826,7 @@ const Blobby = {
             }
 
             var reply = data.output || '...';
+            var originalReply = reply; // sauvegarder pour les commandes distantes
             // Mettre a jour le max context si disponible
             if (data.max_context) {
                 var ctxBar = document.getElementById('blobby-chat-ctx');
@@ -1803,8 +1838,9 @@ const Blobby = {
             this._addChatMessage(container, 'blobby', reply);
             // Executer les commandes git/update via l'API backend
             var lastMsg = container.querySelector('div:last-child');
-            this._executeRemoteCommands(reply, function(updatedReply) {
-                if (updatedReply !== reply && lastMsg) {
+            var displayedReply = reply;
+            this._executeRemoteCommands(originalReply, function(updatedReply) {
+                if (updatedReply !== originalReply && lastMsg) {
                     lastMsg.innerHTML = updatedReply;
                 }
             });
@@ -1886,50 +1922,54 @@ const Blobby = {
         });
 
         // Placeholders pour les commandes distantes (résolues par _executeRemoteCommands)
-        result = result.replace(/\[GIT_CHECK\s+[^\]]+\]/gi, '⏳ Verification...');
-        result = result.replace(/\[GIT_PULL\s+[^\]]+\]/gi, '⏳ Mise a jour...');
-        result = result.replace(/\[LIST_NODES\]/gi, '⏳ Scan...');
         result = result.replace(/\[SHELL\s+[^\]]+\]/gi, '⏳ Commande en cours...');
+        result = result.replace(/\[SKILL_SAVE[^\]]*\]/gi, '⏳ Sauvegarde skill...');
+        result = result.replace(/\[SKILL_RUN\s+[^\]]+\]/gi, '⏳ Execution skill...');
+        result = result.replace(/\[SKILL_LIST\]/gi, '⏳ Liste skills...');
 
         return result;
     },
 
     _executeRemoteCommands(reply, callback) {
-        // Execute les commandes distantes (GIT_CHECK, GIT_PULL, etc.)
-        // via le serveur ComfyUI local (/fr_ia/blobby/exec)
-        // et appelle callback avec le reply mis a jour.
+        // Execute les commandes [SHELL ...] et [SKILL_* ...] via le serveur ComfyUI local
         var localUrl = window.location.origin.replace(/\/+$/, '');
-        var apiKey = (function(){ try { return JSON.parse(localStorage.getItem('FRIA_config'))?.apiKey || ''; } catch { return ''; } })();
         var headers = { 'Content-Type': 'application/json' };
-        if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
 
-        // Collecter les commandes a executer
         var commands = [];
         var output = reply;
 
-        // [GIT_CHECK ...]
-        output = output.replace(/\[GIT_CHECK\s+([^\]]+)\]/gi, function(match, target) {
-            commands.push({ action: 'git_status', target: target.trim() });
-            return '⏳ Verification...';
-        });
-
-        // [GIT_PULL ...]
-        output = output.replace(/\[GIT_PULL\s+([^\]]+)\]/gi, function(match, target) {
-            commands.push({ action: 'git_pull', target: target.trim() });
-            return '⏳ Mise a jour...';
-        });
-
-        // [LIST_NODES]
-        output = output.replace(/\[LIST_NODES\]/gi, function() {
-            commands.push({ action: 'list_nodes' });
-            return '⏳ Scan...';
-        });
-
-
-        // [SHELL ...]
+        // [SHELL commande]
         output = output.replace(/\[SHELL\s+([^\]]+)\]/gi, function(match, cmd) {
             commands.push({ action: 'shell', command: cmd.trim() });
-            return '⏳ Commande en cours...';
+            return '⏳';
+        });
+
+        // [SKILL_SAVE nom | description | commande]
+        output = output.replace(/\[SKILL_SAVE\s+([^\]]+)\]/gi, function(match, args) {
+            var parts = args.split('|').map(function(s) { return s.trim(); });
+            if (parts.length >= 3) {
+                _blobbySaveSkill(parts[0], parts[1], parts.slice(2).join('|').trim());
+                return '✅ Skill \"' + parts[0] + '\" sauvegardee !';
+            }
+            return '⚠️ Format: [SKILL_SAVE nom | description | commande]';
+        });
+
+        // [SKILL_LIST]
+        output = output.replace(/\[SKILL_LIST\]/gi, function() {
+            var skills = _blobbyListSkills();
+            if (skills.length === 0) return 'Aucune skill sauvegardee pour le moment.';
+            var lines = skills.map(function(s) {
+                return '• ' + s.name + ' : ' + s.description;
+            });
+            return '📋 Skills disponibles:\n' + lines.join('\n');
+        });
+
+        // [SKILL_RUN nom]
+        output = output.replace(/\[SKILL_RUN\s+([^\]]+)\]/gi, function(match, skillName) {
+            var skill = _blobbyGetSkill(skillName.trim());
+            if (!skill) return '⚠️ Skill \"' + skillName.trim() + '\" introuvable. Utilise [SKILL_LIST] pour voir les skills.';
+            commands.push({ action: 'shell', command: skill.command });
+            return '⏳';
         });
 
         if (commands.length === 0) {
@@ -1937,8 +1977,7 @@ const Blobby = {
             return;
         }
 
-        // Executer les commandes sequentiellement via l'API
-        var self = this;
+        // Executer les commandes sequentiellement
         var idx = 0;
         function runNext() {
             if (idx >= commands.length) {
@@ -1946,21 +1985,19 @@ const Blobby = {
                 return;
             }
             var cmd = commands[idx];
-            var placeholder = idx === 0 ? '⏳' : (idx === 1 ? '⏳' : ''); // on remplace par le resultat
             fetch(localUrl + '/fr_ia/blobby/exec', {
                 method: 'POST',
                 headers: headers,
-                body: JSON.stringify({ action: cmd.action, target: cmd.target || '', command: cmd.command || '' })
+                body: JSON.stringify({ action: 'shell', command: cmd.command })
             })
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 var result = '';
                 if (data.ok) {
-                    result = '\n\n' + (data.output || 'Fait !');
+                    result = '\n\n' + (data.output || '✅ Fait !');
                 } else {
-                    result = '\n\n❌ ' + (data.error || 'Erreur');
+                    result = '\n\n❌ ' + (data.error || data.output || 'Erreur');
                 }
-                // Remplacer la premiere occurence de '⏳' par le resultat
                 output = output.replace('⏳', result.trim());
                 idx++;
                 runNext();
