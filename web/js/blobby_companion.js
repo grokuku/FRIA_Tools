@@ -1719,7 +1719,8 @@ const Blobby = {
             } else if (msg.role === 'blobby') {
                 div.style.background = '#2a2a2e'; div.style.color = '#e2e8f0';
                 div.style.alignSelf = 'flex-start'; div.style.border = '1px solid #444';
-                div.innerHTML = msg.text;
+                div.style.whiteSpace = 'normal';
+                div.innerHTML = msg.text;  // deja rendu en HTML au moment du save
             } else if (msg.role === 'system') {
                 div.style.background = 'transparent'; div.style.color = '#888';
                 div.style.alignSelf = 'center'; div.style.fontSize = '11px';
@@ -1855,6 +1856,7 @@ const Blobby = {
             div.style.color = '#e2e8f0';
             div.style.alignSelf = 'flex-start';
             div.style.border = '1px solid #444';
+            div.style.whiteSpace = 'normal';
             div.innerHTML = _blobbyMarkdownToHtml(text);
         } else if (role === 'system') {
             div.style.background = 'transparent';
@@ -2107,7 +2109,7 @@ const Blobby = {
         });
 
         // Placeholders pour les commandes distantes (résolues par _executeRemoteCommands)
-        result = result.replace(/\[SHELL\s+[^\]]+\]/gi, '⏳ Commande en cours...');
+        result = result.replace(/\[SHELL\s+.+\]/gi, '⏳ Commande en cours...');
         result = result.replace(/\[SKILL_SAVE[^\]]*\]/gi, '⏳ Sauvegarde skill...');
         result = result.replace(/\[SKILL_RUN\s+[^\]]+\]/gi, '⏳ Execution skill...');
         result = result.replace(/\[SKILL_LIST\]/gi, '⏳ Liste skills...');
@@ -2123,14 +2125,15 @@ const Blobby = {
         var commands = [];
         var output = reply;
 
-        // [SHELL commande]
-        output = output.replace(/\[SHELL\s+([^\]]+)\]/gi, function(match, cmd) {
+        // [SHELL commande] — greedy match to last ] (commands may contain ] in bash tests like [ -d "$x" ])
+        output = output.replace(/\[SHELL\s+(.+)\]/gi, function(match, cmd) {
             commands.push({ action: 'shell', command: cmd.trim() });
             return '⏳';
         });
 
         // [SKILL_SAVE nom | description | commande]
-        output = output.replace(/\[SKILL_SAVE\s+([^\]]+)\]/gi, function(match, args) {
+        // greedy match: the commande part may contain ] in bash syntax
+        output = output.replace(/\[SKILL_SAVE\s+(.+)\]/gi, function(match, args) {
             var parts = args.split('|').map(function(s) { return s.trim(); });
             if (parts.length >= 3) {
                 _blobbySaveSkill(parts[0], parts[1], parts.slice(2).join('|').trim());
