@@ -880,233 +880,336 @@ function renderCompteTab(container, cfg) {
 function renderBlobbyTab(container, cfg) {
     container.innerHTML = '';
 
-    // ── Provider LLM ──
-    const provSection = document.createElement('div');
-    provSection.innerHTML = '<label style="font-size:12px;color:#94a3b8;font-weight:600;display:block;margin-bottom:6px;">Provider LLM</label>';
-    const select = document.createElement('select');
-    Object.assign(select.style, { width:'100%', padding:'8px 10px', borderRadius:'6px', border:'1px solid #555', background:'#1a1a1e', color:'#fff', fontSize:'12px', outline:'none' });
-    select.innerHTML = '<option value="">Chargement...</option>';
-    (async function() {
-        try {
-            var cfg2 = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-            var baseUrl = (cfg2.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
-            var headers = {};
-            if (cfg2.apiKey) headers['Authorization'] = 'Bearer ' + cfg2.apiKey;
-            var res = await fetch(baseUrl + '/api/presets', { headers });
-            if (!res.ok) { select.innerHTML = '<option value="">Erreur</option>'; return; }
-            var presets = await res.json();
-            select.innerHTML = '<option value="">-- Provider LLM --</option>';
-            presets.forEach(function(p) {
-                var opt = document.createElement('option');
-                opt.value = p.id;
-                opt.textContent = p.name + (p.is_global ? ' 🌐' : '') + (p.is_client_side ? ' 🖥️' : '');
-                if (String(p.id) === String(cfg2.blobbyPreset || '')) opt.selected = true;
-                select.appendChild(opt);
-            });
-        } catch(e) { select.innerHTML = '<option value="">Erreur</option>'; }
-    })();
-    select.onchange = function() {
-        try {
-            var c = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-            c.blobbyPreset = select.value;
-            localStorage.setItem('FRIA_config', JSON.stringify(c));
-        } catch {}
-    };
-    provSection.appendChild(select);
-    container.appendChild(provSection);
-
-    // ── FPS ──
-    const fpsDiv = document.createElement('div');
-    fpsDiv.style.cssText = 'margin-top:16px;';
-    let savedFps = 30;
-    try { savedFps = parseInt(JSON.parse(localStorage.getItem('FRIA_config')||'{}').blobbyFps) || 30; } catch {}
-    fpsDiv.innerHTML = `
-        <label style="font-size:12px;color:#94a3b8;font-weight:600;display:block;margin-bottom:6px;">Animation (FPS)</label>
-        <div style="display:flex;align-items:center;gap:10px;">
-            <input type="range" min="0" max="165" step="5" value="${savedFps}" id="blobby-fps-range" style="flex:1;accent-color:#FF8F00;" />
-            <span id="blobby-fps-value" style="font-size:12px;color:#e2e8f0;min-width:45px;text-align:right;font-weight:600;">${savedFps > 0 ? savedFps + ' fps' : 'Off'}</span>
-        </div>
-        <p style="font-size:11px;color:#64748b;margin:4px 0 0;">0 = arrêté, 30 = fluide, 60+ = très fluide</p>
-    `;
-    container.appendChild(fpsDiv);
-    const fpsRange = fpsDiv.querySelector('#blobby-fps-range');
-    const fpsVal = fpsDiv.querySelector('#blobby-fps-value');
-    fpsRange.oninput = function() {
-        var v = parseInt(this.value) || 0;
-        fpsVal.textContent = v > 0 ? v + ' fps' : 'Off';
-        // Utiliser les fonctions de blobby_companion.js
-        if (typeof _blobbySaveFps === 'function') _blobbySaveFps(v);
-        if (typeof Blobby !== 'undefined') {
-            if (Blobby._saveFpsSetting) Blobby._saveFpsSetting(v);
-            if (Blobby._restartAnimationInterval) Blobby._restartAnimationInterval(v);
-            if (Blobby._loadAppearance) Blobby._loadAppearance();
-            // Forcer le refresh du canvas
-            var app = window.app || window.comfyAPI?.app?.app;
-            if (app && app.canvas && app.canvas.setDirty) {
-                app.canvas.setDirty(true, true);
-            }
+        // Ouvrir la modale Paramètres FR.IA dans ComfyUI et switcher sur l'onglet Blobby
+        if (typeof openSettings === 'function') {
+            openSettings();
+            // La fonction openSettings crée la modale, on doit attendre un peu puis switch d'onglet
+            setTimeout(function() {
+                var blobbyTabBtn = null;
+                document.querySelectorAll('button').forEach(function(btn) {
+                    if (btn.textContent.indexOf('Blobby') >= 0) blobbyTabBtn = btn;
+                });
+                if (blobbyTabBtn) blobbyTabBtn.click();
+            }, 100);
+            return;
         }
-    };
+        var _self = Blobby || window.Blobby || {};
 
-    // ── Apparence ──
-    const appDiv = document.createElement('div');
-    appDiv.style.cssText = 'margin-top:20px;padding-top:16px;border-top:1px solid #333;';
-    appDiv.innerHTML = '<h3 style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin:0 0 10px;">Apparence</h3>';
-    container.appendChild(appDiv);
+        // Tabs (sans header - déjà dans la modale FR.IA)
+        var tabsBar = document.createElement('div');
+        Object.assign(tabsBar.style, {
+            display: 'flex', borderBottom: '1px solid #333', background: '#1a1a1e', flexShrink: '0',
+        });
 
-    // Charger l'apparence actuelle
-    let _app = {};
-    try {
-        var cfg3 = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-        _app = (cfg3.blobbyData && cfg3.blobbyData.appearance) || {};
-    } catch {}
+        var tabNames = ['provider', 'appearance'];
+        var tabLabels = { provider: 'Général', appearance: 'Apparence' };
+        var tabContent = document.createElement('div');
+        Object.assign(tabContent.style, { padding: '14px', overflowY: 'auto', flex: '1', display: 'flex', flexDirection: 'column', gap: '12px' });
 
-    function makeSlider(label, id, min, max, step, val, suffix) {
-        var row = document.createElement('div');
-        row.style.cssText = 'margin-bottom:8px;';
-        row.innerHTML = `
-            <label style="font-size:11px;color:#94a3b8;font-weight:600;display:block;">${label}</label>
-            <div style="display:flex;align-items:center;gap:8px;">
-                <input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${val}" style="flex:1;accent-color:#FF8F00;" />
-                <span id="${id}-val" style="font-size:11px;color:#e2e8f0;min-width:35px;text-align:right;">${val}${suffix||''}</span>
-            </div>
-        `;
-        var input = row.querySelector('input');
-        var valSpan = row.querySelector('#' + id + '-val');
-        input.oninput = function() {
-            var v = parseFloat(this.value);
-            valSpan.textContent = v + (suffix || '');
-            _saveAppearance();
-        };
-        return row;
-    }
+        function switchTab(name) {
+            tabsBar.querySelectorAll('.bcs-tab').forEach(function(b) { b.style.borderBottom = '2px solid transparent'; b.style.color = '#888'; });
+            var btn = document.getElementById('bcs-tab-' + name);
+            if (btn) { btn.style.borderBottom = '2px solid #FF8F00'; btn.style.color = '#fff'; }
+            document.querySelectorAll('.bcs-tab-content').forEach(function(d) { d.style.display = 'none'; });
+            var el = document.getElementById('bcs-content-' + name);
+            if (el) el.style.display = 'flex';
+        }
 
-    function _saveAppearance() {
-        try {
-            var a = {};
-            a.numParticles = parseInt(document.getElementById('bapp-particles')?.value) || 60;
-            a.bodyAlpha = (parseFloat(document.getElementById('bapp-body-alpha')?.value) || 100) / 100;
-            a.brainAlpha = (parseFloat(document.getElementById('bapp-brain-alpha')?.value) || 100) / 100;
-            a.brainSize = parseFloat(document.getElementById('bapp-brain-size')?.value) || 1;
-            a.eyeY = parseFloat(document.getElementById('bapp-eye-y')?.value) || 6;
-            a.eyeSpread = parseFloat(document.getElementById('bapp-eye-spread')?.value) || 15;
-            a.eyeScale = parseFloat(document.getElementById('bapp-eye-scale')?.value) || 1;
-            a.mouthY = parseFloat(document.getElementById('bapp-mouth-y')?.value) || 22;
-            a.mouthScale = parseFloat(document.getElementById('bapp-mouth-scale')?.value) || 1;
-            a.colors = {};
-            ['happy','surprised','sleepy','_default'].forEach(function(k) {
-                var el = document.getElementById('bapp-color-' + k);
-                if (el) a.colors[k] = el.value;
+        tabNames.forEach(function(name) {
+            var btn = document.createElement('button');
+            btn.id = 'bcs-tab-' + name;
+            btn.className = 'bcs-tab';
+            btn.textContent = tabLabels[name];
+            Object.assign(btn.style, {
+                flex: '1', padding: '8px 12px', border: 'none', cursor: 'pointer',
+                background: 'transparent', fontSize: '12px', transition: 'all 0.15s',
+                borderBottom: '2px solid transparent', color: '#888',
             });
-            // Utiliser les fonctions de blobby_companion.js (inclut sync serveur + indicateur)
-            if (typeof _blobbySaveAppearance === 'function') {
-                _blobbySaveAppearance(a);
-            } else {
-                // Fallback : ecriture directe
-                var c = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-                if (!c.blobbyData) c.blobbyData = {};
-                c.blobbyData.appearance = a;
-                localStorage.setItem('FRIA_config', JSON.stringify(c));
-            }
-            // Appliquer immediatement sur le canvas
-            if (typeof Blobby !== 'undefined') {
-                if (Blobby._loadAppearance) Blobby._loadAppearance();
-                // Forcer le refresh du canvas
-                var app = window.app || window.comfyAPI?.app?.app;
-                if (app && app.canvas && app.canvas.setDirty) {
-                    app.canvas.setDirty(true, true);
-                }
-                if (Blobby._canvas && Blobby._canvas.setDirty) {
-                    Blobby._canvas.setDirty(true, true);
-                }
-            }
+            btn.onclick = function() { switchTab(name); };
+            tabsBar.appendChild(btn);
+        });
+
+        // ── Tab Provider ──
+        var provContent = document.createElement('div');
+        provContent.id = 'bcs-content-provider';
+        provContent.className = 'bcs-tab-content';
+        Object.assign(provContent.style, { display: 'flex', flexDirection: 'column', gap: '12px' });
+
+        var pLabel = document.createElement('label');
+        pLabel.textContent = 'Provider LLM';
+        Object.assign(pLabel.style, { fontSize: '12px', color: '#94a3b8', fontWeight: '600' });
+
+        var select = document.createElement('select');
+        select.id = 'blobby-chat-preset';
+        Object.assign(select.style, {
+            width: '100%', padding: '8px 10px', borderRadius: '6px',
+            border: '1px solid #555', background: '#1a1a1e', color: '#fff',
+            fontSize: '12px', outline: 'none',
+        });
+        select.innerHTML = '<option value="">Chargement...</option>';
+
+        (async function() {
+            try {
+                var cfg = {};
+                try { cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {}; } catch {}
+                var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
+                var headers = { 'Content-Type': 'application/json' };
+                if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
+                var res = await fetch(baseUrl + '/api/presets', { headers });
+                if (!res.ok) { select.innerHTML = '<option value="">Erreur chargement</option>'; return; }
+                var presets = await res.json();
+                var savedPreset = cfg.blobbyPreset || '';
+                select.innerHTML = '<option value="">-- Provider LLM --</option>';
+                presets.forEach(function(p) {
+                    var opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.textContent = p.name + (p.is_global ? ' 🌐' : '') + (p.is_client_side ? ' 🖥️' : '');
+                    if (String(p.id) === String(savedPreset)) opt.selected = true;
+                    select.appendChild(opt);
+                });
+            } catch (e) { select.innerHTML = '<option value="">Erreur: ' + (e.message || '') + '</option>'; }
+        })();
+
+        select.onchange = function() {
+            try {
+                var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+                cfg.blobbyPreset = select.value;
+                localStorage.setItem('FRIA_config', JSON.stringify(cfg));
+            } catch {}
+        };
+
+        var pNote = document.createElement('p');
+        pNote.textContent = 'Provider utilise par Blobby pour discuter. Configure les providers dans FR.IA > Parametres.';
+        Object.assign(pNote.style, { fontSize: '11px', color: '#64748b', lineHeight: '1.4', margin: '0' });
+
+        provContent.appendChild(pLabel);
+        provContent.appendChild(select);
+        provContent.appendChild(pNote);
+
+        // ── FPS Control ──
+        var fpsSeparator = document.createElement('hr');
+        Object.assign(fpsSeparator.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        provContent.appendChild(fpsSeparator);
+
+        var fpsLabel = document.createElement('label');
+        fpsLabel.textContent = 'Animation (FPS)';
+        Object.assign(fpsLabel.style, { fontSize: '12px', color: '#94a3b8', fontWeight: '600' });
+
+        // Lire la valeur sauvegardee
+        var savedFps = 30;
+        try {
+            var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+            savedFps = parseInt(cfg.blobbyFps) || 30;
         } catch {}
-    }
 
-    appDiv.appendChild(makeSlider('Particules', 'bapp-particles', 10, 120, 5, _app.numParticles || 60, ''));
+        var fpsContainer = document.createElement('div');
+        Object.assign(fpsContainer.style, { display: 'flex', alignItems: 'center', gap: '10px' });
 
-    // Transparences
-    const sep1 = document.createElement('div');
-    sep1.style.cssText = 'border-top:1px solid #333;margin:8px 0;';
-    appDiv.appendChild(sep1);
-    const tLabel = document.createElement('span');
-    tLabel.textContent = 'Transparences';
-    tLabel.style.cssText = 'font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px;';
-    appDiv.appendChild(tLabel);
-    appDiv.appendChild(makeSlider('Corps', 'bapp-body-alpha', 0, 100, 5, Math.round((_app.bodyAlpha || 1) * 100), '%'));
-    appDiv.appendChild(makeSlider('Cerveau', 'bapp-brain-alpha', 0, 100, 5, Math.round((_app.brainAlpha || 1) * 100), '%'));
+        var fpsRange = document.createElement('input');
+        fpsRange.type = 'range';
+        fpsRange.id = 'blobby-fps-range';
+        Object.assign(fpsRange.style, { flex: '1', accentColor: '#FF8F00' });
+        fpsRange.min = 0;
+        fpsRange.max = 165;
+        fpsRange.step = 5;
+        fpsRange.value = savedFps;
 
-    // Yeux
-    const sep2 = document.createElement('div');
-    sep2.style.cssText = 'border-top:1px solid #333;margin:8px 0;';
-    appDiv.appendChild(sep2);
-    const eLabel = document.createElement('span');
-    eLabel.textContent = 'Yeux';
-    eLabel.style.cssText = 'font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px;';
-    appDiv.appendChild(eLabel);
-    appDiv.appendChild(makeSlider('Hauteur', 'bapp-eye-y', -20, 30, 1, _app.eyeY || 6, ''));
-    appDiv.appendChild(makeSlider('Écartement', 'bapp-eye-spread', 5, 40, 1, _app.eyeSpread || 15, ''));
-    appDiv.appendChild(makeSlider('Taille', 'bapp-eye-scale', 0.2, 3, 0.1, _app.eyeScale || 1, ''));
+        var fpsValue = document.createElement('span');
+        fpsValue.id = 'blobby-fps-value';
+        fpsValue.textContent = savedFps > 0 ? savedFps + ' fps' : 'Off';
+        Object.assign(fpsValue.style, { fontSize: '12px', color: '#e2e8f0', minWidth: '45px', textAlign: 'right', fontWeight: '600' });
 
-    // Bouche
-    const sep3 = document.createElement('div');
-    sep3.style.cssText = 'border-top:1px solid #333;margin:8px 0;';
-    appDiv.appendChild(sep3);
-    const mLabel = document.createElement('span');
-    mLabel.textContent = 'Bouche';
-    mLabel.style.cssText = 'font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px;';
-    appDiv.appendChild(mLabel);
-    appDiv.appendChild(makeSlider('Hauteur', 'bapp-mouth-y', 10, 40, 1, _app.mouthY || 22, ''));
-    appDiv.appendChild(makeSlider('Taille', 'bapp-mouth-scale', 0.2, 3, 0.1, _app.mouthScale || 1, ''));
+        fpsRange.oninput = function() {
+            var v = parseInt(this.value) || 0;
+            fpsValue.textContent = v > 0 ? v + ' fps' : 'Off';
+            _self._saveFpsSetting(v);
+            _self._restartAnimationInterval(v);
+        };
 
-    // Cerveau
-    const sep4 = document.createElement('div');
-    sep4.style.cssText = 'border-top:1px solid #333;margin:8px 0;';
-    appDiv.appendChild(sep4);
-    const bLabel = document.createElement('span');
-    bLabel.textContent = 'Cerveau';
-    bLabel.style.cssText = 'font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px;';
-    appDiv.appendChild(bLabel);
-    appDiv.appendChild(makeSlider('Taille', 'bapp-brain-size', 0.2, 3, 0.1, _app.brainSize || 1, ''));
+        var fpsNote = document.createElement('p');
+        fpsNote.textContent = 'Regle la frequence d\'animation de Blobby. 0 = arrete, 30 = fluide, 60+ = fluide, 120-165 = max (ecrans haut refresh).';
+        Object.assign(fpsNote.style, { fontSize: '11px', color: '#64748b', lineHeight: '1.4', margin: '0' });
 
-    // Couleurs
-    const sep5 = document.createElement('div');
-    sep5.style.cssText = 'border-top:1px solid #333;margin:8px 0;';
-    appDiv.appendChild(sep5);
-    const cLabel = document.createElement('span');
-    cLabel.textContent = 'Couleurs par humeur';
-    cLabel.style.cssText = 'font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px;';
-    appDiv.appendChild(cLabel);
+        fpsContainer.appendChild(fpsRange);
+        fpsContainer.appendChild(fpsValue);
+        provContent.appendChild(fpsLabel);
+        provContent.appendChild(fpsContainer);
+        provContent.appendChild(fpsNote);
 
-    var moods = [
-        { key: 'happy', label: '😊 Heureux' },
-        { key: 'surprised', label: '😮 Surpris' },
-        { key: 'sleepy', label: '😴 Endormi' },
-        { key: '_default', label: '😐 Neutre' },
-    ];
-    var defaultColors = { happy: '#FF8F00', surprised: '#FACC15', sleepy: '#6366f1', _default: '#FF8F00' };
-    moods.forEach(function(m) {
-        var c = (_app.colors && _app.colors[m.key]) || defaultColors[m.key] || '#FF8F00';
-        var row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;';
-        row.innerHTML = `<span style="font-size:11px;color:#94a3b8;flex:1;">${m.label}</span><input type="color" id="bapp-color-${m.key}" value="${c}" style="width:32px;height:24px;padding:0;border:none;border-radius:4px;cursor:pointer;background:transparent;" />`;
-        row.querySelector('input').oninput = function() { _saveAppearance(); };
-        appDiv.appendChild(row);
-    });
+        // ── Tab Caractere ──
+        // ── Tab Apparence ──
+        var appContent = document.createElement('div');
+        appContent.id = 'bcs-content-appearance';
+        appContent.className = 'bcs-tab-content';
+        Object.assign(appContent.style, { display: 'none', flexDirection: 'column', gap: '12px' });
 
-    // ── Mémoire info ──
-    const memDiv = document.createElement('div');
-    memDiv.style.cssText = 'margin-top:20px;padding-top:16px;border-top:1px solid #333;';
-    let localCount = 0;
-    try { localCount = (JSON.parse(localStorage.getItem('blobbyLocalMemories')) || []).length; } catch {}
-    memDiv.innerHTML = `
-        <h3 style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px;">Mémoire</h3>
-        <p style="font-size:12px;color:#888;line-height:1.6;margin:0;">
-            Souvenirs locaux : ${localCount}<br>
-            La personnalité évolue naturellement. Bouton 🧹 dans le chat pour tout oublier.
-        </p>
-    `;
-    container.appendChild(memDiv);
+        // Helper pour creer un slider
+        function makeSlider(label, id, min, max, step, val, suffix, onChange) {
+            var row = document.createElement('div');
+            var lbl = document.createElement('label');
+            lbl.textContent = label;
+            Object.assign(lbl.style, { fontSize: '11px', color: '#94a3b8', fontWeight: '600' });
+            var cont = document.createElement('div');
+            Object.assign(cont.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+            var input = document.createElement('input');
+            input.type = 'range';
+            input.id = id;
+            Object.assign(input.style, { flex: '1', accentColor: '#FF8F00' });
+            input.min = min; input.max = max; input.step = step; input.value = val;
+            var valSpan = document.createElement('span');
+            valSpan.textContent = val + (suffix || '');
+            Object.assign(valSpan.style, { fontSize: '11px', color: '#e2e8f0', minWidth: '35px', textAlign: 'right' });
+            input.oninput = function() {
+                var v = parseFloat(this.value);
+                valSpan.textContent = v + (suffix || '');
+                if (onChange) onChange(v);
+            };
+            cont.appendChild(input);
+            cont.appendChild(valSpan);
+            row.appendChild(lbl);
+            row.appendChild(cont);
+            return row;
+        }
+
+        // Helper pour creer un color picker
+        function makeColorPicker(label, color, onChange) {
+            var row = document.createElement('div');
+            Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+            var lbl = document.createElement('span');
+            lbl.textContent = label;
+            Object.assign(lbl.style, { fontSize: '11px', color: '#94a3b8', flex: '1' });
+            var input = document.createElement('input');
+            input.type = 'color';
+            input.id = 'bapp-color-' + label.replace(/[^a-z]/gi,'').toLowerCase();
+            input.value = color;
+            Object.assign(input.style, { width: '32px', height: '24px', padding: '0', border: 'none', borderRadius: '4px', cursor: 'pointer', background: 'transparent' });
+            input.oninput = function() { if (onChange) onChange(this.value); };
+            row.appendChild(lbl);
+            row.appendChild(input);
+            return row;
+        }
+
+        var _saveAppearance = function() {
+            try {
+                var a = {};
+                a.numParticles = parseInt(document.getElementById('bapp-particles')?.value) || 60;
+                a.bodyAlpha = (parseFloat(document.getElementById('bapp-body-alpha')?.value) || 100) / 100;
+                a.brainAlpha = (parseFloat(document.getElementById('bapp-brain-alpha')?.value) || 100) / 100;
+                a.brainSize = parseFloat(document.getElementById('bapp-brain-size')?.value) || 1;
+                a.eyeY = parseFloat(document.getElementById('bapp-eye-y')?.value) || 6;
+                a.eyeSpread = parseFloat(document.getElementById('bapp-eye-spread')?.value) || 15;
+                a.eyeScale = parseFloat(document.getElementById('bapp-eye-scale')?.value) || 1;
+                a.mouthY = parseFloat(document.getElementById('bapp-mouth-y')?.value) || 22;
+                a.mouthScale = parseFloat(document.getElementById('bapp-mouth-scale')?.value) || 1;
+                a.colors = {};
+                ['happy','surprised','sleepy','_default'].forEach(function(k) {
+                    var el = document.getElementById('bapp-color-' + k);
+                    if (el) a.colors[k] = el.value;
+                });
+                _blobbySaveAppearance(a);
+                _self._loadAppearance();
+            } catch {}
+        };
+
+        function _onAppChange() { _saveAppearance(); }
+
+        // Charger valeurs actuelles
+        var _app = _blobbyLoadAppearance({});
+
+        appContent.appendChild(makeSlider('Particules', 'bapp-particles', 10, 120, 5, _app.numParticles || 60, '', _onAppChange));
+
+        var sep1 = document.createElement('hr');
+        Object.assign(sep1.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        appContent.appendChild(sep1);
+
+        var secLabel = document.createElement('span');
+        secLabel.textContent = 'Transparences';
+        Object.assign(secLabel.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
+        appContent.appendChild(secLabel);
+        appContent.appendChild(makeSlider('Corps', 'bapp-body-alpha', 0, 100, 5, Math.round((_app.bodyAlpha || 1) * 100), '%', function(v) { _onAppChange(); }));
+        appContent.appendChild(makeSlider('Cerveau', 'bapp-brain-alpha', 0, 100, 5, Math.round((_app.brainAlpha || 1) * 100), '%', _onAppChange));
+
+        var sep2 = document.createElement('hr');
+        Object.assign(sep2.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        appContent.appendChild(sep2);
+
+        var secLabel2 = document.createElement('span');
+        secLabel2.textContent = 'Yeux';
+        Object.assign(secLabel2.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
+        appContent.appendChild(secLabel2);
+        appContent.appendChild(makeSlider('Hauteur', 'bapp-eye-y', -20, 30, 1, _app.eyeY || 6, '', _onAppChange));
+        appContent.appendChild(makeSlider('Écartement', 'bapp-eye-spread', 5, 40, 1, _app.eyeSpread || 15, '', _onAppChange));
+        appContent.appendChild(makeSlider('Taille', 'bapp-eye-scale', 0.2, 3, 0.1, _app.eyeScale || 1, '', _onAppChange));
+
+        var sep3 = document.createElement('hr');
+        Object.assign(sep3.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        appContent.appendChild(sep3);
+
+        var secLabel3 = document.createElement('span');
+        secLabel3.textContent = 'Bouche';
+        Object.assign(secLabel3.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
+        appContent.appendChild(secLabel3);
+        appContent.appendChild(makeSlider('Hauteur', 'bapp-mouth-y', 10, 40, 1, _app.mouthY || 22, '', _onAppChange));
+        appContent.appendChild(makeSlider('Taille', 'bapp-mouth-scale', 0.2, 3, 0.1, _app.mouthScale || 1, '', _onAppChange));
+
+        var sep4 = document.createElement('hr');
+        Object.assign(sep4.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        appContent.appendChild(sep4);
+
+        var secLabel4 = document.createElement('span');
+        secLabel4.textContent = 'Cerveau';
+        Object.assign(secLabel4.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
+        appContent.appendChild(secLabel4);
+        appContent.appendChild(makeSlider('Taille', 'bapp-brain-size', 0.2, 3, 0.1, _app.brainSize || 1, '', _onAppChange));
+
+        var sep5 = document.createElement('hr');
+        Object.assign(sep5.style, { border: 'none', borderTop: '1px solid #333', margin: '4px 0' });
+        appContent.appendChild(sep5);
+
+        var secLabel5 = document.createElement('span');
+        secLabel5.textContent = 'Couleurs par humeur';
+        Object.assign(secLabel5.style, { fontSize: '11px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' });
+        appContent.appendChild(secLabel5);
+
+        var moods = [
+            { key: 'happy', label: '😊 Heureux' },
+            { key: 'surprised', label: '😮 Surpris' },
+            { key: 'sleepy', label: '😴 Endormi' },
+            { key: '_default', label: '😐 Neutre' },
+        ];
+        moods.forEach(function(m) {
+            var curColors = _app.colors || {};
+            var c = curColors[m.key] || Blobby.colors[m.key] || '#FF8F00';
+            // On remplace makeColorPicker pour controler l'id
+            var row = document.createElement('div');
+            Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+            var lbl = document.createElement('span');
+            lbl.textContent = m.label;
+            Object.assign(lbl.style, { fontSize: '11px', color: '#94a3b8', flex: '1' });
+            var input = document.createElement('input');
+            input.type = 'color';
+            input.id = 'bapp-color-' + m.key;
+            input.value = c;
+            Object.assign(input.style, { width: '32px', height: '24px', padding: '0', border: 'none', borderRadius: '4px', cursor: 'pointer', background: 'transparent' });
+            input.oninput = function() { _onAppChange(); };
+            row.appendChild(lbl);
+            row.appendChild(input);
+            appContent.appendChild(row);
+        });
+
+        tabContent.appendChild(provContent);
+        tabContent.appendChild(appContent);
+
+        container.appendChild(tabsBar);
+        container.appendChild(tabContent);
+
+        // Activer le premier onglet
+        switchTab('provider');
+        // Ajouter un indicateur
+        var note = document.createElement('p');
+        note.textContent = 'Les modifications sont appliquees en temps reel sur Blobby.';
+        Object.assign(note.style, { fontSize: '10px', color: '#64748b', marginTop: '8px', textAlign: 'center' });
+        container.appendChild(note);
 }
 
 // ── Update (git pull sur le repo local) ────────────────────────────

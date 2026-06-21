@@ -1093,13 +1093,15 @@ const Blobby = {
 // ─── Chat modal ────────────────────────────────────────────────
 
     _openChatSettings() {
-        // Rediriger vers la modale Paramètres FR.IA (onglet Blobby)
         if (typeof openSettings === 'function') {
             openSettings();
             setTimeout(function() {
                 document.querySelectorAll('button').forEach(function(btn) {
                     if (btn.textContent.indexOf('Blobby') >= 0) btn.click();
                 });
+                // Petite astuce : forcer le resize de la modale pour declencher le render
+                var modal = document.getElementById('fria-modal');
+                if (modal) { modal.style.width = (parseInt(modal.style.width) + 1) + 'px'; setTimeout(function() { modal.style.width = (parseInt(modal.style.width) - 1) + 'px'; }, 50); }
             }, 100);
         }
     },
