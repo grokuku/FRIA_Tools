@@ -16,7 +16,16 @@ DB_PATH = BASE_DIR / 'keywords.db'
 MD_PATH = BASE_DIR / 'Keywords-Complete.md'
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24).hex())
+import secrets as _secrets
+_secret_file = BASE_DIR / '.secret_key'
+if os.environ.get("SECRET_KEY"):
+    app.secret_key = os.environ["SECRET_KEY"]
+elif _secret_file.exists():
+    app.secret_key = _secret_file.read_text().strip()
+else:
+    _generated_key = _secrets.token_hex(32)
+    _secret_file.write_text(_generated_key)
+    app.secret_key = _generated_key
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 oauth = init_oauth(app)
