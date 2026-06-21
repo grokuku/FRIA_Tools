@@ -257,7 +257,6 @@ try { _blobbyLocalMemories = JSON.parse(localStorage.getItem('blobbyLocalMemorie
 // ── Minimal Markdown parser for Blobby chat ─────────────────────
 function _blobbyMarkdownToHtml(md) {
     if (!md) return '';
-    console.log('[BlobbyMD] INPUT:', JSON.stringify(md).substring(0, 200));
     // Escape HTML first to prevent injection
     var s = md.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     // Code blocks (```...```)
@@ -320,7 +319,6 @@ function _blobbyMarkdownToHtml(md) {
     s = s.replace(/(<pre[\s\S]*?<\/pre>)|\n/g, function(m, pre) {
         return pre || '<br>';
     });
-    console.log('[BlobbyMD] OUTPUT:', JSON.stringify(s).substring(0, 200));
     return s;
 }
 
@@ -1887,9 +1885,7 @@ const Blobby = {
             div.style.alignSelf = 'flex-start';
             div.style.border = '1px solid #444';
             div.style.whiteSpace = 'normal';
-            console.log('[BlobbyMD] _addChatMessage blobby, text:', JSON.stringify(text).substring(0, 200));
             div.innerHTML = _blobbyMarkdownToHtml(text);
-            console.log('[BlobbyMD] _addChatMessage blobby, div.innerHTML:', JSON.stringify(div.innerHTML).substring(0, 200));
         } else if (role === 'system') {
             div.style.background = 'transparent';
             div.style.color = '#888';
@@ -1991,56 +1987,88 @@ const Blobby = {
             var headers = { 'Content-Type': 'application/json' };
             if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
 
-            var res = await fetch(baseUrl + '/api/keywords/llm-process', {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify({
-                    preset_id: parseInt(presetId),
-                    instruction: instruction
-                })
-            });
+            // ── Boucle agentic : LLM → commandes → résultats → LLM → ... ──
+            var maxTurns = 5;
+            var currentInstruction = instruction;
+            var finalReply = '';
+            var allCommandResults = [];
 
-            // Enlever le message "réfléchit"
-            var thinking = container.querySelector('div:last-child');
-            if (thinking && thinking.textContent === '🤔 Blobby réfléchit...') thinking.remove();
-
-            var data = await res.json().catch(() => ({}));
-            if (!res.ok) {
-                this._addChatMessage(container, 'blobby',
-                    '😅 Désolé, j\'ai eu un problème : ' + (data.error || 'Erreur ' + res.status));
-                return;
-            }
-
-            var reply = data.output || '...';
-            console.log('[BlobbyMD] Raw LLM reply:', JSON.stringify(reply).substring(0, 300));
-            var originalReply = reply; // sauvegarder pour les commandes distantes
-            // Mettre a jour le max context si disponible
-            if (data.max_context) {
-                var ctxBar = document.getElementById('blobby-chat-ctx');
-                if (ctxBar) ctxBar.dataset.maxCtx = data.max_context;
-            }
-            // Executer les commandes dans la reponse
-            reply = this._executeCommands(reply);
-            console.log('[BlobbyMD] After _executeCommands:', JSON.stringify(reply).substring(0, 300));
-            // Afficher la reponse (les commandes distantes seront resolues apres)
-            this._addChatMessage(container, 'blobby', reply);
-            // Executer les commandes git/update via l'API backend
-            var lastMsg = container.querySelector('div:last-child');
-            var displayedReply = reply;
-            this._executeRemoteCommands(originalReply, function(updatedReply) {
-                console.log('[BlobbyMD] Remote callback, updatedReply:', JSON.stringify(updatedReply).substring(0, 200));
-                if (updatedReply !== originalReply && lastMsg) {
-                    console.log('[BlobbyMD] Remote callback, applying markdown to updatedReply');
-                    lastMsg.innerHTML = _blobbyMarkdownToHtml(updatedReply);
+            for (var turn = 0; turn < maxTurns; turn++) {
+                // Mettre à jour l'indicateur
+                var thinking = container.querySelector('div:last-child');
+                if (thinking && thinking.textContent.indexOf('Blobby') >= 0) {
+                    thinking.textContent = turn === 0 ? '🤔 Blobby réfléchit...' : '🔄 Blobby analyse les résultats...';
                 }
-            });
+
+                var res = await fetch(baseUrl + '/api/keywords/llm-process', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({
+                        preset_id: parseInt(presetId),
+                        instruction: currentInstruction
+                    })
+                });
+
+                var data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    // Enlever le thinking
+                    var th = container.querySelector('div:last-child');
+                    if (th && th.textContent.indexOf('Blobby') >= 0) th.remove();
+                    this._addChatMessage(container, 'blobby',
+                        '😅 Désolé, j\'ai eu un problème : ' + (data.error || 'Erreur ' + res.status));
+                    return;
+                }
+
+                if (data.max_context) {
+                    var ctxBar = document.getElementById('blobby-chat-ctx');
+                    if (ctxBar) ctxBar.dataset.maxCtx = data.max_context;
+                }
+
+                var reply = data.output || '...';
+                // Executer les commandes locales (MOVE_TO, SET, FOCUS)
+                reply = this._executeCommands(reply);
+
+                // Extraire et executer les commandes [SHELL] de maniere synchrone
+                var hasShellCommands = /\[SHELL\s+.+\]/i.test(reply);
+                if (hasShellCommands) {
+                    // Executer les commandes shell et collecter les resultats
+                    var turnResults = await this._executeShellCommandsAsync(reply);
+                    allCommandResults = allCommandResults.concat(turnResults);
+
+                    // Construire l'instruction pour le tour suivant
+                    var resultsText = turnResults.map(function(r) {
+                        return 'Commande: ' + r.command + '\nRésultat:\n' + r.output;
+                    }).join('\n\n---\n\n');
+
+                    currentInstruction = character + '\n\n'
+                        + 'Tu as executé des commandes shell. Voici les résultats:\n\n'
+                        + resultsText + '\n\n'
+                        + 'Analyse ces résultats et réponds à l\'utilisateur.\n'
+                        + 'Si tu as besoin d\'autres commandes, utilise [SHELL commande].\n'
+                        + 'Sinon, donne ta réponse finale en Markdown (sans commandes [SHELL]).\n'
+                        + 'Question initiale de l\'utilisateur: ' + userText;
+                    continue; // Tour suivant
+                }
+
+                // Pas de commandes shell → c'est la réponse finale
+                finalReply = reply;
+                break;
+            }
+
+            if (!finalReply) finalReply = 'J\'ai fait plusieurs essais mais je n\'ai pas pu terminer. Voici ce que j\'ai trouvé:\n\n' + allCommandResults.map(function(r) { return r.output; }).join('\n\n');
+
+            // Enlever le thinking
+            var thinkingEl = container.querySelector('div:last-child');
+            if (thinkingEl && thinkingEl.textContent.indexOf('Blobby') >= 0) thinkingEl.remove();
+
+            // Afficher la réponse finale avec markdown
+            this._addChatMessage(container, 'blobby', finalReply);
 
             // ── Sauvegarder le souvenir (fire-and-forget) ──
             _blobbyMsgCounter++;
-            var memText = 'User: ' + userText + ' → Blobby: ' + (data.output || '').substring(0, 200);
+            var memText = 'User: ' + userText + ' → Blobby: ' + finalReply.substring(0, 200);
             var importance = 3;
-            // Détecter les moments marquants
-            if (data.output && data.output.indexOf('⚠️ MEMORABLE') >= 0) importance = 5;
+            if (finalReply.indexOf('⚠️ MEMORABLE') >= 0) importance = 5;
             _blobbySaveMemory(memText, 'episode', importance);
 
             // ── Mise à jour personnalité tous les 5 messages ──
@@ -2151,6 +2179,64 @@ const Blobby = {
         result = result.replace(/\[SKILL_LIST\]/gi, '⏳ Liste skills...');
 
         return result;
+    },
+
+    async _executeShellCommandsAsync(reply) {
+        // Execute les commandes [SHELL ...] de maniere synchrone et retourne les resultats
+        var localUrl = window.location.origin.replace(/\/+$/, '');
+        var headers = { 'Content-Type': 'application/json' };
+        var results = [];
+
+        // Extraire toutes les commandes [SHELL ...]
+        var commands = [];
+        var textWithoutShell = reply.replace(/\[SHELL\s+(.+)\]/gi, function(match, cmd) {
+            commands.push(cmd.trim());
+            return '⏳';
+        });
+
+        // Executer chaque commande sequentiellement
+        for (var i = 0; i < commands.length; i++) {
+            try {
+                var r = await fetch(localUrl + '/fr_ia/blobby/exec', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({ action: 'shell', command: commands[i] })
+                });
+                var data = await r.json().catch(() => ({}));
+                var output = data.output || (data.ok ? '✅ Fait' : '❌ Erreur');
+                results.push({ command: commands[i], output: output });
+            } catch(e) {
+                results.push({ command: commands[i], output: '❌ Erreur réseau: ' + e.message });
+            }
+        }
+
+        // Traiter aussi [SKILL_SAVE] et [SKILL_LIST] et [SKILL_RUN]
+        textWithoutShell = textWithoutShell.replace(/\[SKILL_SAVE\s+(.+)\]/gi, function(match, args) {
+            var parts = args.split('|').map(function(s) { return s.trim(); });
+            if (parts.length >= 3) {
+                _blobbySaveSkill(parts[0], parts[1], parts.slice(2).join('|').trim());
+                return '✅ Skill "' + parts[0] + '" sauvegardee !';
+            }
+            return '⚠️ Format: [SKILL_SAVE nom | description | commande]';
+        });
+
+        textWithoutShell = textWithoutShell.replace(/\[SKILL_LIST\]/gi, function() {
+            var skills = _blobbyListSkills();
+            if (skills.length === 0) return 'Aucune skill sauvegardee.';
+            return skills.map(function(s) { return '• ' + s.name + ': ' + s.description; }).join('\n');
+        });
+
+        textWithoutShell = textWithoutShell.replace(/\[SKILL_RUN\s+(.+)\]/gi, function(match, name) {
+            var skill = _blobbyGetSkill(name.trim());
+            if (!skill) return '⚠️ Skill "' + name.trim() + '" introuvable';
+            // Re-executer la commande de la skill
+            if (skill.command) {
+                results.push({ command: skill.command, output: '[Skill: ' + name.trim() + ']' });
+            }
+            return '🔄 Execution de la skill ' + name.trim() + '...';
+        });
+
+        return results;
     },
 
     _executeRemoteCommands(reply, callback) {
