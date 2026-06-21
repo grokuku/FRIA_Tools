@@ -53,8 +53,17 @@ FR.IA-keywords/
 - `showPrompt(titre, label, placeholder, callback)` pour les saisies.
 
 ## Workflow Git
-- Les commits et push sont faits par l'utilisateur, pas par l'assistant.
-- Sauf demande explicite de l'utilisateur en cas de besoin (rare).
+
+### ⛔ RÈGLE ABSOLUE : PAS DE GIT
+- **L'assistant ne fait JAMAIS de `git commit`.**
+- **L'assistant ne fait JAMAIS de `git push`.**
+- **L'assistant ne fait JAMAIS de `git add`.**
+- **L'assistant ne fait JAMAIS de `git reset`.**
+- **Toute opération Git (commit, push, add, reset, rebase, cherry-pick, etc.) est exclusivement réservée à l'utilisateur.**
+- Si l'utilisateur demande explicitement un commit ou un push, lui rappeler cette règle et refuser poliment.
+- Les modifications de code sont faites dans les fichiers, point final. L'utilisateur décide quand et comment les versionner.
+
+### Conventions de commit (pour l'utilisateur)
 - Commits atomiques : un changement logique par commit.
 - Suivre le format existant des messages de commit.
 
