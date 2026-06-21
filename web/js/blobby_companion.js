@@ -1903,7 +1903,14 @@ const Blobby = {
                 + '  [FOCUS nom] - Met en surbrillance un noeud\n'
                 + 'Skills disponibles : ' + JSON.stringify(_blobbyGetSkills().map(function(s){return s.name;})) + '\n'
                 + 'Note : Tu as un VRAI terminal. Reflechis aux commandes a executer. Sauvegarde les procedures qui marchent comme skills. Ne fais pas que parler, agis !\n'
-                + 'Message de l\'utilisateur : ' + userText;                + 'Message de l\'utilisateur : ' + userText;                + 'Message de l\'utilisateur : ' + userText;
+                + 'Environnement :\n'
+                + '- OS : ' + (navigator.platform || 'inconnu') + '\n'
+                + '- Shell : /bin/bash (Linux) ou cmd (Windows) — utilise des commandes simples et compatibles\n'
+                + '- ComfyUI est installe dans le dossier custom_nodes/ de ComfyUI\n'
+                + '- Le repo FR.IA Tools est dans custom_nodes/FRIA_Tools/\n'
+                + '- Pour les boucles, prefere des commandes simples (ex: ls, find, xargs) plutot que des scripts complexes\n'
+                + '\n'
+                + 'Message de l\'utilisateur : ' + userText;
 
             var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
             var headers = { 'Content-Type': 'application/json' };

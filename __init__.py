@@ -291,8 +291,12 @@ if _routes is not None and _update_manager_mod is not None:
                 if not cmd:
                     return _aio_web.json_response({"ok": False, "output": "⚠️ Commande vide"}, status=400)
                 # Limiter la durée des commandes shell
+                # Utiliser /bin/bash si disponible (support des boucles for, etc.)
+                _shell = _os.environ.get('SHELL', '/bin/sh')
+                if _os.path.exists('/bin/bash'):
+                    _shell = '/bin/bash'
                 try:
-                    r = _sp.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
+                    r = _sp.run(cmd, shell=True, executable=_shell, capture_output=True, text=True, timeout=15)
                     out = r.stdout.strip()
                     if r.stderr: out += "\n" + r.stderr.strip()
                     if r.returncode != 0:
