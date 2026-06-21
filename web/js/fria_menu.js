@@ -934,14 +934,12 @@ function renderBlobbyTab(container, cfg) {
     fpsRange.oninput = function() {
         var v = parseInt(this.value) || 0;
         fpsVal.textContent = v > 0 ? v + ' fps' : 'Off';
-        try {
-            var c = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-            c.blobbyFps = v;
-            localStorage.setItem('FRIA_config', JSON.stringify(c));
-        } catch {}
+        // Utiliser les fonctions de blobby_companion.js
+        if (typeof _blobbySaveFps === 'function') _blobbySaveFps(v);
         if (typeof Blobby !== 'undefined') {
             if (Blobby._saveFpsSetting) Blobby._saveFpsSetting(v);
             if (Blobby._restartAnimationInterval) Blobby._restartAnimationInterval(v);
+            if (Blobby._loadAppearance) Blobby._loadAppearance();
         }
     };
 
@@ -995,12 +993,17 @@ function renderBlobbyTab(container, cfg) {
                 var el = document.getElementById('bapp-color-' + k);
                 if (el) a.colors[k] = el.value;
             });
-            // Sauvegarder dans localStorage
-            var c = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-            if (!c.blobbyData) c.blobbyData = {};
-            c.blobbyData.appearance = a;
-            localStorage.setItem('FRIA_config', JSON.stringify(c));
-            // Appliquer
+            // Utiliser les fonctions de blobby_companion.js (inclut sync serveur + indicateur)
+            if (typeof _blobbySaveAppearance === 'function') {
+                _blobbySaveAppearance(a);
+            } else {
+                // Fallback : ecriture directe
+                var c = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+                if (!c.blobbyData) c.blobbyData = {};
+                c.blobbyData.appearance = a;
+                localStorage.setItem('FRIA_config', JSON.stringify(c));
+            }
+            // Appliquer immediatement
             if (typeof Blobby !== 'undefined' && Blobby._loadAppearance) Blobby._loadAppearance();
         } catch {}
     }
