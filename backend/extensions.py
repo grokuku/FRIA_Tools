@@ -24,7 +24,11 @@ elif _secret_file.exists():
     app.secret_key = _secret_file.read_text().strip()
 else:
     _generated_key = _secrets.token_hex(32)
-    _secret_file.write_text(_generated_key)
+    try:
+        _secret_file.write_text(_generated_key)
+    except (OSError, PermissionError):
+        # Read-only filesystem (container) — fallback to in-memory key
+        pass
     app.secret_key = _generated_key
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
