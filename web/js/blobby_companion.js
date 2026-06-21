@@ -1539,31 +1539,8 @@ const Blobby = {
         // Initialiser l'indicateur
         setTimeout(function() { _blobbySyncIndicator(); }, 100);
 
-        // Slider transparence
-        var alphaSlider = document.createElement('input');
-        alphaSlider.type = 'range';
-        Object.assign(alphaSlider.style, { width: '60px', accentColor: '#FF8F00', margin: '0 4px', cursor: 'pointer' });
-        alphaSlider.min = 10;
-        alphaSlider.max = 100;
-        alphaSlider.value = savedState.alpha || 100;
+        // Transparence (depuis l'état sauvegardé, sans slider dans le header)
         modal.style.opacity = (savedState.alpha || 100) / 100;
-        alphaSlider.oninput = function() {
-            var v = parseInt(this.value) / 100;
-            modal.style.opacity = v;
-            try {
-                var cfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-                if (!cfg.blobbyChatState) cfg.blobbyChatState = {};
-                cfg.blobbyChatState.alpha = parseInt(this.value);
-                localStorage.setItem('FRIA_config', JSON.stringify(cfg));
-                // Sync vers serveur
-                var r = modal.getBoundingClientRect();
-                _blobbySaveChatState({
-                    x: Math.round(r.left), y: Math.round(window.innerHeight - r.top - r.height),
-                    w: Math.round(r.width), h: Math.round(r.height),
-                    alpha: parseInt(this.value),
-                });
-            } catch {}
-        };
 
         var headerRight = document.createElement('div');
         Object.assign(headerRight.style, { display: 'flex', alignItems: 'center', gap: '6px' });
@@ -1584,7 +1561,7 @@ const Blobby = {
                 var state = {
                     x: Math.round(r.left), y: Math.round(window.innerHeight - r.top - r.height),
                     w: Math.round(r.width), h: Math.round(r.height),
-                    alpha: parseInt(alphaSlider.value),
+                    alpha: parseInt((modal.style.opacity || 1) * 100),
                 };
                 _blobbySaveChatState(state);
             } catch {}
@@ -1674,7 +1651,6 @@ const Blobby = {
         headerRight.appendChild(closeBtn);
         header.appendChild(title);
         title.appendChild(syncDot);
-        header.appendChild(alphaSlider);
         header.appendChild(headerRight);
 
         // Messages area
