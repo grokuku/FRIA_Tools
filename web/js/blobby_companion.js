@@ -1093,19 +1093,16 @@ const Blobby = {
 // ─── Chat modal ────────────────────────────────────────────────
 
     _openChatSettings() {
-        if (typeof openSettings === 'function') {
-            openSettings();
-            setTimeout(function() {
-                document.querySelectorAll('button').forEach(function(btn) {
-                    if (btn.textContent.indexOf('Blobby') >= 0) btn.click();
-                });
-                // Petite astuce : forcer le resize de la modale pour declencher le render
-                var modal = document.getElementById('fria-modal');
-                if (modal) { modal.style.width = (parseInt(modal.style.width) + 1) + 'px'; setTimeout(function() { modal.style.width = (parseInt(modal.style.width) - 1) + 'px'; }, 50); }
-            }, 100);
+        // Ouvrir la modale FR.IA et switcher sur l'onglet Blobby
+        var friaModal = document.getElementById('modal-user-settings');
+        if (friaModal) {
+            friaModal.classList.remove('hidden');
+            friaModal.classList.add('flex');
+            var blobbyTab = friaModal.querySelector('[data-tab="blobby"]');
+            if (blobbyTab) switchSettingsTab('blobby', blobbyTab);
+            return;
         }
-    },
-    _oldOpenChatSettings() {
+        // Fallback : si la modale FR.IA n'existe pas, on crée la notre
         var existing = document.getElementById('blobby-chat-settings');
         if (existing) { existing.style.display = 'flex'; return; }
 
@@ -1570,6 +1567,12 @@ const Blobby = {
 
         var headerRight = document.createElement('div');
         Object.assign(headerRight.style, { display: 'flex', alignItems: 'center', gap: '6px' });
+        var settingsBtn = document.createElement('button');
+        settingsBtn.innerHTML = '⚙️';
+        Object.assign(settingsBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '14px', padding: '0 4px' });
+        settingsBtn.onmouseenter = () => settingsBtn.style.color = '#fff';
+        settingsBtn.onmouseleave = () => settingsBtn.style.color = '#888';
+        settingsBtn.onclick = (e) => { e.stopPropagation(); _self._openChatSettings(); };
         var closeBtn = document.createElement('button');
         closeBtn.textContent = '✕';
         Object.assign(closeBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '16px', padding: '0 4px' });
@@ -1594,6 +1597,7 @@ const Blobby = {
             _saveChatState();
             modal.style.display = 'none';
         };
+        headerRight.appendChild(settingsBtn);
         // Bouton Clear
         var clearBtn = document.createElement('button');
         clearBtn.textContent = '🗑';
@@ -2214,10 +2218,3 @@ window.BlobbyCompanion = {
         }
     });
 })();
-
-// Exposer Blobby et les fonctions helpers sur window pour fria_menu.js
-window.Blobby = Blobby;
-window._blobbySaveAppearance = _blobbySaveAppearance;
-window._blobbyLoadAppearance = _blobbyLoadAppearance;
-window._blobbySaveFps = _blobbySaveFps;
-window._blobbyLoadFps = _blobbyLoadFps;
