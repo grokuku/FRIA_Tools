@@ -289,6 +289,33 @@ function _blobbyMarkdownToHtml(md) {
     s = s.replace(/(<li[^>]*>.*?<\/li>(?:\n<li[^>]*>.*?<\/li>)*)/gs, function(m) {
         return '<ul style="margin:4px 0;padding:0;">' + m.replace(/\n/g, '') + '</ul>';
     });
+    // Tables (| col | col |\n| --- | --- |\n| cell | cell |)
+    s = s.replace(/((?:^|\n)\|[^\n]+\|(?:\n\|[^\n]+\|)+)/g, function(m, tableText) {
+        var rows = tableText.trim().split('\n');
+        if (rows.length < 2) return m;
+        // Check if row 1 is the separator (| --- | --- |)
+        var isSep = /^\|\s*[-:]+\s*(\|\s*[-:]+\s*)+\|?$/.test(rows[1].trim());
+        if (!isSep) return m;  // Not a table, leave as-is
+        var html = '<table style="border-collapse:collapse;width:100%;font-size:11px;margin:6px 0;">';
+        // Header row
+        var headers = rows[0].split('|').map(function(c){return c.trim();}).filter(function(c){return c!=='';});
+        html += '<thead><tr>';
+        headers.forEach(function(h) {
+            html += '<th style="border:1px solid #444;padding:4px 8px;background:#2a2a2e;color:#FF8F00;text-align:left;">' + h + '</th>';
+        });
+        html += '</tr></thead><tbody>';
+        // Data rows (skip header and separator)
+        for (var i = 2; i < rows.length; i++) {
+            var cells = rows[i].split('|').map(function(c){return c.trim();}).filter(function(c){return c!=='';});
+            html += '<tr>';
+            cells.forEach(function(c) {
+                html += '<td style="border:1px solid #444;padding:4px 8px;">' + c + '</td>';
+            });
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+        return html;
+    });
     // Line breaks (preserve newlines as br outside of pre blocks)
     s = s.replace(/(<pre[\s\S]*?<\/pre>)|\n/g, function(m, pre) {
         return pre || '<br>';
