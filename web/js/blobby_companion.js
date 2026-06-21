@@ -257,6 +257,7 @@ try { _blobbyLocalMemories = JSON.parse(localStorage.getItem('blobbyLocalMemorie
 // ── Minimal Markdown parser for Blobby chat ─────────────────────
 function _blobbyMarkdownToHtml(md) {
     if (!md) return '';
+    console.log('[BlobbyMD] INPUT:', JSON.stringify(md).substring(0, 200));
     // Escape HTML first to prevent injection
     var s = md.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     // Code blocks (```...```)
@@ -292,6 +293,7 @@ function _blobbyMarkdownToHtml(md) {
     s = s.replace(/(<pre[\s\S]*?<\/pre>)|\n/g, function(m, pre) {
         return pre || '<br>';
     });
+    console.log('[BlobbyMD] OUTPUT:', JSON.stringify(s).substring(0, 200));
     return s;
 }
 
@@ -1858,7 +1860,9 @@ const Blobby = {
             div.style.alignSelf = 'flex-start';
             div.style.border = '1px solid #444';
             div.style.whiteSpace = 'normal';
+            console.log('[BlobbyMD] _addChatMessage blobby, text:', JSON.stringify(text).substring(0, 200));
             div.innerHTML = _blobbyMarkdownToHtml(text);
+            console.log('[BlobbyMD] _addChatMessage blobby, div.innerHTML:', JSON.stringify(div.innerHTML).substring(0, 200));
         } else if (role === 'system') {
             div.style.background = 'transparent';
             div.style.color = '#888';
@@ -1981,6 +1985,7 @@ const Blobby = {
             }
 
             var reply = data.output || '...';
+            console.log('[BlobbyMD] Raw LLM reply:', JSON.stringify(reply).substring(0, 300));
             var originalReply = reply; // sauvegarder pour les commandes distantes
             // Mettre a jour le max context si disponible
             if (data.max_context) {
@@ -1989,13 +1994,16 @@ const Blobby = {
             }
             // Executer les commandes dans la reponse
             reply = this._executeCommands(reply);
+            console.log('[BlobbyMD] After _executeCommands:', JSON.stringify(reply).substring(0, 300));
             // Afficher la reponse (les commandes distantes seront resolues apres)
             this._addChatMessage(container, 'blobby', reply);
             // Executer les commandes git/update via l'API backend
             var lastMsg = container.querySelector('div:last-child');
             var displayedReply = reply;
             this._executeRemoteCommands(originalReply, function(updatedReply) {
+                console.log('[BlobbyMD] Remote callback, updatedReply:', JSON.stringify(updatedReply).substring(0, 200));
                 if (updatedReply !== originalReply && lastMsg) {
+                    console.log('[BlobbyMD] Remote callback, applying markdown to updatedReply');
                     lastMsg.innerHTML = _blobbyMarkdownToHtml(updatedReply);
                 }
             });
