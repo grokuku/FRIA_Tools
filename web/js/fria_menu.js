@@ -940,6 +940,11 @@ function renderBlobbyTab(container, cfg) {
             if (Blobby._saveFpsSetting) Blobby._saveFpsSetting(v);
             if (Blobby._restartAnimationInterval) Blobby._restartAnimationInterval(v);
             if (Blobby._loadAppearance) Blobby._loadAppearance();
+            // Forcer le refresh du canvas
+            var app = window.app || window.comfyAPI?.app?.app;
+            if (app && app.canvas && app.canvas.setDirty) {
+                app.canvas.setDirty(true, true);
+            }
         }
     };
 
@@ -1003,8 +1008,18 @@ function renderBlobbyTab(container, cfg) {
                 c.blobbyData.appearance = a;
                 localStorage.setItem('FRIA_config', JSON.stringify(c));
             }
-            // Appliquer immediatement
-            if (typeof Blobby !== 'undefined' && Blobby._loadAppearance) Blobby._loadAppearance();
+            // Appliquer immediatement sur le canvas
+            if (typeof Blobby !== 'undefined') {
+                if (Blobby._loadAppearance) Blobby._loadAppearance();
+                // Forcer le refresh du canvas
+                var app = window.app || window.comfyAPI?.app?.app;
+                if (app && app.canvas && app.canvas.setDirty) {
+                    app.canvas.setDirty(true, true);
+                }
+                if (Blobby._canvas && Blobby._canvas.setDirty) {
+                    Blobby._canvas.setDirty(true, true);
+                }
+            }
         } catch {}
     }
 
