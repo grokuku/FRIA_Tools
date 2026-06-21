@@ -2025,11 +2025,11 @@ const Blobby = {
                 }
 
                 var reply = data.output || '...';
+                // Verifier les [SHELL] AVANT _executeCommands (qui ne les detruit plus)
+                var hasShellCommands = /\[SHELL\s+.+\]/i.test(reply);
+
                 // Executer les commandes locales (MOVE_TO, SET, FOCUS)
                 reply = this._executeCommands(reply);
-
-                // Extraire et executer les commandes [SHELL] de maniere synchrone
-                var hasShellCommands = /\[SHELL\s+.+\]/i.test(reply);
                 if (hasShellCommands) {
                     // Executer les commandes shell et collecter les resultats
                     var turnResults = await this._executeShellCommandsAsync(reply);
@@ -2040,13 +2040,16 @@ const Blobby = {
                         return 'Commande: ' + r.command + '\nRésultat:\n' + r.output;
                     }).join('\n\n---\n\n');
 
+                    // Inclure l'historique du chat pour la continuite
+                    var chatHistory = this._getRecentChatHistory(6);
                     currentInstruction = character + '\n\n'
+                        + 'Historique de la conversation:\n' + chatHistory + '\n\n'
                         + 'Tu as executé des commandes shell. Voici les résultats:\n\n'
                         + resultsText + '\n\n'
-                        + 'Analyse ces résultats et réponds à l\'utilisateur.\n'
+                        + 'Analyse CES résultats et réponds à l\'utilisateur.\n'
                         + 'Si tu as besoin d\'autres commandes, utilise [SHELL commande].\n'
                         + 'Sinon, donne ta réponse finale en Markdown (sans commandes [SHELL]).\n'
-                        + 'Question initiale de l\'utilisateur: ' + userText;
+                        + 'Question actuelle de l\'utilisateur: ' + userText;
                     continue; // Tour suivant
                 }
 
@@ -2060,6 +2063,9 @@ const Blobby = {
             // Enlever le thinking
             var thinkingEl = container.querySelector('div:last-child');
             if (thinkingEl && thinkingEl.textContent.indexOf('Blobby') >= 0) thinkingEl.remove();
+
+            // Nettoyer les placeholders restants
+            finalReply = finalReply.replace(/⏳[^\n]*/g, '').replace(/\n{3,}/g, '\n\n').trim();
 
             // Afficher la réponse finale avec markdown
             this._addChatMessage(container, 'blobby', finalReply);
@@ -2101,6 +2107,25 @@ const Blobby = {
             if (thinking && thinking.textContent === '🤔 Blobby réfléchit...') thinking.remove();
             this._addChatMessage(container, 'system', '❌ Erreur: ' + (e.message || ''));
         }
+    },
+
+    _getRecentChatHistory(count) {
+        var msgs = document.getElementById('blobby-chat-msgs');
+        if (!msgs) return '';
+        var history = [];
+        var allMsgs = msgs.querySelectorAll('.blobby-msg');
+        var start = Math.max(0, allMsgs.length - count);
+        for (var i = start; i < allMsgs.length; i++) {
+            var el = allMsgs[i];
+            var role = el.dataset.role;
+            var text = el.textContent || '';
+            if (role === 'user') {
+                history.push('Utilisateur: ' + text);
+            } else if (role === 'blobby') {
+                history.push('Blobby: ' + text.substring(0, 300));
+            }
+        }
+        return history.join('\n');
     },
 
     _describeWorkflow() {
@@ -2172,11 +2197,8 @@ const Blobby = {
             return '⚠️ Nœud "' + nodeName.trim() + '" introuvable';
         });
 
-        // Placeholders pour les commandes distantes (résolues par _executeRemoteCommands)
-        result = result.replace(/\[SHELL\s+.+\]/gi, '⏳ Commande en cours...');
-        result = result.replace(/\[SKILL_SAVE[^\]]*\]/gi, '⏳ Sauvegarde skill...');
-        result = result.replace(/\[SKILL_RUN\s+[^\]]+\]/gi, '⏳ Execution skill...');
-        result = result.replace(/\[SKILL_LIST\]/gi, '⏳ Liste skills...');
+        // [SHELL], [SKILL_SAVE], [SKILL_LIST], [SKILL_RUN] sont gérés par la boucle agentic
+        // Ne PAS les remplacer par des placeholders ici
 
         return result;
     },
