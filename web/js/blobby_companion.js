@@ -533,7 +533,7 @@ const Blobby = {
             this._animInterval = null;
         }
 
-        if (canvas.setDirty) canvas.setDirty(false, true);
+        if (canvas.setDirty) canvas.setDirty(true, true);
         console.log("%c🧡 Blobby désactivé.", "font-size: 14px; color: #888;");
     },
 
@@ -558,7 +558,7 @@ const Blobby = {
         var _self = this;
         this._animInterval = setInterval(function() {
             if (!_self._active) return;
-            if (canvas.setDirty) canvas.setDirty(false, true);
+            if (canvas.setDirty) canvas.setDirty(true, true);
         }, intervalMs);
     },
 
