@@ -42,5 +42,5 @@ __all__ = [
     '_authenticate_via_token', '_sync_session_user',
     'get_db', '_init_db', '_row_get',
     'encrypt_api_key', 'decrypt_api_key', 'is_admin', 'is_kw_editor', '_kw_editor_required', '_privacy_filter', '_regenerate_keyword_embedding', '_generate_all_embeddings',
-    '_get_ollama_config',
+    '_get_ollama_config', '_check_rate_limit', '_require_json',
 ]

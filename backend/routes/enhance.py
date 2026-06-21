@@ -33,17 +33,25 @@ def convert_bboxes_to_normalized(json_text, width, height):
         return json_text
 
     elements = (data.get("compositional_deconstruction") or {}).get("elements") or []
+    # Global heuristic: if ANY bbox has a value > 1000, assume ALL bboxes are in
+    # pixels and convert all of them. This prevents the known bug where the LLM
+    # mixes coordinate systems (some pixel-based, some already normalized).
+    need_convert = False
+    for el in elements:
+        bbox = el.get("bbox")
+        if bbox and isinstance(bbox, list) and len(bbox) == 4:
+            if max(bbox) > 1000:
+                need_convert = True
+                break
+    if not need_convert:
+        return json_text  # All bboxes already in 0-1000
+
     changed = False
     for el in elements:
         bbox = el.get("bbox")
         if not bbox or not isinstance(bbox, list) or len(bbox) != 4:
             continue
         y_min, x_min, y_max, x_max = bbox
-        # Detecter si deja en 0-1000 (toutes valeurs <= 1000)
-        # Si max value > 1000, c'est des pixels -> convertir
-        max_val = max(y_min, x_min, y_max, x_max)
-        if max_val <= 1000:
-            continue  # deja normalise, on touche pas
         # Clamp aux dimensions de l'image
         y_min = max(0, min(y_min, height))
         x_min = max(0, min(x_min, width))

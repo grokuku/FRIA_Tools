@@ -9,6 +9,9 @@ def generate_prompt():
     guard = _login_required()
     if guard:
         return guard
+    rl = _check_rate_limit("generate", max_calls=30, window_seconds=60)
+    if rl:
+        return rl
     data = request.get_json()
     if not data:
         return jsonify({'error': 'payload requis'}), 400

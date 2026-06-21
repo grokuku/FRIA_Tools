@@ -33,10 +33,17 @@ def _rate_limit(key, max_calls, window_seconds):
 
 
 def _check_rate_limit(endpoint, max_calls=30, window_seconds=60):
-    """Returns a 429 response if rate-limited, None otherwise.""""
+    """Returns a 429 response if rate-limited, None otherwise."""
     user_id = _get_current_user_id() or request.remote_addr
     if not _rate_limit(f"{endpoint}:{user_id}", max_calls, window_seconds):
         return jsonify({"error": "Trop de requêtes. Réessayez dans quelques minutes."}), 429
+    return None
+
+
+def _require_json():
+    """Returns a 415 response if the request Content-Type is not application/json."""
+    if not request.is_json:
+        return jsonify({'error': 'Content-Type must be application/json'}), 415
     return None
 
 
