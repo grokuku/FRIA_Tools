@@ -254,6 +254,46 @@ try { _blobbyLocalMemories = JSON.parse(localStorage.getItem('blobbyLocalMemorie
 
 
 
+// ── Minimal Markdown parser for Blobby chat ─────────────────────
+function _blobbyMarkdownToHtml(md) {
+    if (!md) return '';
+    // Escape HTML first to prevent injection
+    var s = md.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // Code blocks (```...```)
+    s = s.replace(/```[\w]*\n([\s\S]*?)```/g, function(m, code) {
+        return '<pre style="background:#111;padding:8px;border-radius:6px;overflow-x:auto;font-size:11px;border:1px solid #333;margin:4px 0;"><code>' + code.replace(/\n$/, '') + '</code></pre>';
+    });
+    // Inline code (`code`)
+    s = s.replace(/`([^`\n]+)`/g, '<code style="background:#111;padding:1px 4px;border-radius:3px;font-size:11px;">$1</code>');
+    // Bold (**text**)
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // Italic (*text* — but not inside ** **)
+    s = s.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+    // Headings (### text, ## text, # text)
+    s = s.replace(/^###\s+(.+)$/gm, '<h4 style="margin:6px 0 2px;font-size:13px;color:#FF8F00;">$1</h4>');
+    s = s.replace(/^##\s+(.+)$/gm, '<h3 style="margin:8px 0 3px;font-size:14px;color:#FF8F00;">$1</h3>');
+    s = s.replace(/^#\s+(.+)$/gm, '<h3 style="margin:8px 0 3px;font-size:15px;color:#FF8F00;">$1</h3>');
+    // Links [text](url)
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:#6366f1;text-decoration:underline;">$1</a>');
+    // Unordered lists (- text or * text)
+    s = s.replace(/(?:^|\n)[-\*]\s+(.+)/g, function(m, line) {
+        return '\n<li style="margin-left:16px;list-style:disc;">' + line + '</li>';
+    });
+    // Ordered lists (1. text)
+    s = s.replace(/(?:^|\n)\d+\.\s+(.+)/g, function(m, line) {
+        return '\n<li style="margin-left:16px;list-style:decimal;">' + line + '</li>';
+    });
+    // Wrap consecutive <li> in <ul>
+    s = s.replace(/(<li[^>]*>.*?<\/li>(?:\n<li[^>]*>.*?<\/li>)*)/gs, function(m) {
+        return '<ul style="margin:4px 0;padding:0;">' + m.replace(/\n/g, '') + '</ul>';
+    });
+    // Line breaks (preserve newlines as br outside of pre blocks)
+    s = s.replace(/(<pre[\s\S]*?<\/pre>)|\n/g, function(m, pre) {
+        return pre || '<br>';
+    });
+    return s;
+}
+
 // ── Populate Blobby tab in FR.IA settings modal ──
 
 function _blobbyPopulateSettings() {
@@ -1815,7 +1855,7 @@ const Blobby = {
             div.style.color = '#e2e8f0';
             div.style.alignSelf = 'flex-start';
             div.style.border = '1px solid #444';
-            div.innerHTML = text;
+            div.innerHTML = _blobbyMarkdownToHtml(text);
         } else if (role === 'system') {
             div.style.background = 'transparent';
             div.style.color = '#888';
@@ -1902,6 +1942,7 @@ const Blobby = {
                 + '  [SET nom param valeur] - Modifie un parametre d\'un noeud\n'
                 + '  [FOCUS nom] - Met en surbrillance un noeud\n'
                 + 'Skills disponibles : ' + JSON.stringify(_blobbyGetSkills().map(function(s){return s.name;})) + '\n'
+                + 'Tu peux utiliser le Markdown pour mettre en forme tes reponses (gras, listes, titres, code).\n'
                 + 'Note : Tu as un VRAI terminal. Reflechis aux commandes a executer. Sauvegarde les procedures qui marchent comme skills. Ne fais pas que parler, agis !\n'
                 + 'Environnement :\n'
                 + '- OS : ' + (navigator.platform || 'inconnu') + '\n'
