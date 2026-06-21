@@ -879,7 +879,7 @@ function renderCompteTab(container, cfg) {
 
 function renderBlobbyTab(container, cfg) {
     container.innerHTML = '';
-    var _self = Blobby || window.Blobby || {};
+    var _self = window.Blobby || {};
 
         // Tabs (sans header - déjà dans la modale FR.IA)
         var tabsBar = document.createElement('div');
@@ -1092,7 +1092,7 @@ function renderBlobbyTab(container, cfg) {
                     var el = document.getElementById('bapp-color-' + k);
                     if (el) a.colors[k] = el.value;
                 });
-                _blobbySaveAppearance(a);
+                window._blobbySaveAppearance(a);
                 _self._loadAppearance();
             } catch {}
         };
@@ -1100,7 +1100,7 @@ function renderBlobbyTab(container, cfg) {
         function _onAppChange() { _saveAppearance(); }
 
         // Charger valeurs actuelles
-        var _app = _blobbyLoadAppearance({});
+        var _app = window._blobbyLoadAppearance({});
 
         appContent.appendChild(makeSlider('Particules', 'bapp-particles', 10, 120, 5, _app.numParticles || 60, '', _onAppChange));
 
@@ -1165,7 +1165,7 @@ function renderBlobbyTab(container, cfg) {
         ];
         moods.forEach(function(m) {
             var curColors = _app.colors || {};
-            var c = curColors[m.key] || Blobby.colors[m.key] || '#FF8F00';
+            var c = curColors[m.key] || window.Blobby.colors[m.key] || '#FF8F00';
             // On remplace makeColorPicker pour controler l'id
             var row = document.createElement('div');
             Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '8px' });

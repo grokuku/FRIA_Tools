@@ -2214,3 +2214,10 @@ window.BlobbyCompanion = {
         }
     });
 })();
+
+// Exposer Blobby et les fonctions helpers sur window pour fria_menu.js
+window.Blobby = Blobby;
+window._blobbySaveAppearance = _blobbySaveAppearance;
+window._blobbyLoadAppearance = _blobbyLoadAppearance;
+window._blobbySaveFps = _blobbySaveFps;
+window._blobbyLoadFps = _blobbyLoadFps;
