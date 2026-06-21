@@ -1567,12 +1567,6 @@ const Blobby = {
 
         var headerRight = document.createElement('div');
         Object.assign(headerRight.style, { display: 'flex', alignItems: 'center', gap: '6px' });
-        var settingsBtn = document.createElement('button');
-        settingsBtn.innerHTML = '⚙️';
-        Object.assign(settingsBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '14px', padding: '0 4px' });
-        settingsBtn.onmouseenter = () => settingsBtn.style.color = '#fff';
-        settingsBtn.onmouseleave = () => settingsBtn.style.color = '#888';
-        settingsBtn.onclick = (e) => { e.stopPropagation(); _self._openChatSettings(); };
         var closeBtn = document.createElement('button');
         closeBtn.textContent = '✕';
         Object.assign(closeBtn.style, { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '16px', padding: '0 4px' });
@@ -1597,7 +1591,6 @@ const Blobby = {
             _saveChatState();
             modal.style.display = 'none';
         };
-        headerRight.appendChild(settingsBtn);
         // Bouton Clear
         var clearBtn = document.createElement('button');
         clearBtn.textContent = '🗑';
