@@ -23,8 +23,8 @@ def _load_ollama_config_at_startup():
         cfg = {r[0]: r[1] for r in rows}
         if cfg:
             set_config(ollama_url=cfg.get('ollama_url'), ollama_model=cfg.get('ollama_model'))
-    except Exception:
-        pass
+    except Exception as e:
+        logging.warning(f"Failed to load Ollama config from DB: {e}")
 
 # Import route modules
 from routes.helpers import *
@@ -63,4 +63,5 @@ def static_files(path):
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    debug = os.environ.get('FLASK_DEBUG', '0') == '1'
+    app.run(host='0.0.0.0', port=5000, debug=debug)

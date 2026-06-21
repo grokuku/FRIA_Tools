@@ -4,12 +4,47 @@ import os
 import sqlite3
 import json
 import random
+import logging
+import time
+from collections import defaultdict
 
 from flask import g, request, jsonify, session
 from cryptography.fernet import Fernet
 
 from embeddings import generate_embedding
 from extensions import app, oauth, DB_PATH, MD_PATH, BASE_DIR
+
+
+# ── Rate limiter (simple in-memory token bucket) ─────────────────────
+
+_rate_buckets = defaultdict(list)
+
+def _rate_limit(key, max_calls, window_seconds):
+    """Simple sliding-window rate limiter. Returns True if allowed, False if rate-limited."""
+    now = time.time()
+    bucket = _rate_buckets[key]
+    # Remove expired entries
+    while bucket and bucket[0] < now - window_seconds:
+        bucket.pop(0)
+    if len(bucket) >= max_calls:
+        return False
+    bucket.append(now)
+    return True
+
+
+def _check_rate_limit(endpoint, max_calls=30, window_seconds=60):
+    """Returns a 429 response if rate-limited, None otherwise."""
+    user_id = _get_current_user_id() or request.remote_addr
+    if not _rate_limit(f"{endpoint}:{user_id}", max_calls, window_seconds):
+        return jsonify({"error": "Trop de requêtes. Réessayez dans quelques minutes."}), 429
+    return None
+
+
+def _require_json():
+    """Returns a 415 response if the request Content-Type is not application/json."""
+    if not request.is_json:
+        return jsonify({'error': 'Content-Type must be application/json'}), 415
+    return None
 
 
 # ── helpers ──────────────────────────────────────────────────────────
@@ -27,6 +62,10 @@ def _row_get(row, key, default=None):
 
 def _get_encryption_key():
     """Recupere ou genere la cle de chiffrement."""
+    # Priorite : variable d'environnement (plus secur), puis BDD (fallback)
+    env_key = os.environ.get("ENCRYPTION_KEY")
+    if env_key:
+        return Fernet(env_key.encode())
     conn = sqlite3.connect(str(DB_PATH))
     cur = conn.execute("SELECT value FROM app_settings WHERE key = 'encryption_key'")
     row = cur.fetchone()
@@ -665,7 +704,7 @@ Here are examples of well-structured {pt.upper()} prompts:
     # Son system_prompt sera utilisé pour la passe 2 si validation_template_id est fourni.
 
     conn.commit()
-    conn.close()
+    # Do NOT close — caller (_init_db) owns the connection lifecycle
 
 
 def _get_current_user_id() -> str | None:
@@ -717,6 +756,8 @@ def _sync_session_user(user_id: str):
     try:
         conn = get_db()
         cur = conn.cursor()
+        # Use a transaction to mitigate TOCTOU race on first-user admin assignment
+        cur.execute("BEGIN IMMEDIATE")
         cur.execute("SELECT id FROM users WHERE id = ?", (user_id,))
         if not cur.fetchone():
             cur.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'")
@@ -727,9 +768,11 @@ def _sync_session_user(user_id: str):
                 (user_id, user.get("username", ""), user.get("display_name", ""), user.get("avatar", ""), role)
             )
             conn.commit()
+        else:
+            conn.commit()  # release the IMMEDIATE lock
         conn.close()
     except Exception:
-        pass
+        logging.exception("_sync_session_user failed")
 
 
 def _admin_required():
@@ -856,7 +899,10 @@ def _get_ollama_config() -> dict:
 
 
 def _generate_all_embeddings(conn):
-    """Génère et stocke les embeddings Ollama pour tous les mots-clés."""
+    """Génère et stocke les embeddings Ollama pour tous les mots-clés.
+    Note: Cette fonction est séquentielle et bloquante. Pour 500+ mots-clés,
+    elle peut prendre 50+ secondes. Envisager un traitement asynchrone ou
+    le batch de l'API Ollama pour les grands jeux de données."""
     cur = conn.cursor()
     cur.execute("SELECT id, keyword, description FROM keywords")
     rows = cur.fetchall()
