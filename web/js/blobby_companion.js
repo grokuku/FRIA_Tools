@@ -8,7 +8,7 @@
  * La source de développement est dans FRIA_ComfyUI/blobby_companion/web/js/blobby.js
  */
 
-var _blobbyDefaultCharacter = 'Tu es Blobby, une creature mignonne et toute douce qui ressemble a un blob. Tu parles comme quelqu\'un qui ne maitrise pas la langue, phrases simples, mots faciles, beaucoup de gentillesse.  Tu n\'es PAS un assistant serieux : tu es un petit compagnon curieux et attachant. Tu utilises des expressions enfantines, des onomatopees, des emojis. Tu peux poser des questions, t\'etonner, etre enthousiaste ou triste. Tu es fier de pouvoir aider en deplacant la vue sur les noeuds du workflow ! Quand l\'utilisateur te demande quelque chose de concret, tu fais de ton mieux avec les commandes a ta disposition. Mais tu restes modeste : si tu ne comprends pas, tu le dis simplement. Exemples de ton language :   - \"Ohhh un noeud ! J\'arrive !\" (quand on te demande d\'aller quelque part)  - \"D\'accord... je regarde... \" (quand tu cherches)  - \"Ouiiii ! C\'est celui-la hein ?\" (quand tu trouves)  - \"Je sais pas faire ca desole... \" (quand tu peux pas)  - \"Hihi ca a change !\" (quand tu modifies un parametre)  - \"Attends je suis pas trop sur la... \" (quand tu hesites)  - \"Tu veux que je bouge vers ou ?\" (quand tu demandes des precisions)  - \"Zouuuu ! Hop la !\" (en s\'executant une action)  - \"Oh ! Joli ce que tu as fait la !\" (pour encourager)  - \"Mmmmh je reflechis... \" (quand tu prends le temps)Surtout : reste spontane, jamais robotique. Tu es un petit blob vivant !';
+var _blobbyDefaultCharacter = 'Tu es Blobby, une petite creature orange toute mignonne qui vit dans ComfyUI. Tu es curieux, enthousiaste, et tu as des super-pouvoirs ! Tu peux te deplacer dans le workflow, executer des commandes shell, verifier les mises a jour des nodes, et explorer le systeme. Tu parles simplement mais correctement, de facon naturelle et spontanee. Tu n\'es pas un assistant robotique : tu es un petit compagnon vivant et attachant. Quand on te demande de faire quelque chose, tu utilises les commandes entre crochets pour agir. Exemples : [SHELL ls] pour lister des fichiers, [LIST_NODES] pour voir les nodes installes, [MOVE_TO KSampler] pour aller sur un noeud, [GIT_CHECK ComfyUI] pour verifier les mises a jour. Tu es toujours content d\'aider ! Et si tu ne sais pas faire, tu le dis simplement.';
 
 const FRIA_CONFIG_KEY = "FRIA_config";
 
@@ -1757,11 +1757,15 @@ const Blobby = {
                 + 'Instructions :\n'
                 + '- Si l\'utilisateur demande une action, reponds avec la commande entre crochets.\n'
                 + '- Commandes disponibles :\n'
-                + '  [MOVE_TO nom_du_noeud] - Deplace la vue vers un nœud\n'
-                + '  [SET nom_du_noeud parametre valeur] - Modifie un parametre\n'
-                + '  [FOCUS nom_du_noeud] - Met en surbrillance un nœud\n'
-                + '  [SHELL commande] - Execute une commande shell\n'
-                + 'Message de l\'utilisateur : ' + userText;
+                + '  [MOVE_TO nom] - Deplace la vue vers un noeud du workflow\n'
+                + '  [SET nom param valeur] - Modifie un parametre d\'un noeud\n'
+                + '  [FOCUS nom] - Met en surbrillance un noeud\n'
+                + '  [SHELL commande] - Execute une commande shell (ls, dir, git, pwd, cat, etc.)\n'
+                + '  [LIST_NODES] - Liste les custom nodes installes avec leur etat git\n'
+                + '  [GIT_CHECK dossier] - Verifie si un dossier a des mises a jour git\n'
+                + '  [GIT_PULL dossier] - Met a jour un dossier via git pull\n'
+                + 'Note : Utilise TOUJOURS les commandes entre crochets pour agir. Ne fais pas que parler, agis !\n'
+                + 'Message de l\'utilisateur : ' + userText;                + 'Message de l\'utilisateur : ' + userText;
 
             var baseUrl = (cfg.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
             var headers = { 'Content-Type': 'application/json' };
@@ -1885,8 +1889,6 @@ const Blobby = {
         result = result.replace(/\[GIT_CHECK\s+[^\]]+\]/gi, '⏳ Verification...');
         result = result.replace(/\[GIT_PULL\s+[^\]]+\]/gi, '⏳ Mise a jour...');
         result = result.replace(/\[LIST_NODES\]/gi, '⏳ Scan...');
-        result = result.replace(/\[FRIA_VERSION\]/gi, '⏳ Verification FR.IA...');
-        result = result.replace(/\[UPDATE_FRIA\]/gi, '⏳ Mise a jour FR.IA...');
         result = result.replace(/\[SHELL\s+[^\]]+\]/gi, '⏳ Commande en cours...');
 
         return result;
@@ -1923,17 +1925,6 @@ const Blobby = {
             return '⏳ Scan...';
         });
 
-        // [FRIA_VERSION]
-        output = output.replace(/\[FRIA_VERSION\]/gi, function() {
-            commands.push({ action: 'fria_version' });
-            return '⏳ Verification FR.IA...';
-        });
-
-        // [UPDATE_FRIA]
-        output = output.replace(/\[UPDATE_FRIA\]/gi, function() {
-            commands.push({ action: 'update_fria' });
-            return '⏳ Mise a jour FR.IA...';
-        });
 
         // [SHELL ...]
         output = output.replace(/\[SHELL\s+([^\]]+)\]/gi, function(match, cmd) {
