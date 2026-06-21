@@ -880,39 +880,203 @@ function renderCompteTab(container, cfg) {
 function renderBlobbyTab(container, cfg) {
     container.innerHTML = '';
 
-    // FPS slider
+    // ── Provider LLM ──
+    const provSection = document.createElement('div');
+    provSection.innerHTML = '<label style="font-size:12px;color:#94a3b8;font-weight:600;display:block;margin-bottom:6px;">Provider LLM</label>';
+    const select = document.createElement('select');
+    Object.assign(select.style, { width:'100%', padding:'8px 10px', borderRadius:'6px', border:'1px solid #555', background:'#1a1a1e', color:'#fff', fontSize:'12px', outline:'none' });
+    select.innerHTML = '<option value="">Chargement...</option>';
+    (async function() {
+        try {
+            var cfg2 = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+            var baseUrl = (cfg2.serverUrl || 'https://kw.holaf.fr').replace(/\/+$/, '');
+            var headers = {};
+            if (cfg2.apiKey) headers['Authorization'] = 'Bearer ' + cfg2.apiKey;
+            var res = await fetch(baseUrl + '/api/presets', { headers });
+            if (!res.ok) { select.innerHTML = '<option value="">Erreur</option>'; return; }
+            var presets = await res.json();
+            select.innerHTML = '<option value="">-- Provider LLM --</option>';
+            presets.forEach(function(p) {
+                var opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = p.name + (p.is_global ? ' 🌐' : '') + (p.is_client_side ? ' 🖥️' : '');
+                if (String(p.id) === String(cfg2.blobbyPreset || '')) opt.selected = true;
+                select.appendChild(opt);
+            });
+        } catch(e) { select.innerHTML = '<option value="">Erreur</option>'; }
+    })();
+    select.onchange = function() {
+        try {
+            var c = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+            c.blobbyPreset = select.value;
+            localStorage.setItem('FRIA_config', JSON.stringify(c));
+        } catch {}
+    };
+    provSection.appendChild(select);
+    container.appendChild(provSection);
+
+    // ── FPS ──
     const fpsDiv = document.createElement('div');
-    fpsDiv.style.cssText = 'margin-bottom:16px;';
+    fpsDiv.style.cssText = 'margin-top:16px;';
+    let savedFps = 30;
+    try { savedFps = parseInt(JSON.parse(localStorage.getItem('FRIA_config')||'{}').blobbyFps) || 30; } catch {}
     fpsDiv.innerHTML = `
-        <label style="font-size:12px;color:#94a3b8;font-weight:600;display:block;margin-bottom:6px;">FPS animation (0 = auto)</label>
-        <div style="display:flex;align-items:center;gap:8px;">
-            <input type="range" min="0" max="165" value="0" id="blobby-fps-slider" style="flex:1;accent-color:#FF8F00;" />
-            <span id="blobby-fps-val" style="font-size:12px;color:#888;">0</span>
+        <label style="font-size:12px;color:#94a3b8;font-weight:600;display:block;margin-bottom:6px;">Animation (FPS)</label>
+        <div style="display:flex;align-items:center;gap:10px;">
+            <input type="range" min="0" max="165" step="5" value="${savedFps}" id="blobby-fps-range" style="flex:1;accent-color:#FF8F00;" />
+            <span id="blobby-fps-value" style="font-size:12px;color:#e2e8f0;min-width:45px;text-align:right;font-weight:600;">${savedFps > 0 ? savedFps + ' fps' : 'Off'}</span>
         </div>
+        <p style="font-size:11px;color:#64748b;margin:4px 0 0;">0 = arrêté, 30 = fluide, 60+ = très fluide</p>
     `;
     container.appendChild(fpsDiv);
+    const fpsRange = fpsDiv.querySelector('#blobby-fps-range');
+    const fpsVal = fpsDiv.querySelector('#blobby-fps-value');
+    fpsRange.oninput = function() {
+        var v = parseInt(this.value) || 0;
+        fpsVal.textContent = v > 0 ? v + ' fps' : 'Off';
+        try {
+            var c = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+            c.blobbyFps = v;
+            localStorage.setItem('FRIA_config', JSON.stringify(c));
+        } catch {}
+        if (typeof Blobby !== 'undefined') {
+            if (Blobby._saveFpsSetting) Blobby._saveFpsSetting(v);
+            if (Blobby._restartAnimationInterval) Blobby._restartAnimationInterval(v);
+        }
+    };
 
-    // Charger la valeur actuelle
+    // ── Apparence ──
+    const appDiv = document.createElement('div');
+    appDiv.style.cssText = 'margin-top:20px;padding-top:16px;border-top:1px solid #333;';
+    appDiv.innerHTML = '<h3 style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin:0 0 10px;">Apparence</h3>';
+    container.appendChild(appDiv);
+
+    // Charger l'apparence actuelle
+    let _app = {};
     try {
-        const friaCfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-        const fps = friaCfg.blobbyData?.fps || 0;
-        const slider = container.querySelector('#blobby-fps-slider');
-        const valEl = container.querySelector('#blobby-fps-val');
-        slider.value = fps;
-        valEl.textContent = fps;
-        slider.oninput = function() {
-            valEl.textContent = this.value;
-            try {
-                const c = JSON.parse(localStorage.getItem('FRIA_config')) || {};
-                if (!c.blobbyData) c.blobbyData = {};
-                c.blobbyData.fps = parseInt(this.value);
-                localStorage.setItem('FRIA_config', JSON.stringify(c));
-                if (typeof Blobby !== 'undefined' && Blobby._loadAppearance) Blobby._loadAppearance();
-            } catch {}
-        };
+        var cfg3 = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+        _app = (cfg3.blobbyData && cfg3.blobbyData.appearance) || {};
     } catch {}
 
-    // Memoire info
+    function makeSlider(label, id, min, max, step, val, suffix) {
+        var row = document.createElement('div');
+        row.style.cssText = 'margin-bottom:8px;';
+        row.innerHTML = `
+            <label style="font-size:11px;color:#94a3b8;font-weight:600;display:block;">${label}</label>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${val}" style="flex:1;accent-color:#FF8F00;" />
+                <span id="${id}-val" style="font-size:11px;color:#e2e8f0;min-width:35px;text-align:right;">${val}${suffix||''}</span>
+            </div>
+        `;
+        var input = row.querySelector('input');
+        var valSpan = row.querySelector('#' + id + '-val');
+        input.oninput = function() {
+            var v = parseFloat(this.value);
+            valSpan.textContent = v + (suffix || '');
+            _saveAppearance();
+        };
+        return row;
+    }
+
+    function _saveAppearance() {
+        try {
+            var a = {};
+            a.numParticles = parseInt(document.getElementById('bapp-particles')?.value) || 60;
+            a.bodyAlpha = (parseFloat(document.getElementById('bapp-body-alpha')?.value) || 100) / 100;
+            a.brainAlpha = (parseFloat(document.getElementById('bapp-brain-alpha')?.value) || 100) / 100;
+            a.brainSize = parseFloat(document.getElementById('bapp-brain-size')?.value) || 1;
+            a.eyeY = parseFloat(document.getElementById('bapp-eye-y')?.value) || 6;
+            a.eyeSpread = parseFloat(document.getElementById('bapp-eye-spread')?.value) || 15;
+            a.eyeScale = parseFloat(document.getElementById('bapp-eye-scale')?.value) || 1;
+            a.mouthY = parseFloat(document.getElementById('bapp-mouth-y')?.value) || 22;
+            a.mouthScale = parseFloat(document.getElementById('bapp-mouth-scale')?.value) || 1;
+            a.colors = {};
+            ['happy','surprised','sleepy','_default'].forEach(function(k) {
+                var el = document.getElementById('bapp-color-' + k);
+                if (el) a.colors[k] = el.value;
+            });
+            // Sauvegarder dans localStorage
+            var c = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+            if (!c.blobbyData) c.blobbyData = {};
+            c.blobbyData.appearance = a;
+            localStorage.setItem('FRIA_config', JSON.stringify(c));
+            // Appliquer
+            if (typeof Blobby !== 'undefined' && Blobby._loadAppearance) Blobby._loadAppearance();
+        } catch {}
+    }
+
+    appDiv.appendChild(makeSlider('Particules', 'bapp-particles', 10, 120, 5, _app.numParticles || 60, ''));
+
+    // Transparences
+    const sep1 = document.createElement('div');
+    sep1.style.cssText = 'border-top:1px solid #333;margin:8px 0;';
+    appDiv.appendChild(sep1);
+    const tLabel = document.createElement('span');
+    tLabel.textContent = 'Transparences';
+    tLabel.style.cssText = 'font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px;';
+    appDiv.appendChild(tLabel);
+    appDiv.appendChild(makeSlider('Corps', 'bapp-body-alpha', 0, 100, 5, Math.round((_app.bodyAlpha || 1) * 100), '%'));
+    appDiv.appendChild(makeSlider('Cerveau', 'bapp-brain-alpha', 0, 100, 5, Math.round((_app.brainAlpha || 1) * 100), '%'));
+
+    // Yeux
+    const sep2 = document.createElement('div');
+    sep2.style.cssText = 'border-top:1px solid #333;margin:8px 0;';
+    appDiv.appendChild(sep2);
+    const eLabel = document.createElement('span');
+    eLabel.textContent = 'Yeux';
+    eLabel.style.cssText = 'font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px;';
+    appDiv.appendChild(eLabel);
+    appDiv.appendChild(makeSlider('Hauteur', 'bapp-eye-y', -20, 30, 1, _app.eyeY || 6, ''));
+    appDiv.appendChild(makeSlider('Écartement', 'bapp-eye-spread', 5, 40, 1, _app.eyeSpread || 15, ''));
+    appDiv.appendChild(makeSlider('Taille', 'bapp-eye-scale', 0.2, 3, 0.1, _app.eyeScale || 1, ''));
+
+    // Bouche
+    const sep3 = document.createElement('div');
+    sep3.style.cssText = 'border-top:1px solid #333;margin:8px 0;';
+    appDiv.appendChild(sep3);
+    const mLabel = document.createElement('span');
+    mLabel.textContent = 'Bouche';
+    mLabel.style.cssText = 'font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px;';
+    appDiv.appendChild(mLabel);
+    appDiv.appendChild(makeSlider('Hauteur', 'bapp-mouth-y', 10, 40, 1, _app.mouthY || 22, ''));
+    appDiv.appendChild(makeSlider('Taille', 'bapp-mouth-scale', 0.2, 3, 0.1, _app.mouthScale || 1, ''));
+
+    // Cerveau
+    const sep4 = document.createElement('div');
+    sep4.style.cssText = 'border-top:1px solid #333;margin:8px 0;';
+    appDiv.appendChild(sep4);
+    const bLabel = document.createElement('span');
+    bLabel.textContent = 'Cerveau';
+    bLabel.style.cssText = 'font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px;';
+    appDiv.appendChild(bLabel);
+    appDiv.appendChild(makeSlider('Taille', 'bapp-brain-size', 0.2, 3, 0.1, _app.brainSize || 1, ''));
+
+    // Couleurs
+    const sep5 = document.createElement('div');
+    sep5.style.cssText = 'border-top:1px solid #333;margin:8px 0;';
+    appDiv.appendChild(sep5);
+    const cLabel = document.createElement('span');
+    cLabel.textContent = 'Couleurs par humeur';
+    cLabel.style.cssText = 'font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px;';
+    appDiv.appendChild(cLabel);
+
+    var moods = [
+        { key: 'happy', label: '😊 Heureux' },
+        { key: 'surprised', label: '😮 Surpris' },
+        { key: 'sleepy', label: '😴 Endormi' },
+        { key: '_default', label: '😐 Neutre' },
+    ];
+    var defaultColors = { happy: '#FF8F00', surprised: '#FACC15', sleepy: '#6366f1', _default: '#FF8F00' };
+    moods.forEach(function(m) {
+        var c = (_app.colors && _app.colors[m.key]) || defaultColors[m.key] || '#FF8F00';
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;';
+        row.innerHTML = `<span style="font-size:11px;color:#94a3b8;flex:1;">${m.label}</span><input type="color" id="bapp-color-${m.key}" value="${c}" style="width:32px;height:24px;padding:0;border:none;border-radius:4px;cursor:pointer;background:transparent;" />`;
+        row.querySelector('input').oninput = function() { _saveAppearance(); };
+        appDiv.appendChild(row);
+    });
+
+    // ── Mémoire info ──
     const memDiv = document.createElement('div');
     memDiv.style.cssText = 'margin-top:20px;padding-top:16px;border-top:1px solid #333;';
     let localCount = 0;
@@ -921,23 +1085,10 @@ function renderBlobbyTab(container, cfg) {
         <h3 style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px;">Mémoire</h3>
         <p style="font-size:12px;color:#888;line-height:1.6;margin:0;">
             Souvenirs locaux : ${localCount}<br>
-            La personnalité de Blobby évolue naturellement au fil des conversations.<br>
-            Utilise le bouton 🧹 dans le chat pour tout oublier.
+            La personnalité évolue naturellement. Bouton 🧹 dans le chat pour tout oublier.
         </p>
     `;
     container.appendChild(memDiv);
-
-    // LLM provider (Blobby utilise le meme preset que le chat)
-    const llmDiv = document.createElement('div');
-    llmDiv.style.cssText = 'margin-top:20px;padding-top:16px;border-top:1px solid #333;';
-    llmDiv.innerHTML = `
-        <h3 style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px;">Provider LLM du chat</h3>
-        <p style="font-size:12px;color:#888;line-height:1.6;margin:0;">
-            Blobby utilise les memes presets que l'onglet "Provider LLM".<br>
-            Configure ton preset là-bas, puis Blobby l'utilisera automatiquement.
-        </p>
-    `;
-    container.appendChild(llmDiv);
 }
 
 // ── Update (git pull sur le repo local) ────────────────────────────

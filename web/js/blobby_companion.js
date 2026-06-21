@@ -1093,20 +1093,17 @@ const Blobby = {
 // ─── Chat modal ────────────────────────────────────────────────
 
     _openChatSettings() {
-        // Ouvrir la modale Paramètres FR.IA dans ComfyUI et switcher sur l'onglet Blobby
+        // Rediriger vers la modale Paramètres FR.IA (onglet Blobby)
         if (typeof openSettings === 'function') {
             openSettings();
-            // La fonction openSettings crée la modale, on doit attendre un peu puis switch d'onglet
             setTimeout(function() {
-                var blobbyTabBtn = null;
                 document.querySelectorAll('button').forEach(function(btn) {
-                    if (btn.textContent.indexOf('Blobby') >= 0) blobbyTabBtn = btn;
+                    if (btn.textContent.indexOf('Blobby') >= 0) btn.click();
                 });
-                if (blobbyTabBtn) blobbyTabBtn.click();
             }, 100);
-            return;
         }
-        // Fallback : l'ancienne modale
+    },
+    _oldOpenChatSettings() {
         var existing = document.getElementById('blobby-chat-settings');
         if (existing) { existing.style.display = 'flex'; return; }
 
