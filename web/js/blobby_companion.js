@@ -1996,7 +1996,7 @@ const Blobby = {
             var displayedReply = reply;
             this._executeRemoteCommands(originalReply, function(updatedReply) {
                 if (updatedReply !== originalReply && lastMsg) {
-                    lastMsg.innerHTML = updatedReply;
+                    lastMsg.innerHTML = _blobbyMarkdownToHtml(updatedReply);
                 }
             });
 
