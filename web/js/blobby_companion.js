@@ -267,8 +267,9 @@ function _blobbyMarkdownToHtml(md) {
     s = s.replace(/`([^`\n]+)`/g, '<code style="background:#111;padding:1px 4px;border-radius:3px;font-size:11px;">$1</code>');
     // Bold (**text**)
     s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    // Italic (*text* — but not inside ** **)
-    s = s.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+    // Italic (*text* — but not ** ** which are already processed)
+    // Avoid lookbehind (not supported in all browsers)
+    s = s.replace(/(^|[^*])\*([^*\n]+?)\*(?![*])/g, '$1<em>$2</em>');
     // Headings (### text, ## text, # text)
     s = s.replace(/^###\s+(.+)$/gm, '<h4 style="margin:6px 0 2px;font-size:13px;color:#FF8F00;">$1</h4>');
     s = s.replace(/^##\s+(.+)$/gm, '<h3 style="margin:8px 0 3px;font-size:14px;color:#FF8F00;">$1</h3>');
