@@ -879,21 +879,7 @@ function renderCompteTab(container, cfg) {
 
 function renderBlobbyTab(container, cfg) {
     container.innerHTML = '';
-
-        // Ouvrir la modale Paramètres FR.IA dans ComfyUI et switcher sur l'onglet Blobby
-        if (typeof openSettings === 'function') {
-            openSettings();
-            // La fonction openSettings crée la modale, on doit attendre un peu puis switch d'onglet
-            setTimeout(function() {
-                var blobbyTabBtn = null;
-                document.querySelectorAll('button').forEach(function(btn) {
-                    if (btn.textContent.indexOf('Blobby') >= 0) blobbyTabBtn = btn;
-                });
-                if (blobbyTabBtn) blobbyTabBtn.click();
-            }, 100);
-            return;
-        }
-        var _self = Blobby || window.Blobby || {};
+    var _self = Blobby || window.Blobby || {};
 
         // Tabs (sans header - déjà dans la modale FR.IA)
         var tabsBar = document.createElement('div');
