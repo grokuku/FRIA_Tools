@@ -1093,16 +1093,20 @@ const Blobby = {
 // ─── Chat modal ────────────────────────────────────────────────
 
     _openChatSettings() {
-        // Ouvrir la modale FR.IA et switcher sur l'onglet Blobby
-        var friaModal = document.getElementById('modal-user-settings');
-        if (friaModal) {
-            friaModal.classList.remove('hidden');
-            friaModal.classList.add('flex');
-            var blobbyTab = friaModal.querySelector('[data-tab="blobby"]');
-            if (blobbyTab) switchSettingsTab('blobby', blobbyTab);
+        // Ouvrir la modale Paramètres FR.IA dans ComfyUI et switcher sur l'onglet Blobby
+        if (typeof openSettings === 'function') {
+            openSettings();
+            // La fonction openSettings crée la modale, on doit attendre un peu puis switch d'onglet
+            setTimeout(function() {
+                var blobbyTabBtn = null;
+                document.querySelectorAll('button').forEach(function(btn) {
+                    if (btn.textContent.indexOf('Blobby') >= 0) blobbyTabBtn = btn;
+                });
+                if (blobbyTabBtn) blobbyTabBtn.click();
+            }, 100);
             return;
         }
-        // Fallback : si la modale FR.IA n'existe pas, on crée la notre
+        // Fallback : l'ancienne modale
         var existing = document.getElementById('blobby-chat-settings');
         if (existing) { existing.style.display = 'flex'; return; }
 

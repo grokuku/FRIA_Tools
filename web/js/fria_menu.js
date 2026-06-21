@@ -439,6 +439,7 @@ function openSettings() {
     const tabs = [
         { id: "providers", label: "Provider LLM", render: renderProvidersTab },
         { id: "compte", label: "Compte", render: renderCompteTab },
+        { id: "blobby", label: "🧡 Blobby", render: renderBlobbyTab },
     ];
     const activeTabs = new Set(["providers"]);
 
@@ -872,6 +873,71 @@ function renderCompteTab(container, cfg) {
             status.textContent = `✗ Erreur de chargement : ${err.message}`;
             status.style.color = "#ef4444";
         });
+}
+
+// ── Onglet Blobby (dans la modale Paramètres FR.IA) ───────────────
+
+function renderBlobbyTab(container, cfg) {
+    container.innerHTML = '';
+
+    // FPS slider
+    const fpsDiv = document.createElement('div');
+    fpsDiv.style.cssText = 'margin-bottom:16px;';
+    fpsDiv.innerHTML = `
+        <label style="font-size:12px;color:#94a3b8;font-weight:600;display:block;margin-bottom:6px;">FPS animation (0 = auto)</label>
+        <div style="display:flex;align-items:center;gap:8px;">
+            <input type="range" min="0" max="165" value="0" id="blobby-fps-slider" style="flex:1;accent-color:#FF8F00;" />
+            <span id="blobby-fps-val" style="font-size:12px;color:#888;">0</span>
+        </div>
+    `;
+    container.appendChild(fpsDiv);
+
+    // Charger la valeur actuelle
+    try {
+        const friaCfg = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+        const fps = friaCfg.blobbyData?.fps || 0;
+        const slider = container.querySelector('#blobby-fps-slider');
+        const valEl = container.querySelector('#blobby-fps-val');
+        slider.value = fps;
+        valEl.textContent = fps;
+        slider.oninput = function() {
+            valEl.textContent = this.value;
+            try {
+                const c = JSON.parse(localStorage.getItem('FRIA_config')) || {};
+                if (!c.blobbyData) c.blobbyData = {};
+                c.blobbyData.fps = parseInt(this.value);
+                localStorage.setItem('FRIA_config', JSON.stringify(c));
+                if (typeof Blobby !== 'undefined' && Blobby._loadAppearance) Blobby._loadAppearance();
+            } catch {}
+        };
+    } catch {}
+
+    // Memoire info
+    const memDiv = document.createElement('div');
+    memDiv.style.cssText = 'margin-top:20px;padding-top:16px;border-top:1px solid #333;';
+    let localCount = 0;
+    try { localCount = (JSON.parse(localStorage.getItem('blobbyLocalMemories')) || []).length; } catch {}
+    memDiv.innerHTML = `
+        <h3 style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px;">Mémoire</h3>
+        <p style="font-size:12px;color:#888;line-height:1.6;margin:0;">
+            Souvenirs locaux : ${localCount}<br>
+            La personnalité de Blobby évolue naturellement au fil des conversations.<br>
+            Utilise le bouton 🧹 dans le chat pour tout oublier.
+        </p>
+    `;
+    container.appendChild(memDiv);
+
+    // LLM provider (Blobby utilise le meme preset que le chat)
+    const llmDiv = document.createElement('div');
+    llmDiv.style.cssText = 'margin-top:20px;padding-top:16px;border-top:1px solid #333;';
+    llmDiv.innerHTML = `
+        <h3 style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px;">Provider LLM du chat</h3>
+        <p style="font-size:12px;color:#888;line-height:1.6;margin:0;">
+            Blobby utilise les memes presets que l'onglet "Provider LLM".<br>
+            Configure ton preset là-bas, puis Blobby l'utilisera automatiquement.
+        </p>
+    `;
+    container.appendChild(llmDiv);
 }
 
 // ── Update (git pull sur le repo local) ────────────────────────────
