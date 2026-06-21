@@ -1,6 +1,5 @@
 """Routes ideogram for FR.IA backend."""
 
-import logging
 from context import *
 from routes.enhance import _prepare_enhance, convert_bboxes_to_normalized
 
@@ -153,7 +152,6 @@ def ideogram_parse():
                 json.loads(converted)
                 prompt_out = converted
             except Exception:
-                logging.exception("ideogram: bbox-converted JSON parse failed")
                 prompt_out = s
         else:
             prompt_out = json.dumps(converted, ensure_ascii=False, indent=2)
@@ -175,7 +173,6 @@ def ideogram_parse():
                     validation_system = val_row['system_prompt'] or ''
                 val_conn.close()
             except Exception:
-                logging.exception("ideogram: validation template lookup failed")
                 validation_system = ''
 
         if not validation_system:

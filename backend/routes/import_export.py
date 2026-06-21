@@ -1,6 +1,5 @@
 """Routes import_export for FR.IA backend."""
 
-import logging
 from context import *
 
 
@@ -97,7 +96,7 @@ def import_md():
             if delete_after and tmp.exists():
                 tmp.unlink()
         except Exception:
-            logging.exception("import_export: tmp file cleanup failed")
+            pass
 
 
 @app.route('/api/embeddings/build', methods=['POST'])

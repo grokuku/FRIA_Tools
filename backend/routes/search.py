@@ -11,9 +11,6 @@ def semantic_search():
     guard = _login_required()
     if guard:
         return guard
-    rl = _check_rate_limit("semantic_search", max_calls=30, window_seconds=60)
-    if rl:
-        return rl
 
     q = request.args.get('q', '').strip()
     limit = int(request.args.get('limit', 50))

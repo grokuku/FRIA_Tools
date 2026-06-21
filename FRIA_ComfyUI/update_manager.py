@@ -189,10 +189,7 @@ def _do_restart_blocking():
     try:
         os.execv(sys.executable, [sys.executable] + sys.argv)
     except Exception as e:
-        # Log to stderr (visible in ComfyUI console) and try os._exit as fallback
-        print(f"[FR.IA Update] CRITICAL: Restart via os.execv failed: {e}", file=sys.stderr)
-        print(f"[FR.IA Update] Falling back to os._exit(1)", file=sys.stderr)
-        os._exit(1)
+        print(f"[FR.IA Update] CRITICAL: Restart via os.execv failed: {e}")
 
 
 def restart_server():

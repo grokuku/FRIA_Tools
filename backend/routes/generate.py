@@ -1,6 +1,5 @@
 """Routes generate for FR.IA backend."""
 
-import logging
 from context import *
 
 
@@ -9,9 +8,6 @@ def generate_prompt():
     guard = _login_required()
     if guard:
         return guard
-    rl = _check_rate_limit("generate", max_calls=30, window_seconds=60)
-    if rl:
-        return rl
     data = request.get_json()
     if not data:
         return jsonify({'error': 'payload requis'}), 400
@@ -84,7 +80,7 @@ def generate_prompt():
                         top = scored[:min(5, len(scored))]
                         kid, score = rng.choice(top)
             except Exception:
-                logging.exception("generate: semantic search failed")
+                pass
 
         elif elem.get('type') == 'raw' and elem.get('text'):
             # Custom text du node ComfyUI : on l'ajoute TEL QUEL dans le prompt.
@@ -111,14 +107,13 @@ def generate_prompt():
         if existing_words:
             placeholders = ','.join('?' for _ in existing_words)
             try:
-                # SAFE: placeholders are parameterized '?' marks from a fixed-length list, not user input
                 cur.execute(
                     f"SELECT DISTINCT section_id FROM keywords WHERE LOWER(keyword) IN ({placeholders})",
                     existing_words
                 )
                 used_sections = {r[0] for r in cur.fetchall() if r[0]}
             except Exception:
-                logging.exception("generate: used_sections lookup failed")
+                pass
 
         # Charger les candidats, puis choisir en Python (déterministe avec rng)
         # Filtrer par SFW/NSFW

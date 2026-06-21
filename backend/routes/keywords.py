@@ -8,7 +8,6 @@ CRUD complet pour les mots-clés avec système de modération :
   sont filtrés pour n'exposer que les public + les siens
 """
 
-import logging
 from context import *
 
 
@@ -613,7 +612,6 @@ def check_keyword_duplicates():
                             'similarity': round(sim, 4)
                         })
                 except Exception:
-                    logging.exception("keywords: embedding parse failed in duplicate check")
                     continue
             semantic_matches.sort(key=lambda x: x['similarity'], reverse=True)
             semantic_matches = semantic_matches[:10]  # Top 10
@@ -684,7 +682,6 @@ def scan_keyword_duplicates():
             try:
                 v1 = json.loads(r1['embedding'])
             except Exception:
-                logging.exception("keywords: embedding parse failed in semantic groups")
                 continue
             group = [{
                 'id': r1['id'],
@@ -710,7 +707,6 @@ def scan_keyword_duplicates():
                         })
                         visited.add(r2['id'])
                 except Exception:
-                    logging.exception("keywords: embedding parse failed in group inner loop")
                     continue
             if len(group) > 1:
                 group.sort(key=lambda x: x['similarity'], reverse=True)

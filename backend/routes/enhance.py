@@ -1,6 +1,5 @@
 """Routes enhance for FR.IA backend."""
 
-import logging
 from context import *
 
 
@@ -29,29 +28,20 @@ def convert_bboxes_to_normalized(json_text, width, height):
             s = m.group(1)
         data = json.loads(s)
     except Exception:
-        logging.exception("convert_bboxes_to_normalized: JSON parse failed")
         return json_text
 
     elements = (data.get("compositional_deconstruction") or {}).get("elements") or []
-    # Global heuristic: if ANY bbox has a value > 1000, assume ALL bboxes are in
-    # pixels and convert all of them. This prevents the known bug where the LLM
-    # mixes coordinate systems (some pixel-based, some already normalized).
-    need_convert = False
-    for el in elements:
-        bbox = el.get("bbox")
-        if bbox and isinstance(bbox, list) and len(bbox) == 4:
-            if max(bbox) > 1000:
-                need_convert = True
-                break
-    if not need_convert:
-        return json_text  # All bboxes already in 0-1000
-
     changed = False
     for el in elements:
         bbox = el.get("bbox")
         if not bbox or not isinstance(bbox, list) or len(bbox) != 4:
             continue
         y_min, x_min, y_max, x_max = bbox
+        # Detecter si deja en 0-1000 (toutes valeurs <= 1000)
+        # Si max value > 1000, c'est des pixels -> convertir
+        max_val = max(y_min, x_min, y_max, x_max)
+        if max_val <= 1000:
+            continue  # deja normalise, on touche pas
         # Clamp aux dimensions de l'image
         y_min = max(0, min(y_min, height))
         x_min = max(0, min(x_min, width))
@@ -71,7 +61,6 @@ def convert_bboxes_to_normalized(json_text, width, height):
         try:
             return json.dumps(data, ensure_ascii=False)
         except Exception:
-            logging.exception("convert_bboxes_to_normalized: JSON serialize failed")
             return json_text
     return json_text
 
@@ -171,8 +160,6 @@ def enhance_prompt():
     """
     guard = _login_required()
     if guard: return guard
-    rl = _check_rate_limit("enhance", max_calls=20, window_seconds=60)
-    if rl: return rl
     user_id = _get_current_user_id()
     data = request.get_json() or {}
 
@@ -727,7 +714,6 @@ def _prepare_enhance(user_id, data):
         try:
             template_examples = json.loads(template_row['examples']) if template_row['examples'] else []
         except Exception:
-            logging.exception("enhance: template examples JSON parse failed")
             template_examples = []
 
         logging.warning(f"[enhance] REQUEST user={user_id} preset_id={preset_id} template_id={template_id} name='{template_name}' output_format='{output_format}' text_len={len(text)}")
@@ -772,7 +758,7 @@ def _prepare_enhance(user_id, data):
                         if top5:
                             ep_keywords.append(random.choice(top5))
                     except Exception:
-                        logging.exception("enhance: semantic EP lookup failed")
+                        pass
 
         ep_text = ', '.join(ep_keywords) if ep_keywords else ''
 
@@ -789,7 +775,6 @@ def _prepare_enhance(user_id, data):
                     existing.append(kw)
             if existing:
                 placeholders = ','.join('?' for _ in existing)
-                # SAFE: placeholders are parameterized '?' marks from a fixed-length list, not user input
                 cur.execute(f"SELECT DISTINCT section_id FROM keywords WHERE LOWER(keyword) IN ({placeholders})", existing)
                 used_sections = {r[0] for r in cur.fetchall() if r[0]}
             else:
@@ -940,7 +925,6 @@ def _prepare_enhance(user_id, data):
                 try:
                     validation_examples = json.loads(val_row['examples']) if val_row['examples'] else []
                 except Exception:
-                    logging.exception("enhance: validation examples JSON parse failed")
                     validation_examples = []
 
         return {
@@ -986,11 +970,10 @@ def _call_llm_internal(llm_request, llm_config):
     """
     import requests
     import logging
-    import time
     base_url = llm_config['base_url']
     api_key = llm_config.get('api_key', '')
     headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {api_key}'} if api_key else {'Content-Type': 'application/json'}
-    r = requests.post(f'{base_url}/chat/completions', headers=headers, json=llm_request, timeout=(10, 180))
+    r = requests.post(f'{base_url}/chat/completions', headers=headers, json=llm_request, timeout=180)
     r.raise_for_status()
     result = r.json()
     output = result['choices'][0]['message']['content'].strip()
@@ -998,21 +981,14 @@ def _call_llm_internal(llm_request, llm_config):
     for retry in range(3):
         if len(output) >= 50:
             break
-        time.sleep(2 ** retry)  # exponential backoff: 1s, 2s, 4s
         if not output:
             logging.warning(f"[enhance] LLM output vide, retry {retry+1}/3")
         else:
             logging.warning(f"[enhance] LLM output trop court (len={len(output)}), retry {retry+1}/3")
-        try:
-            r = requests.post(f'{base_url}/chat/completions', headers=headers, json=llm_request, timeout=(10, 180))
-            r.raise_for_status()
-            result = r.json()
-            output = result['choices'][0]['message']['content'].strip()
-        except requests.RequestException as e:
-            if retry == 2:
-                raise
-            logging.warning(f"[enhance] Retry {retry+1}/3 failed: {e}")
-            continue
+        r = requests.post(f'{base_url}/chat/completions', headers=headers, json=llm_request, timeout=180)
+        r.raise_for_status()
+        result = r.json()
+        output = result['choices'][0]['message']['content'].strip()
     logging.warning(f"[enhance] LLM response status=200 output_len={len(output)} output_preview={output[:100]!r}")
     return result
 
@@ -1080,7 +1056,7 @@ def _finish_enhance_pass1(user_id, prepared, llm_response):
         conn2.commit()
         conn2.close()
     except Exception:
-        logging.exception("enhance: generated_prompts save failed (non-bloquant)")
+        pass  # non-bloquant
 
     # Le template BDD peut demander une conversion bbox via son system_prompt.
     # On la desactive ici — le LLM sort directement du 0-1000 si le template le demande.
@@ -1138,7 +1114,7 @@ def _run_validation_passes_internal(prepared, output, debug_sections):
                 output = corrected
         except Exception:
             # En cas d'erreur de validation, on garde la sortie precedente
-            logging.exception("enhance: validation pass failed, keeping previous output")
+            pass
     return output
 
 
@@ -1346,7 +1322,8 @@ def keywords_llm_process():
                                   m.get('max_model_len') or m.get('context_window')
                     break
     except Exception:
-        logging.exception("enhance: max_context lookup failed")
+        pass
+    
     # Fallback : valeurs connues
     if not max_context:
         known = {
