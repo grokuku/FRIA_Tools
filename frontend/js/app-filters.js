@@ -156,6 +156,11 @@
       m.classList.add('flex');
       makeModalDraggable('usettings-modal-header', 'usettings-modal');
       var providerBtn = m.querySelector('.tab-btn[data-tab="provider"]');
+      // Cacher l'onglet Blobby si on n'est pas dans ComfyUI
+      var blobbyTab = m.querySelector('.tab-btn[data-tab="blobby"]');
+      if (blobbyTab && typeof _blobbyPopulateSettings !== 'function') {
+        blobbyTab.style.display = 'none';
+      }
       switchSettingsTab('provider', providerBtn || m.querySelector('.tab-btn'));
       loadPresets();
       loadApiKeySettings();
@@ -192,7 +197,7 @@
         el.classList.add('text-slate-500', 'dark:text-slate-400', 'border-transparent');
       });
       document.getElementById('tab-' + tab).classList.remove('hidden');
-      if (tab === 'blobby') _blobbyPopulateSettings();
+      if (tab === 'blobby' && typeof _blobbyPopulateSettings === 'function') _blobbyPopulateSettings();
       btn.classList.remove('text-slate-500', 'dark:text-slate-400', 'border-transparent');
       btn.classList.add('text-indigo-600', 'dark:text-indigo-400', 'border-indigo-500', 'dark:border-indigo-400');
     }
