@@ -4,6 +4,76 @@
 
 ---
 
+---
+
+## 🚀 Session (22/06/2026) — Correction Blobby + Code Review Backend
+
+### ✅ Code review backend — 15/20 findings corrigés
+
+| Finding | Severity | Fix | Statut |
+|---------|----------|-----|--------|
+| F1 — SECRET_KEY régénéré à chaque restart | HIGH | Persisté dans `.secret_key` + fallback env var | ✅ |
+| F2 — Double `conn.close()` dans `_insert_default_templates` | HIGH | Supprimé, le caller gère le cycle | ✅ |
+| F3 — 25+ `except Exception: pass` silencieux | HIGH | Remplacés par `logging.exception()` partout | ✅ |
+| F4 — SQL f-string visuellement dangereux | MEDIUM | Commentaire `# SAFE:` ajouté | ✅ |
+| F5 — Clé Fernet dans la même BDD que les données | MEDIUM | `ENCRYPTION_KEY` env var prioritaire | ✅ |
+| F7 — TOCTOU race premier admin | MEDIUM | `BEGIN IMMEDIATE` transaction | ✅ |
+| F8 — Pas de rate limiting | MEDIUM | Token bucket in-memory sur 3 endpoints | ✅ |
+| F9 — Retry Ollama sans backoff | MEDIUM | Exponential backoff (1s/2s/4s) + `try/catch` | ✅ |
+| F10 — `_load_ollama_config` fail silencieux | MEDIUM | `logging.warning()` ajouté | ✅ |
+| F11 — Timeout connect/read 180s | LOW | `timeout=(10, 180)` séparé | ✅ |
+| F16 — Bbox detection per-element (mix coords) | LOW | Heuristique globale : si UNE bbox > 1000 → toutes en pixels | ✅ |
+| F18 — `os.execv` fail → thread meurt silencieusement | LOW | `os._exit(1)` fallback + log stderr | ✅ |
+| F19 — `debug=True` en production | LOW | `FLASK_DEBUG=0` env var | ✅ |
+| F20 — Pas de validation Content-Type | LOW | Helper `_require_json()` → 415 | ✅ |
+| F12 — `keywords.db` tracké par git | LOW | Faux positif — déjà ignoré | ⬜ |
+| F6 — `is_admin` fail open | LOW | Faux positif — déjà fail-secure | ⬜ |
+
+### ✅ Blobby — Rollback de la migration ratée des settings
+
+- **Problème** : 8 commits qui tentaient de déplacer les settings Blobby du chat (⚙️) vers la modale FR.IA de ComfyUI (`renderBlobbyTab` dans `fria_menu.js`). Cause : boucle infinie (`openSettings` → click Blobby tab → `renderBlobbyTab` → `openSettings`...), `Blobby is not defined` (const pas sur `window`), settings jamais appliqués en temps réel.
+- **Correction** : revert `web/js/blobby_companion.js` et `web/js/fria_menu.js` à leur état `71dd2b0` (settings dans le chat, mémoire vectorielle intacte). Tous les fixes backend conservés par cherry-pick.
+
+### ✅ Blobby — Corrections diverses
+
+| Fix | Détail |
+|-----|--------|
+| **DOM widgets figés** | `canvas.setDirty(false, true)` → `setDirty(true, true)` (foreground + background) |
+| **Shell /bin/bash** | `_sp.run(cmd, shell=True)` utilise maintenant `/bin/bash` si disponible (support boucles for, `[ tests ]`) |
+| **Regex [SHELL] tronquée** | `[^\]]+` → `.+` (greedy, va au dernier `]` de la ligne, pas au premier) |
+| **Slider transparence supprimé** | Slider inutilisable dans le header du chat (conflit avec le drag) |
+| **Markdown rendering** | Parser Markdown inline (tables, gras, italique, listes, code, headings, liens) |
+| **Lookbehind incompatible** | `(?<!\*)` → `(^|[^*])` pour compatibilité navigateur |
+| **Callback écrase le markdown** | `lastMsg.innerHTML = updatedReply` → `_blobbyMarkdownToHtml(updatedReply)` |
+| **Boucle agentic** | Multi-tour LLM (max 5) : le LLM peut enchaîner commandes → résultats → analyse |
+| **Info environnement** | Prompt enrichi avec OS, shell, chemins ComfyUI |
+| **Placeholders visibles** | `⏳` nettoyés avant affichage final |
+| **Continuïté du chat** | `_getRecentChatHistory()` inclut l'historique dans les tours agentic |
+
+### ⬜ Blobby — Restant
+
+| Tâche | Priorité |
+|-------|----------|
+| Modifier le caractère / personnalité de Blobby | Moyenne (quand l'agentic loop sera stable) |
+| CORS sync serveur (500 + headers manquants) | Faible (localStorage fonctionne en fallback) |
+
+### ✅ Audit bugs — Mis à jour
+
+| Bug | Statut |
+|-----|--------|
+| M6 — `repeat_penalty` + `frequency_penalty` simultanés | ⬜ Restant |
+| L1 — Embedding par keyword (lent) | ⬜ Restant |
+| Seed ComfyUI ignoré dans `/api/enhance` | ⬜ Restant |
+| `loadColWidths()` redimensionne colonnes cachées | ⬜ Restant |
+| Code mort : `_loadApiKeySettings()` jamais appelé | ⬜ Restant |
+| Troncature footer export `[:100]` | ⬜ Restant |
+| README ComfyUI : nom contradictoire | ⬜ Restant |
+| H2 — Encryption key en BDD (migrer env var) | ⬜ Restant |
+| H4 — CORS wide open | ⬜ Restant |
+| H5 — API key dans localStorage | ⬜ Restant |
+
+---
+
 ## 🔍 Audit complet du code — Rapport de bugs (20/06/2026)
 
 > Analyse exhaustive de tous les fichiers du projet (backend, frontend, ComfyUI).
