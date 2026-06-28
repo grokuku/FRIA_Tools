@@ -187,7 +187,7 @@ async function _blobbySearchMemories(query, limit) {
     var apiKey = _blobbyGetApiKey();
     if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
     try {
-        var res = await fetch(url, { headers: headers, timeout: 3000 });
+        var res = await fetch(url, { headers: headers, signal: AbortSignal.timeout(3000) });
         if (!res.ok) { _blobbyBackendAvailable = false; return _blobbyLocalSearch(query, limit); }
         var data = await res.json();
         _blobbyBackendAvailable = true;
@@ -1987,17 +1987,22 @@ const Blobby = {
             var headers = { 'Content-Type': 'application/json' };
             if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey;
 
-            // ── Boucle agentic : LLM → commandes → résultats → LLM → ... ──
-            var maxTurns = 5;
+                        // ── Boucle agentic : LLM → commandes → résultats → LLM → ... ──
+            // Pas de limite fixe — Blobby continue jusqu'à ce qu'il ait fini.
+            // Sécurité : détection de boucle infinie (même réponse 2x de suite).
             var currentInstruction = instruction;
             var finalReply = '';
             var allCommandResults = [];
+            var lastReplyHash = '__INITIAL__';
+            var repeatedCount = 0;  // 0 = première occurrence, 1 = 2ème occurrence identique → break
 
-            for (var turn = 0; turn < maxTurns; turn++) {
+            for (var turn = 0; turn < 100; turn++) {  // 100 = sécurité, jamais atteint en pratique
                 // Mettre à jour l'indicateur
                 var thinking = container.querySelector('div:last-child');
                 if (thinking && thinking.textContent.indexOf('Blobby') >= 0) {
-                    thinking.textContent = turn === 0 ? '🤔 Blobby réfléchit...' : '🔄 Blobby analyse les résultats...';
+                    thinking.textContent = turn === 0
+                        ? '🤔 Blobby réfléchit...'
+                        : '🔄 Blobby analyse les résultats (tour ' + turn + ')...';
                 }
 
                 var res = await fetch(baseUrl + '/api/keywords/llm-process', {
@@ -2011,7 +2016,6 @@ const Blobby = {
 
                 var data = await res.json().catch(() => ({}));
                 if (!res.ok) {
-                    // Enlever le thinking
                     var th = container.querySelector('div:last-child');
                     if (th && th.textContent.indexOf('Blobby') >= 0) th.remove();
                     this._addChatMessage(container, 'blobby',
@@ -2025,13 +2029,36 @@ const Blobby = {
                 }
 
                 var reply = data.output || '...';
-                // Verifier les [SHELL] AVANT _executeCommands (qui ne les detruit plus)
+
+                // Détection de boucle : si le LLM répond la même chose 2x de suite, on force l'arrêt
+                // repeatedCount = 0 : première occurrence jamais vue
+                // repeatedCount = 1 : 2ème occurrence identique → on break
+                var replyHash = reply.replace(/\[SHELL[^\]]*\]/g, '').trim();
+                if (replyHash === lastReplyHash) {
+                    repeatedCount++;
+                    if (repeatedCount >= 1) {
+                        reply = this._executeCommands(reply);
+                        finalReply = reply;
+                        break;
+                    }
+                } else {
+                    repeatedCount = 0;
+                }
+                lastReplyHash = replyHash;
+
+                // Verifier les [SHELL] AVANT _executeCommands
                 var hasShellCommands = /\[SHELL\s+.+\]/i.test(reply);
 
                 // Executer les commandes locales (MOVE_TO, SET, FOCUS)
                 reply = this._executeCommands(reply);
+
                 if (hasShellCommands) {
-                    // Executer les commandes shell et collecter les resultats
+                    // Mettre à jour l'indicateur pendant l'exécution
+                    var extCommands = (reply.match(/\[SHELL\s+.+?\]/gi) || []);
+                    if (thinking && thinking.textContent.indexOf('Blobby') >= 0) {
+                        thinking.textContent = '⚡ Blobby exécute ' + extCommands.length + ' commande(s)...';
+                    }
+
                     var turnResults = await this._executeShellCommandsAsync(reply);
                     allCommandResults = allCommandResults.concat(turnResults);
 
@@ -2040,17 +2067,16 @@ const Blobby = {
                         return 'Commande: ' + r.command + '\nRésultat:\n' + r.output;
                     }).join('\n\n---\n\n');
 
-                    // Inclure l'historique du chat pour la continuite
                     var chatHistory = this._getRecentChatHistory(6);
                     currentInstruction = character + '\n\n'
                         + 'Historique de la conversation:\n' + chatHistory + '\n\n'
-                        + 'Tu as executé des commandes shell. Voici les résultats:\n\n'
+                        + 'Tu as exécuté des commandes shell. Voici les résultats:\n\n'
                         + resultsText + '\n\n'
-                        + 'Analyse CES résultats et réponds à l\'utilisateur.\n'
-                        + 'Si tu as besoin d\'autres commandes, utilise [SHELL commande].\n'
+                        + 'Analyse ces résultats et réponds à l\'utilisateur.\n'
+                        + 'Si tu as besoin d\'autres commandes, utilise [SHELL commande] (tu as le droit d\'enchaîner autant de tours que nécessaire).\n'
                         + 'Sinon, donne ta réponse finale en Markdown (sans commandes [SHELL]).\n'
                         + 'Question actuelle de l\'utilisateur: ' + userText;
-                    continue; // Tour suivant
+                    continue;
                 }
 
                 // Pas de commandes shell → c'est la réponse finale
@@ -2058,7 +2084,11 @@ const Blobby = {
                 break;
             }
 
-            if (!finalReply) finalReply = 'J\'ai fait plusieurs essais mais je n\'ai pas pu terminer. Voici ce que j\'ai trouvé:\n\n' + allCommandResults.map(function(r) { return r.output; }).join('\n\n');
+            if (!finalReply) {
+                finalReply = 'J\'ai fait beaucoup d\'essais mais je n\'ai pas pu terminer. Voici ce que j\'ai trouvé:\n\n'
+                    + allCommandResults.map(function(r) { return r.output; }).join('\n\n');
+            }
+
 
             // Enlever le thinking
             var thinkingEl = container.querySelector('div:last-child');

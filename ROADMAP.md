@@ -6,6 +6,19 @@
 
 ---
 
+## 🚀 Session (28/06/2026) — Code Review Blobby Companion
+
+### ✅ Code review Blobby Companion — 3/4 findings corrigés
+
+| Finding | Severity | Fix | Statut |
+|---------|----------|-----|--------|
+| Empty-string collision stuck detection | **HIGH** | `lastReplyHash = ''` → `'__INITIAL__'` ; `.substring(0,100)` → `.trim()` | ✅ |
+| Duplicate fallback dead code | **MEDIUM** | Ligne morte `if (!finalReply)` supprimée | ✅ |
+| Commentaire threshold erroné | **LOW** | `3ème fois` → `2ème fois` | ✅ |
+| Unicode escaping inconsistency | **LOW** | Résolu par suppression de la ligne morte (MEDIUM) | ✅ |
+
+---
+
 ## 🚀 Session (22/06/2026) — Correction Blobby + Code Review Backend
 
 ### ✅ Code review backend — 15/20 findings corrigés

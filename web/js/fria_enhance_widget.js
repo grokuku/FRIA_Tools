@@ -36,7 +36,7 @@
                         if (w.parentEl) w.parentEl.style.display = "none";
                     }
                 };
-                ["template_id", "preset_id", "style_id"].forEach(n => hideWidget(node, n));
+                ["template_id", "preset_id", "style_id", "style_shortlist"].forEach(n => hideWidget(node, n));
 
                 for (const inputName of ["template_id", "preset_id", "style_id"]) {
                     const slot = node.findInputSlot?.(inputName);
@@ -134,14 +134,28 @@
 
                 const styleDiv = document.createElement("div");
                 const styleRow = document.createElement("div");
-                Object.assign(styleRow.style, { display: "flex", gap: "4px", alignItems: "center" });
+                Object.assign(styleRow.style, { display: "flex", gap: "4px", alignItems: "center", width: "100%" });
                 const styleSelect = document.createElement("select");
                 Object.assign(styleSelect.style, { width: "100%", padding: "3px 6px", borderRadius: "4px", border: "1px solid #555", background: "#3a3a3e", color: "#ccc", fontSize: "11px", cursor: "pointer" });
-                styleSelect.style.flex = "1";
                 styleDiv.appendChild(mkLabel("Style"));
                 styleRow.appendChild(styleSelect);
                 styleDiv.appendChild(styleRow);
                 tsRow.appendChild(styleDiv);
+                // Style picker avec config modal
+                var stylePicker = FRIA.PickerConfig.setup({
+                    select: styleSelect,
+                    node: node,
+                    widgetName: 'style_id',
+                    listWidgetName: 'style_shortlist',
+                    apiPath: 'styles',
+                    label: 'Style',
+                    placeholder: '-- Style --',
+                    idField: 'id',
+                    nameField: 'name',
+                    authorField: 'owner_name',
+                    descField: 'style_text',
+                    fetchItems: apiGet,
+                });
                 container.appendChild(tsRow);
 
                 // ---- Preset IA (ligne 2, full width) ----
@@ -251,10 +265,10 @@
                 };
 
                 // ---- Initialisation ----
+                stylePicker.init();
                 Promise.all([
                     populateSelect(templateSelect, "prompts/templates", "-- Template --", "tmpl"),
                     populateSelect(presetSelect, "presets", "-- Preset IA --", "presets"),
-                    populateSelect(styleSelect, "styles", "-- Style --", "styles"),
                 ]).then(() => {
                     const restored = restoreFromNativeWidgets();
                     if (restored) syncNativeWidgets();
@@ -276,7 +290,6 @@
                 // ---- mousedown : refresh cache ----
                 templateSelect.addEventListener("mousedown", () => refreshIfStale(templateSelect, "prompts/templates", "tmpl", "-- Template --"));
                 presetSelect.addEventListener("mousedown", () => refreshIfStale(presetSelect, "presets", "presets", "-- Preset IA --"));
-                styleSelect.addEventListener("mousedown", () => refreshIfStale(styleSelect, "styles", "styles", "-- Style --"));
 
                 // ---- Resize : pas de ResizeObserver (voir fria_prep_widget.js) ----
                 const onResize = node.onResize;

@@ -37,6 +37,7 @@ class FRIAIdeogram4Node:
                 "element_4": ("STRING", {"default": ""}),
                 "preset_id": ("INT", {"default": 0, "min": 0}),
                 "style_id": ("INT", {"default": 0, "min": 0}),
+                "style_shortlist": ("STRING", {"default": "[]"}),
                 "template_id": ("INT", {"default": 0, "min": 0}),
                 "validation_template_id": ("INT", {"default": 0, "min": 0}),
             },
@@ -48,8 +49,8 @@ class FRIAIdeogram4Node:
     def build_caption(self, seed=0, width=1024, height=1024,
                       description="", element_1="", element_2="",
                       element_3="", element_4="",
-                      preset_id=0, style_id=0, template_id=0,
-                      validation_template_id=0):
+                      preset_id=0, style_id=0, style_shortlist="[]",
+                      template_id=0, validation_template_id=0):
         import logging
         # Defensive : ComfyUI peut envoyer une string vide pour un INT
         try:

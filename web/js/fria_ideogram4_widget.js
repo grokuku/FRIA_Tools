@@ -32,6 +32,7 @@
 
                 hideWidget(node, "preset_id");
                 hideWidget(node, "style_id");
+                hideWidget(node, "style_shortlist");
                 hideWidget(node, "template_id");
                 hideWidget(node, "validation_template_id");
 
@@ -125,10 +126,24 @@
                 const styleDiv = document.createElement("div");
                 const styleSelect = document.createElement("select");
                 Object.assign(styleSelect.style, { width: "100%", padding: "3px 6px", borderRadius: "4px", border: "1px solid #555", background: "#3a3a3e", color: "#ccc", fontSize: "11px", cursor: "pointer" });
-                styleSelect.addEventListener("mousedown", () => refreshIfStale(styleSelect, "styles", "styles"));
                 styleDiv.appendChild(mkLabel("Style"));
                 styleDiv.appendChild(styleSelect);
                 tsRow.appendChild(styleDiv);
+                // Style picker avec config modal
+                var stylePicker = FRIA.PickerConfig.setup({
+                    select: styleSelect,
+                    node: node,
+                    widgetName: 'style_id',
+                    listWidgetName: 'style_shortlist',
+                    apiPath: 'styles',
+                    label: 'Style',
+                    placeholder: '-- Style --',
+                    idField: 'id',
+                    nameField: 'name',
+                    authorField: 'owner_name',
+                    descField: 'style_text',
+                    fetchItems: apiGet,
+                });
 
                 const valTmplDiv = document.createElement("div");
                 const valTmplSelect = document.createElement("select");
@@ -313,9 +328,9 @@
                     retry();
                 };
 
+                stylePicker.init();
                 Promise.all([
                     populateSelect(presetSelect, "presets", "-- Preset IA --"),
-                    populateSelect(styleSelect, "styles", "-- Style --"),
                     populateTemplateSelect(),
                     populateSelect(valTmplSelect, "prompts/templates", "-- Pas de validation --"),
                 ]).then(() => {

@@ -31,6 +31,7 @@ class FRIAEnhanceNode:
                 "template_id": ("INT", {"default": 0, "min": 0}),
                 "preset_id": ("INT", {"default": 0, "min": 0}),
                 "style_id": ("INT", {"default": 0, "min": 0}),
+                "style_shortlist": ("STRING", {"default": "[]"}),
                 "special_instructions": ("STRING", {"default": ""}),
             },
             "optional": {
@@ -43,8 +44,8 @@ class FRIAEnhanceNode:
     RETURN_NAMES = ("prompt", "negative_prompt")
 
     def enhance(self, seed=0, base_prompt="", template_id=0,
-                preset_id=0, style_id=0, special_instructions="",
-                elements="[]"):
+                preset_id=0, style_id=0, style_shortlist="[]",
+                special_instructions="", elements="[]"):
         # api_key et api_url lus depuis le fichier de credentials
         api_url = _credentials.get_api_url()
         api_key = _credentials.get_api_key()
