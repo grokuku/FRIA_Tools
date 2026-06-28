@@ -164,6 +164,7 @@
                 const typeSelect = document.createElement("select");
                 Object.assign(typeSelect.style, selectStyle);
                 typeSelect.onchange = syncNativeWidgets;
+                styleSelect.onchange = syncNativeWidgets;
                 typeSelect.addEventListener("mousedown", refreshTemplatesIfStale);
                 typeDiv.appendChild(mkLabel("Template"));
                 typeDiv.appendChild(typeSelect);

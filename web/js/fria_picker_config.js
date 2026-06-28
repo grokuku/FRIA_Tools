@@ -184,6 +184,22 @@
             _openWithItems();
         };
 
+        // ── Résoudre "🎲 Random" en un ID réel ──
+        select.addEventListener('change', function() {
+            if (select.value === '_random') {
+                // Choisir un ID aléatoire parmi les options réelles (pas placebo, pas random)
+                var realOptions = [];
+                for (var i = 0; i < select.options.length; i++) {
+                    var opt = select.options[i];
+                    if (opt.value !== '0' && opt.value !== '_random') realOptions.push(opt.value);
+                }
+                if (realOptions.length > 0) {
+                    var pick = realOptions[Math.floor(Math.random() * realOptions.length)];
+                    select.value = pick;
+                }
+            }
+        });
+
         // ── Sauvegarder la référence pour le restore ──
         // (les callers utilisent l'API retournée par setupPickerConfig)
 
@@ -255,6 +271,8 @@
                     '<span id="fria-picker-title" style="color:#eee;font-weight:600;font-size:13px;"></span>' +
                     '<span id="fria-picker-close" style="color:#888;cursor:pointer;font-size:18px;line-height:1;">&times;</span>' +
                 '</div>' +
+                // Filtre auteur unique (s'applique aux deux colonnes)
+                '<div id="fria-picker-authors" style="display:flex;flex-wrap:wrap;gap:2px;padding:4px 10px;border-bottom:1px solid #444;overflow-y:auto;max-height:48px;flex-shrink:0;"></div>' +
                 // Corps : grille 2 colonnes
                 '<div style="display:flex;flex:1;min-height:0;padding:6px 10px;gap:6px;">' +
                     // Colonne gauche : tous les items
@@ -263,7 +281,6 @@
                         '<div style="display:flex;gap:4px;margin-bottom:3px;">' +
                             '<input id="fria-picker-left-search" type="text" placeholder="Mot-cl\u00e9..." style="flex:1;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#1a1a1e;color:#ccc;font-size:11px;box-sizing:border-box;outline:none;">' +
                         '</div>' +
-                        '<div id="fria-picker-left-authors" class="fria-author-checks" style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:3px;overflow-y:auto;max-height:60px;"></div>' +
                         '<div id="fria-picker-left-list" style="flex:1;overflow-y:auto;border:1px solid #444;border-radius:4px;padding:2px;background:#1a1a1e;min-height:80px;"></div>' +
                     '</div>' +
                     // Boutons centraux
@@ -277,7 +294,6 @@
                         '<div style="display:flex;gap:4px;margin-bottom:3px;">' +
                             '<input id="fria-picker-right-search" type="text" placeholder="Mot-cl\u00e9..." style="flex:1;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#1a1a1e;color:#ccc;font-size:11px;box-sizing:border-box;outline:none;">' +
                         '</div>' +
-                        '<div id="fria-picker-right-authors" class="fria-author-checks" style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:3px;overflow-y:auto;max-height:60px;"></div>' +
                         '<div id="fria-picker-right-list" style="flex:1;overflow-y:auto;border:1px solid #444;border-radius:4px;padding:2px;background:#1a1a1e;min-height:80px;"></div>' +
                     '</div>' +
                 '</div>' +
@@ -595,35 +611,32 @@
                 if (item[_cachedAuthorField]) authors.add(item[_cachedAuthorField]);
             });
             var allAuthors = Array.from(authors).sort();
-
-            ['fria-picker-left-authors', 'fria-picker-right-authors'].forEach(function(id) {
-                var container = document.getElementById(id);
-                if (!container) return;
-                container.innerHTML = '';
-                allAuthors.forEach(function(a) {
-                    var label = document.createElement('label');
-                    Object.assign(label.style, {
-                        display: 'inline-flex', alignItems: 'center', gap: '2px',
-                        fontSize: '10px', color: '#aaa', cursor: 'pointer',
-                        padding: '1px 4px', borderRadius: '3px',
-                        background: '#2a2a2e', whiteSpace: 'nowrap',
-                    });
-                    var cb = document.createElement('input');
-                    cb.type = 'checkbox';
-                    cb.checked = isAuthorEnabled(a);
-                    Object.assign(cb.style, { margin: '0', cursor: 'pointer' });
-                    cb.onchange = function() {
-                        if (cb.checked) {
-                            _enabledAuthors.add(a);
-                        } else {
-                            _enabledAuthors.delete(a);
-                        }
-                        renderLists();
-                    };
-                    label.appendChild(cb);
-                    label.appendChild(document.createTextNode(a));
-                    container.appendChild(label);
+            var container = document.getElementById('fria-picker-authors');
+            if (!container) return;
+            container.innerHTML = '';
+            allAuthors.forEach(function(a) {
+                var label = document.createElement('label');
+                Object.assign(label.style, {
+                    display: 'inline-flex', alignItems: 'center', gap: '2px',
+                    fontSize: '10px', color: '#aaa', cursor: 'pointer',
+                    padding: '1px 4px', borderRadius: '3px',
+                    background: '#2a2a2e', whiteSpace: 'nowrap',
                 });
+                var cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = isAuthorEnabled(a);
+                Object.assign(cb.style, { margin: '0', cursor: 'pointer' });
+                cb.onchange = function() {
+                    if (cb.checked) {
+                        _enabledAuthors.add(a);
+                    } else {
+                        _enabledAuthors.delete(a);
+                    }
+                    renderLists();
+                };
+                label.appendChild(cb);
+                label.appendChild(document.createTextNode(a));
+                container.appendChild(label);
             });
         }
 
