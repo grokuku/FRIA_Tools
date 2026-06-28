@@ -223,10 +223,8 @@
                     var vh = window.innerHeight;
                     modal.style.left = Math.max(0, Math.min(saved.left, vw - 400)) + 'px';
                     modal.style.top = Math.max(0, Math.min(saved.top, vh - 350)) + 'px';
-                    modal.style.width = Math.max(400, saved.width) + 'px';
-                    modal.style.height = Math.max(350, saved.height) + 'px';
-                    modal.style.width = saved.width + 'px';
-                    modal.style.height = saved.height + 'px';
+                    modal.style.width = Math.max(400, Math.min(saved.width, vw - 100)) + 'px';
+                    modal.style.height = Math.max(350, Math.min(saved.height, vh - 100)) + 'px';
                 }
             } catch(e) {}
 
@@ -238,7 +236,7 @@
                 left: '0', top: '0', width: '100%', height: '100%',
                 background: 'rgba(0,0,0,0.6)',
             });
-            overlay.onclick = function() { closeModal(); };
+            // overlay.onclick est rebindé à chaque ouverture (hors du if(!modal))
             document.body.appendChild(overlay);
 
             // MODAL HTML — structure complète
@@ -345,31 +343,51 @@
                 } catch(e) {}
             }
 
-            // ── Events ──
-            document.getElementById('fria-picker-close').onclick = closeModal;
-            document.getElementById('fria-picker-cancel').onclick = closeModal;
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
-            });
-
-            document.getElementById('fria-picker-left-search').addEventListener('input', renderLists);
-            document.getElementById('fria-picker-right-search').addEventListener('input', renderLists);
-            document.getElementById('fria-picker-to-right').onclick = function() { transferSelected('left', 'right'); };
-            document.getElementById('fria-picker-to-left').onclick = function() { transferSelected('right', 'left'); };
-
-            document.getElementById('fria-picker-save').onclick = function() {
-                var result = Array.from(shortlistSet);
-                onSave(result);
-                closeModal();
-            };
+            // ── Listeners globaux installés UNE FOIS (dispatch via refs updatables) ──
+            if (!window._friaPickerInstalled) {
+                window._friaPickerInstalled = true;
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape' && modal.style.display !== 'none') {
+                        if (window._friaCurrentClose) window._friaCurrentClose();
+                    }
+                });
+                document.getElementById('fria-picker-left-search').addEventListener('input', function() {
+                    if (window._friaCurrentRender) window._friaCurrentRender();
+                });
+                document.getElementById('fria-picker-right-search').addEventListener('input', function() {
+                    if (window._friaCurrentRender) window._friaCurrentRender();
+                });
+            }
         }
 
         var overlay = document.getElementById('fria-picker-overlay');
 
-        function closeModal() {
+        // ── Dirty tracking ──
+        var _dirty = false;
+
+        function tryClose() {
+            if (_dirty && !confirm('Modifications non sauvegardées. Annuler les changements ?')) return;
+            _dirty = false;
             modal.style.display = 'none';
             if (overlay) overlay.style.display = 'none';
         }
+
+        // ── Mise à jour des refs dispatch (closures fraîches à chaque ouverture) ──
+        window._friaCurrentClose = tryClose;
+        window._friaCurrentRender = renderLists;
+
+        // ── Event bindings (overwritables, pas d'accumulation) ──
+        document.getElementById('fria-picker-close').onclick = function() { window._friaCurrentClose(); };
+        document.getElementById('fria-picker-cancel').onclick = function() { _dirty = false; window._friaCurrentClose(); };
+        overlay.onclick = function() { window._friaCurrentClose(); };
+        document.getElementById('fria-picker-to-right').onclick = function() { transferSelected('left', 'right'); };
+        document.getElementById('fria-picker-to-left').onclick = function() { transferSelected('right', 'left'); };
+        document.getElementById('fria-picker-save').onclick = function() {
+            var result = Array.from(shortlistSet);
+            onSave(result);
+            _dirty = false;
+            window._friaCurrentClose();
+        };
 
         // ── Caches ──
         var _cachedAllItems = allItems;
@@ -554,6 +572,7 @@
             } else {
                 toMove.forEach(function(id) { shortlistSet.delete(id); });
             }
+            _dirty = true;
             _selected.clear();
             renderLists();
         }
