@@ -1078,6 +1078,24 @@ function kwUpdateSelectUI() {
         delBtn.disabled = count === 0;
         delBtn.style.opacity = count === 0 ? '0.5' : '1';
     }
+    var valBtn = document.getElementById('kw-btn-bulk-validate');
+    if (valBtn) {
+        // Compter les sélectionnés qui sont en attente
+        var pendingCount = 0;
+        kwCurrentList.forEach(function(k) {
+            if (kwSelectedIds.has(k.id) && k.privacy_status === 'public_pending') pendingCount++;
+        });
+        if (pendingCount > 0) {
+            valBtn.classList.remove('hidden');
+            valBtn.textContent = '✅ Valider (' + pendingCount + ')';
+            valBtn.disabled = false;
+            valBtn.style.opacity = '1';
+        } else {
+            valBtn.classList.add('hidden');
+            valBtn.disabled = true;
+            valBtn.style.opacity = '0.5';
+        }
+    }
 }
 
 function kwSelectAll() {
@@ -1112,6 +1130,37 @@ async function kwBulkDelete() {
         kwSelectedIds.clear();
         if (errors > 0) showModal('Résultat', deleted + ' supprimé(s), ' + errors + ' erreur(s)', 'warning');
         else showModal('Succès', deleted + ' mot-clé supprimé(s)', 'success');
+        kwLoadList();
+    });
+}
+
+// ── Bulk validate ──
+
+async function kwBulkValidate() {
+    // Filtrer les sélectionnés qui sont en attente
+    var pendingIds = [];
+    kwCurrentList.forEach(function(k) {
+        if (kwSelectedIds.has(k.id) && k.privacy_status === 'public_pending') pendingIds.push(k.id);
+    });
+    if (pendingIds.length === 0) return;
+    showConfirm('Confirmer', 'Valider ' + pendingIds.length + ' mot' + (pendingIds.length > 1 ? 's' : '') + '-clé' + (pendingIds.length > 1 ? 's' : '') + ' en attente ?', async function(ok) {
+        if (!ok) return;
+        var valBtn = document.getElementById('kw-btn-bulk-validate');
+        if (valBtn) valBtn.disabled = true;
+        var results = await Promise.allSettled(pendingIds.map(function(id) {
+            return fetch(API + '/keywords/' + id + '/review', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({action: 'approve'})
+            });
+        }));
+        var approved = 0, errors = 0;
+        results.forEach(function(r) {
+            if (r.status === 'fulfilled' && r.value.ok) approved++; else errors++;
+        });
+        kwSelectedIds.clear();
+        if (errors > 0) showModal('Résultat', approved + ' validé(s), ' + errors + ' erreur(s)', 'warning');
+        else showModal('Succès', approved + ' mot-clé validé(s)', 'success');
         kwLoadList();
     });
 }
