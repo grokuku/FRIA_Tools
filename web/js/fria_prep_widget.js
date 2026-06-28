@@ -45,10 +45,10 @@
                         if (w.parentEl) w.parentEl.style.display = "none";
                     }
                 };
-                ["template_id", "style_id"].forEach(n => hideWidget(node, n));
+                ["template_id", "style_id", "style_shortlist"].forEach(n => hideWidget(node, n));
 
                 // ---- Supprimer les sockets d'entrée ----
-                for (const inputName of ["template_id", "style_id"]) {
+                for (const inputName of ["template_id", "style_id", "style_shortlist"]) {
                     const slot = node.findInputSlot?.(inputName);
                     if (slot !== undefined && slot !== -1) {
                         node.removeInput(slot);
@@ -60,7 +60,7 @@
                 const styleWidget = node.widgets?.find(x => x.name === "style_id");
 
                 // ---- Cache de rafraîchissement ----
-                const _cache = (window.__FRIA_cache = window.__FRIA_cache || { styles: 0 });
+                const _cache = (window.__FRIA_cache = window.__FRIA_cache || {});
                 const CACHE_TTL = 15000;
 
                 // URL API pour recuperer la liste des styles
@@ -129,31 +129,7 @@
                     return restored;
                 }
 
-                async function populateStyleSelect() {
-                    styleSelect.innerHTML = `<option value="0">-- Style --</option>`;
-                    try {
-                        const items = await apiGet("styles");
-                        if (Array.isArray(items)) {
-                            items.forEach(item => {
-                                const o = document.createElement("option");
-                                o.value = item.id;
-                                o.textContent = item.name;
-                                styleSelect.appendChild(o);
-                            });
-                        }
-                    } catch {}
-                }
-
-                async function refreshStylesIfStale() {
-                    const now = Date.now();
-                    if (now - (_cache.styles || 0) < CACHE_TTL) return;
-                    _cache.styles = now;
-                    const oldVal = styleSelect.value;
-                    await populateStyleSelect();
-                    if ([...styleSelect.options].some(o => o.value === oldVal)) {
-                        styleSelect.value = oldVal;
-                    }
-                }
+                // populateStyleSelect et refreshStylesIfStale remplacés par FRIA.PickerConfig ci-dessous
 
                 // ---- Container (flex column) ----
                 const container = document.createElement("div");
@@ -218,29 +194,31 @@
                     if (oldVal !== "0" && [...typeSelect.options].some(o => o.value === oldVal)) typeSelect.value = oldVal;
                 }
 
-                // Style (droite) — peuplé depuis /api/styles
+                // Style (droite) — picker configurable avec modale
                 const styleDiv = document.createElement("div");
                 const styleRow = document.createElement("div");
-                Object.assign(styleRow.style, { display: "flex", gap: "4px", alignItems: "center" });
+                Object.assign(styleRow.style, { display: "flex", gap: "4px", alignItems: "center", width: "100%" });
                 const styleSelect = document.createElement("select");
                 Object.assign(styleSelect.style, selectStyle);
-                styleSelect.style.flex = "1";
-                styleSelect.onchange = syncNativeWidgets;
-                styleSelect.addEventListener("mousedown", refreshStylesIfStale);
-                const styleRefreshBtn = document.createElement("button");
-                styleRefreshBtn.textContent = "↻";
-                Object.assign(styleRefreshBtn.style, {
-                    padding: "2px 5px", fontSize: "10px", cursor: "pointer",
-                    border: "1px solid #555", borderRadius: "3px",
-                    background: "#3a3a3e", color: "#aaa", flex: "0 0 auto",
-                });
-                styleRefreshBtn.title = "Rafraîchir la liste des styles";
-                styleRefreshBtn.onclick = () => { _cache.styles = 0; refreshStylesIfStale(); };
                 styleDiv.appendChild(mkLabel("Style"));
                 styleRow.appendChild(styleSelect);
-                styleRow.appendChild(styleRefreshBtn);
                 styleDiv.appendChild(styleRow);
                 grid.appendChild(styleDiv);
+                // Style picker avec config modal
+                var stylePicker = FRIA.PickerConfig.setup({
+                    select: styleSelect,
+                    node: node,
+                    widgetName: 'style_id',
+                    listWidgetName: 'style_shortlist',
+                    apiPath: 'styles',
+                    label: 'Style',
+                    placeholder: '-- Style --',
+                    idField: 'id',
+                    nameField: 'name',
+                    authorField: 'owner_name',
+                    descField: 'style_text',
+                    fetchItems: apiGet,
+                });
 
                 container.appendChild(grid);
 
@@ -258,7 +236,7 @@
                 widget.computeSize = () => [node.size[0] - 20, 110];
 
                 // ---- Initialisation ----
-                Promise.all([populateTemplateSelect(), populateStyleSelect()]).then(() => {
+                Promise.all([populateTemplateSelect(), stylePicker.init()]).then(() => {
                     const restored = restoreFromNativeWidgets();
                     if (restored) syncNativeWidgets(true);
                     else {

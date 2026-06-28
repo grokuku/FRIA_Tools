@@ -49,6 +49,7 @@ class FRIAPromptPrepNode:
                 "base_prompt": ("STRING", {"multiline": True, "default": ""}),
                 "template_id": ("INT", {"default": 0, "min": 0}),
                 "style_id": ("INT", {"default": 0, "min": 0}),
+                "style_shortlist": ("STRING", {"default": "[]"}),  # frontend-only (filtre dropdown), pas envoyé à l'API
                 "special_instructions": ("STRING", {"default": ""}),
             },
             "optional": {
@@ -61,7 +62,8 @@ class FRIAPromptPrepNode:
     RETURN_NAMES = ("llm_prompt", "system_prompt", "neg_prompt")
 
     def prepare(self, seed=0, base_prompt="", template_id=0,
-                style_id=0, special_instructions="", elements="[]"):
+                style_id=0, style_shortlist="[]",
+                special_instructions="", elements="[]"):
         # api_key et api_url lus depuis le fichier de credentials
         api_url = _credentials.get_api_url()
         api_key = _credentials.get_api_key()
