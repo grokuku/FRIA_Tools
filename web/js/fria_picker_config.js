@@ -72,7 +72,7 @@
         // ── Container pour le bouton ──
         var pickerRow = document.createElement('div');
         Object.assign(pickerRow.style, {
-            display: 'flex', gap: '4px', alignItems: 'center', width: '100%',
+            display: 'flex', gap: '0', alignItems: 'center', width: '100%',
         });
 
         // Bouton ⚙️ (config)
@@ -80,8 +80,8 @@
         configBtn.textContent = '\u2699';
         Object.assign(configBtn.style, {
             width: '28px', height: '22px', flexShrink: '0',
-            padding: '0', borderRadius: '4px',
-            border: '1px solid #555', background: '#3a3a3e', color: '#ccc',
+            padding: '0', borderRadius: '4px 0 0 4px',
+            border: '1px solid #555', borderRight: 'none', background: '#3a3a3e', color: '#ccc',
             fontSize: '13px', cursor: 'pointer', lineHeight: '1',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
         });
@@ -92,10 +92,11 @@
         // Style du select : prendre toute la largeur restante
         select.style.flex = '1';
 
-        // Insérer le bouton avant le select
+        // Fusionner visuellement le bouton et le select
         pickerRow.appendChild(configBtn);
         select.parentNode.insertBefore(pickerRow, select);
         pickerRow.appendChild(select);
+        select.style.borderRadius = '0 4px 4px 0';
 
         // ── Peupler le dropdown ──
         var _allItems = [];
