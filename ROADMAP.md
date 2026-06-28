@@ -8,6 +8,78 @@
 
 ## 🚀 Session (28/06/2026) — Code Review Blobby Companion
 
+### ⬜ Code review Blobby Companion — 4/4 findings
+
+Tous les findings Blobby ont été corrigés lors de la session précédente.
+
+---
+
+## 🚀 Session (28/06/2026) — Audit exhaustif du code
+
+### 🔍 Analyse complète — nouveaux bugs découverts
+
+| # | Fichier | Bug | Sévérité | Statut |
+|---|---------|-----|----------|--------|
+| **N1** | `app.py` | **`import logging` manquant** — `_load_ollama_config_at_startup()` utilise `logging.warning()` sans avoir importé `logging`. Si une exception survient (BDD absente), crée un `NameError` qui tue le thread de démarrage silencieusement. | **CRITIQUE** | ⬜ |
+| **N2** | `app-core.js` / `app-admin.js` | **`escapeHtml()` définie 2 fois** dans `app-keywords.js` lignes ~760-761. Pas de bug runtime (la 2nde définition écrase la 1ère) mais code mort. | LOW | ⬜ |
+| **N3** | `enhance_node.py` | **`seed: null` envoyé au backend** — quand `seed=0`, le payload JSON contient `"seed": null` (car `seed if seed > 0 else None`). Certains parseurs LLM peuvent mal interpréter `null`. | MEDIUM | ⬜ |
+| **N4** | `enhance.py` | **`_call_llm_internal` ne vérifie pas la qualité du dernier retry** — après la boucle `for retry in range(3)`, si l'output final fait < 50 chars (toutes les tentatives échouées silencieusement), le résultat tronqué est renvoyé sans alerte. | MEDIUM | ⬜ |
+| **N5** | `enhance.py` | **`_do_validation_pass` pas de retry** — contrairement à `_call_llm_internal`, la fonction de validation spatiale n'a pas de retry sur output vide/tronqué. Instabilité Ollama Cloud non gérée pour la validation. | MEDIUM | ⬜ |
+| **N6** | `ideogram4_node.py` | **`_build_caption_local_loop()` jamais appelée** — méthode définie mais non utilisée dans `build_caption()`. Code mort dans un node ComfyUI. | LOW | ⬜ |
+| **N7** | `import_export.py` | **Variable `tmp` scope dangereux dans `try/finally`** — `tmp` n'est défini que dans la branche `if 'file' in request.files`. Protégé par court-circuit `delete_after and tmp.exists()` mais fragile au refactoring. | LOW | ⬜ |
+| **N8** | `enhance.py` | **`repeat_penalty` envoyé à toutes les APIs** — paramètre spécifique Ollama envoyé à toute API OpenAI-compatible. OpenAI/DeepSeek l'ignorent silencieusement mais certains providers (vLLM, TGI) peuvent rejeter le paramètre inconnu. | MEDIUM | ⬜ |
+| **N9** | `keywords_llm_process` | **Timeout 5s trop court pour listing `/models`** — Ollama Cloud avec cold start peut prendre >5s. Le timeout devrait être augmenté ou rendu configurable. | LOW | ⬜ |
+| **N10** | `app-admin.js` | **`loadOllamaConfig()` ne gère pas les erreurs HTTP** — si le serveur répond 500, `res.json()` succeed avec un message d'erreur mais le code n'affiche pas l'erreur, juste "Erreur" générique. | LOW | ⬜ |
+| **N11** | `_prepare_enhance` | **Seed complètement ignoré dans le flow `/api/enhance`** — le paramètre `seed` est reçu dans `data` mais n'est ni passé à l'appel LLM ni utilisé pour le `random.choice()` des EP/random. Pas de déterminisme possible. | HIGH | ⬜ (déjà tracké L4, confirmé par audit) |
+| **N12** | `enhance.py` | **`frequency_penalty` ET `repeat_penalty` envoyés simultanément** — bug connu M6. Confirmé présent dans `_prepare_enhance()` ligne ~690 : les deux paramètres sont dans `llm_request`. Ollama les accepte mais c'est redondant/contradictoire. | HIGH | ⬜ (M6) |
+| **N13** | `exporter.py` | **Troncature `[:100]` dans le footer** — `" → ".join(...)[:100] + "..."` peut couper un titre de section en plein milieu (bug L11, confirmé). | LOW | ⬜ (L11) |
+| **N14** | `app-keywords.js` | **`kwLoadColWidths()` applique les largeurs à TOUS les `<th>`** — y compris la colonne score qui est cachée en mode texte, provoquant un décalage visuel (déjà tracké). | MEDIUM | ⬜ |
+
+### 📊 Résumé de l'audit exhaustif (28/06/2026)
+
+| Sévérité | Nouveaux bugs | Déjà trackés (confirmés) | Total |
+|-----------|--------------|--------------------------|-------|
+| 🔴 Critique | 1 | 0 | **1** |
+| 🟠 Majeur | 0 | 0 | **0** |
+| 🟡 Medium | 4 | 2 (M6, L4) | **6** |
+| 🟢 Low | 6 | 1 (L11) | **7** |
+| **Total** | **11** | **3** | **14** |
+
+### ⚠️ Points d'attention (non-bugs, mais à connaître)
+
+| # | Description |
+|---|-------------|
+| A1 | **`_load_ollama_config_at_startup()` attrape `Exception`** avec un bare `except` — le `NameError` de N1 serait attrapé ici, donc pas de plantage complet, mais la config Ollama ne serait pas chargée et le log serait trompeur. À nettoyer (corriger N1 + logger correct). |
+| A2 | **`_finish_enhance_pass1` ouvre une 2ème connexion BDD** (`conn2 = get_db()`) malgré le fix M5 qui réduisait de 6 à 1 connexion dans `_prepare_enhance`. Le total cloud = 2 connexions par requête enhance. Non bloquant mais sous-optimal. |
+| A3 | **`callEnhanceLocalLLM()` ne passe pas l'API key du preset au LLM local** — commentaire dans le code : "la cle API est deja dans llm_config.api_key, mais pas d'auth explicite ici". Si un serveur LLM local nécessite une auth (ex: LM Studio configuré), le mode client-side échouera. |
+| A4 | **`_generate_all_embeddings()` synchrone et bloquante** — pour 500+ keywords, peut prendre 50+ secondes. Mentionné dans le code comme "à envisager en asynchrone". |
+| A5 | **`bulk_import_keywords()` appelle `_regenerate_keyword_embedding()` par keyword** — 1 appel HTTP Ollama par keyword importé. Très lent pour des imports de 100+ keywords. |
+| A6 | **`_build_debug_markdown()` construit le debug même pour les templates non-Ideogram** — le debug markdown est maintenant généré pour tous les templates (plus de filtre `ideogram`). Pas de bug mais peut produire un markdown vide/inutile pour les templates texte simples. |
+| A7 | **`export_to_markdown()` mentionne "Danbooru / Illustrious"** dans le titre générique. Héritage du format historique. Harmless. |
+
+### ⬜ Rappel des bugs restants non-corrigés (trackés avant cette session)
+
+| # | Description | Sévérité | Priorité |
+|---|-------------|----------|----------|
+| M6 | `repeat_penalty` + `frequency_penalty` simultanés | HIGH | ⬜ |
+| L4/L11 | Seed ignoré dans `/api/enhance` | HIGH | ⬜ |
+| L1 | Embedding par keyword dans bulk import (lent) | MEDIUM | ⬜ |
+| L2 | `scan_keyword_duplicates` O(n²) | LOW | ⬜ |
+| L5 | `filtersBar` déclaré inutilisé | LOW | ⬜ |
+| L6 | `_loadApiKeySettings()` jamais appelé (code mort) | LOW | ⬜ |
+| L7 | `document.execCommand('copy')` déprécié | LOW | ⬜ |
+| L8 | Variables `delete_after`/`tmp` scope fragile | LOW | ⬜ |
+| L9 | Doublon global check inclut les keywords privés | LOW | ⬜ |
+| L10 | README ComfyUI nom contradictoire | LOW | ⬜ |
+| H2 | Encryption key en BDD (migrer env var) | MEDIUM | ⬜ |
+| H4 | CORS wide open | MEDIUM | ⬜ |
+| H5 | API key dans localStorage | MEDIUM | ⬜ |
+| H6 | `conn.close()` sans `finally` dans plusieurs routes | MEDIUM | ⬜ |
+
+---
+
+## 🚀 Session (28/06/2026) — Code Review Blobby Companion
+
 ### ✅ Code review Blobby Companion — 3/4 findings corrigés
 
 | Finding | Severity | Fix | Statut |
@@ -109,7 +181,8 @@
 | **M3** | `enhance.py` | `keywords_llm_process()` : header d'auth manquant pour `/models`. | ✅ Corrigé |
 | **M4** | `export.py` | Code orphelin (`result['output'] = corrected`) unreachable. | ✅ Corrigé (supprimé) |
 | **M5** | `enhance.py` | `_prepare_enhance()` : 6 connexions DB sans `try/finally`. | ✅ Corrigé → 1 connexion + `try/finally` |
-| **M6** | `enhance.py` | `repeat_penalty` + `frequency_penalty` envoyés simultanément. | ⬜ Restant |
+| **M6** | `enhance.py` | `repeat_penalty` + `frequency_penalty` envoyés simultanément. | ⬜ Restant (confirmé 28/06 — `_prepare_enhance` ligne ~690) |
+| **N11** | `app.py` / `enhance.py` | **NOUVEAU** : `import logging` manquant dans `app.py` — `_load_ollama_config_at_startup()` `logging.warning()` cause `NameError`. | ⬜ Critique |
 
 ### 🟡 Bugs mineurs (code quality / performance)
 
@@ -118,23 +191,30 @@
 | **L1** | `keywords.py` | `bulk_import_keywords()` : embedding par keyword (lent). | ⬜ Restant |
 | **L2** | `keywords.py` | `scan_keyword_duplicates()` : O(n²). | ⬜ Restant |
 | **L3** | `enhance.py` | `except ValueError: raise` trop large dans sessions. | ⬜ Restant |
-| **L4** | `enhance.py` | Seed ignoré dans `/api/enhance`. | ⬜ Restant (déjà noté roadmap) |
-| **L5** | `app-core.js` | `filtersBar` déclaré mais inutilisé. | ⬜ Restant |
-| **L6** | `app-filters.js` | `_loadApiKeySettings()` jamais appelé. | ⬜ Restant |
-| **L7** | `app-admin.js` | `document.execCommand('copy')` déprécié. | ⬜ Restant |
-| **L8** | `import_export.py` | Variables `delete_after`/`tmp` potentiellement non définies. | ⬜ Restant |
+| **L4** | `enhance.py` | Seed ignoré dans `/api/enhance`. | ⬜ Restant (confirmé 28/06 : seed jamais utilisé dans `_prepare_enhance()`) |
+| **L5** | `app-core.js` | `filtersBar` déclaré mais inutilisé (ligne 17). | ⬜ Restant |
+| **L6** | `app-filters.js` | `_loadApiKeySettings()` jamais appelé (code mort, distinct de `loadApiKeySettings()`). | ⬜ Restant |
+| **L7** | `app-admin.js` | `document.execCommand('copy')` déprécié (3 occurrences : `copyEnhanceOutput`, `genCopy`, fallback `copyApiKey`). | ⬜ Restant |
+| **L8** | `import_export.py` | Variables `delete_after`/`tmp` scope fragile dans `try/finally` (protégé par court-circuit `and`). | ⬜ Restant |
 | **L9** | `keywords.py` | Check de doublon global incluant les keywords privés. | ⬜ Restant |
 | **L10** | `FRIA_ComfyUI/README.md` | Contradiction `FRIA_Tools` vs `FRIA_Keywords`. | ⬜ Restant |
+| **L11** | `exporter.py` | Troncature `[:100]` dans le footer (coupe un titre en plein milieu). | ⬜ Restant |
+| **N2** | `app-keywords.js` | **NOUVEAU** : `escapeHtml()` définie 2 fois (lignes ~760-761). | ⬜ Low |
+| **N3** | `enhance_node.py` | **NOUVEAU** : `"seed": null` envoyé quand seed=0 (`seed if seed > 0 else None`). | ⬜ Medium |
+| **N4** | `enhance.py` | **NOUVEAU** : `_call_llm_internal` ne vérifie pas la qualité du dernier retry (output < 50 chars passé silencieusement). | ⬜ Medium |
+| **N5** | `enhance.py` | **NOUVEAU** : `_do_validation_pass` pas de retry sur output vide/tronqué. | ⬜ Medium |
+| **N6** | `ideogram4_node.py` | **NOUVEAU** : `_build_caption_local_loop()` définie mais jamais appelée. | ⬜ Low |
+| **N8** | `enhance.py` | **NOUVEAU** : `repeat_penalty` (Ollama-only) envoyé à toutes les APIs. | ⬜ Medium |
 | **L11** | `exporter.py` | Troncature `[:100]` dans le footer. | ⬜ Restant |
 
 ### 📊 Résumé de l'audit
 
-| Sévérité | Total | Corrigés | Restants |
-|-----------|-------|----------|----------|
-| 🔴 Critique | 3 | 3 ✅ | 0 |
-| 🟠 Majeur | 6 | 5 ✅ | 1 (M6) |
-| 🟡 Mineur | 11 | 0 | 11 |
-| **Total** | **20** | **8** | **12** |
+| Sévérité | Total init. | Corrigés | Restants (init) | Nouveaux 28/06 | Total restant |
+|-----------|------------|----------|----------------|-----------------|---------------|
+| 🔴 Critique | 3 | 3 ✅ | 0 | **1** (N1) | **1** |
+| 🟠 Majeur | 6 | 5 ✅ | 1 (M6) | **0** | **1** |
+| 🟡 Mineur | 11 | 0 | 11 | **5** (N2,N3,N4,N5,N8) | **16** |
+| **Total** | **20** | **8** | **12** | **6** | **18** ( + 2 points d'attention ) |
 
 ---
 

@@ -164,7 +164,6 @@
                 const typeSelect = document.createElement("select");
                 Object.assign(typeSelect.style, selectStyle);
                 typeSelect.onchange = syncNativeWidgets;
-                styleSelect.onchange = syncNativeWidgets;
                 typeSelect.addEventListener("mousedown", refreshTemplatesIfStale);
                 typeDiv.appendChild(mkLabel("Template"));
                 typeDiv.appendChild(typeSelect);
@@ -201,6 +200,7 @@
                 Object.assign(styleRow.style, { display: "flex", gap: "4px", alignItems: "center", width: "100%" });
                 const styleSelect = document.createElement("select");
                 Object.assign(styleSelect.style, selectStyle);
+                styleSelect.onchange = syncNativeWidgets;
                 styleDiv.appendChild(mkLabel("Style"));
                 styleRow.appendChild(styleSelect);
                 styleDiv.appendChild(styleRow);
