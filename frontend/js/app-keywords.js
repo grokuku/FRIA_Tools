@@ -1092,8 +1092,6 @@ function kwUpdateSelectUI() {
             valBtn.style.opacity = '1';
         } else {
             valBtn.classList.add('hidden');
-            valBtn.disabled = true;
-            valBtn.style.opacity = '0.5';
         }
     }
 }
@@ -1147,21 +1145,21 @@ async function kwBulkValidate() {
         if (!ok) return;
         var valBtn = document.getElementById('kw-btn-bulk-validate');
         if (valBtn) valBtn.disabled = true;
-        var results = await Promise.allSettled(pendingIds.map(function(id) {
-            return fetch(API + '/keywords/' + id + '/review', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({action: 'approve'})
-            });
-        }));
         var approved = 0, errors = 0;
-        results.forEach(function(r) {
-            if (r.status === 'fulfilled' && r.value.ok) approved++; else errors++;
-        });
+        for (var i = 0; i < pendingIds.length; i++) {
+            try {
+                var res = await fetch(API + '/keywords/' + pendingIds[i] + '/review', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'approve'})
+                });
+                if (res.ok) approved++; else errors++;
+            } catch(e) { errors++; }
+        }
         kwSelectedIds.clear();
         if (errors > 0) showModal('Résultat', approved + ' validé(s), ' + errors + ' erreur(s)', 'warning');
         else showModal('Succès', approved + ' mot-clé validé(s)', 'success');
-        kwLoadList();
+        try { await kwLoadList(); } catch(e) { console.error(e); kwUpdateSelectUI(); }
     });
 }
 
