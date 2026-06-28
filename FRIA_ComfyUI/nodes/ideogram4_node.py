@@ -37,7 +37,7 @@ class FRIAIdeogram4Node:
                 "element_4": ("STRING", {"default": ""}),
                 "preset_id": ("INT", {"default": 0, "min": 0}),
                 "style_id": ("INT", {"default": 0, "min": 0}),
-                "style_shortlist": ("STRING", {"default": "[]"}),
+                "style_shortlist": ("STRING", {"default": "[]"}),  # frontend-only (filtre dropdown), pas envoyé à l'API
                 "template_id": ("INT", {"default": 0, "min": 0}),
                 "validation_template_id": ("INT", {"default": 0, "min": 0}),
             },

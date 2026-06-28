@@ -328,8 +328,8 @@
                     retry();
                 };
 
-                stylePicker.init();
                 Promise.all([
+                    stylePicker.init(),
                     populateSelect(presetSelect, "presets", "-- Preset IA --"),
                     populateTemplateSelect(),
                     populateSelect(valTmplSelect, "prompts/templates", "-- Pas de validation --"),

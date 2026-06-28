@@ -265,8 +265,8 @@
                 };
 
                 // ---- Initialisation ----
-                stylePicker.init();
                 Promise.all([
+                    stylePicker.init(),
                     populateSelect(templateSelect, "prompts/templates", "-- Template --", "tmpl"),
                     populateSelect(presetSelect, "presets", "-- Preset IA --", "presets"),
                 ]).then(() => {

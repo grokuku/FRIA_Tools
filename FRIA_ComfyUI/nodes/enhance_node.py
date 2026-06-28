@@ -31,7 +31,7 @@ class FRIAEnhanceNode:
                 "template_id": ("INT", {"default": 0, "min": 0}),
                 "preset_id": ("INT", {"default": 0, "min": 0}),
                 "style_id": ("INT", {"default": 0, "min": 0}),
-                "style_shortlist": ("STRING", {"default": "[]"}),
+                "style_shortlist": ("STRING", {"default": "[]"}),  # frontend-only (filtre dropdown), pas envoyé à l'API
                 "special_instructions": ("STRING", {"default": ""}),
             },
             "optional": {

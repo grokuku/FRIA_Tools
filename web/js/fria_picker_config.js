@@ -34,7 +34,7 @@
     function setupPickerConfig(opts) {
         var select = opts.select;
         var node = opts.node;
-        var widgetName = opts.widgetName;
+        var widgetName = opts.widgetName;  // réservé pour usage futur (ex: label du widget natif)
         var listWidgetName = opts.listWidgetName;
         var apiPath = opts.apiPath;
         var label = opts.label || 'Picker';
@@ -43,7 +43,7 @@
         var nameField = opts.nameField || 'name';
         var authorField = opts.authorField || 'owner_name';
         var descField = opts.descField;
-        var fetchItems = opts.fetchItems;
+        var fetchItems = opts.fetchItems || function() { return Promise.resolve([]); };
         var onSelect = opts.onSelect;
 
         // ── Widget natif pour la shortlist ──
@@ -56,7 +56,9 @@
                     var parsed = JSON.parse(shortlistWidget.value);
                     if (Array.isArray(parsed)) return parsed;
                 }
-            } catch(e) {}
+            } catch(e) {
+                console.warn('[PickerConfig] Invalid shortlist JSON, resetting:', e);
+            }
             return [];
         }
 
@@ -154,25 +156,32 @@
 
         // ── Refresh ──
         select._friaRefreshItems = function() {
-            initItems();
+            return initItems();
         };
 
         // ── Ouverture de la modale ──
         configBtn.onclick = function() {
-            openPickerModal({
-                allItems: _allItems,
-                currentShortlist: getShortlist(),
-                idField: idField,
-                nameField: nameField,
-                authorField: authorField,
-                descField: descField,
-                label: label,
-                onSave: function(newShortlist) {
-                    setShortlist(newShortlist);
-                    populateDropdown(_allItems, newShortlist);
-                    if (onSelect) onSelect(select.value, newShortlist);
-                }
-            });
+            function _openWithItems() {
+                openPickerModal({
+                    allItems: _allItems,
+                    currentShortlist: getShortlist(),
+                    idField: idField,
+                    nameField: nameField,
+                    authorField: authorField,
+                    descField: descField,
+                    label: label,
+                    onSave: function(newShortlist) {
+                        setShortlist(newShortlist);
+                        populateDropdown(_allItems, newShortlist);
+                        if (onSelect) onSelect(select.value, newShortlist);
+                    }
+                });
+            }
+            if (_allItems.length === 0) {
+                initItems().then(_openWithItems);
+                return;
+            }
+            _openWithItems();
         };
 
         // ── Sauvegarder la référence pour le restore ──
