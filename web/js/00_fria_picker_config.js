@@ -426,7 +426,7 @@
         // (déclaré localement dans populateAuthorChecks)
 
         function isAuthorEnabled(author) {
-            if (_enabledAuthors.size === 0) return true;
+            if (_enabledAuthors.size === 0) return false;  // aucun coché → rien affiché
             return _enabledAuthors.has(author);
         }
 
