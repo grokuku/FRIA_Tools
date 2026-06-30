@@ -4,11 +4,7 @@
  * Onglet 1 : 📤 Partager — upload du workflow actif + dépendances auto-détectées
  * Onglet 2 : 🌐 Parcourir — liste paginée des workflows publics + installation
  *
- * Dépendances : fria_menu.js (getConfig, setConfig, friaOpenModal)
- *
- * Les scripts ComfyUI sont chargés par ordre alphabétique :
- * fria_menu.js (fria_m) arrive avant fria_workflow_share.js (fria_w).
- * Donc friaOpenModal est toujours disponible.
+ * Autonome — ne dépend plus de fria_menu.js pour la création de modales.
  */
 
 (function () {
