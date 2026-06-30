@@ -4,6 +4,7 @@ import json
 import random
 import time
 import secrets
+import logging
 from datetime import datetime, timedelta
 from threading import Thread
 
@@ -42,6 +43,7 @@ from routes.generate import *
 from routes.export import *
 from routes.ideogram import *
 from routes.blobby import *
+from routes.workflows import *
 
 # Initialisation unique de la BDD (schemas + migrations) au demarrage
 from routes.helpers import _init_db

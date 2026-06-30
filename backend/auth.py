@@ -1,5 +1,5 @@
 """
-Module d'authentification Discord OAuth2.
+Module d'authentification Discord OAuth2 + JWT.
 Limite les accès aux membres d'un serveur Discord spécifique (optionnel).
 
 Configuration via variables d'environnement (ou .env) :
@@ -7,14 +7,20 @@ Configuration via variables d'environnement (ou .env) :
   DISCORD_CLIENT_SECRET  requis
   DISCORD_GUILD_ID       optionnel — ID du serveur à restreindre
   DISCORD_REDIRECT_URI   optionnel — défaut: http://localhost:5000/api/auth/discord/callback
-  SECRET_KEY             requis — pour les sessions Flask
+  SECRET_KEY             requis — pour les sessions Flask et la signature JWT
+  JWT_SECRET_KEY         optionnel — pour la signature JWT (défaut: SECRET_KEY)
+  JWT_ACCESS_EXPIRY      optionnel — secondes de validité du token d'accès (défaut: 86400 = 24h)
+  JWT_REFRESH_EXPIRY     optionnel — secondes de validité du refresh token (défaut: 2592000 = 30j)
 """
 
 import os
+import time
+from functools import wraps
 
+import jwt as pyjwt
 import requests
 from authlib.integrations.flask_client import OAuth
-from flask import session
+from flask import session, current_app
 
 DISCORD_API = "https://discord.com/api"
 
@@ -103,3 +109,119 @@ def get_logged_user() -> dict | None:
     # Ajoute l'avatar à jour
     user["avatar_url"] = avatar_url(user)
     return user
+
+
+# ── JWT helpers ──────────────────────────────────────────────────────
+
+
+# Cache de la clé JWT lue au démarrage (évite current_app qui nécessite un contexte Flask)
+_JWT_SECRET_CACHE = None
+
+def _get_jwt_secret() -> str:
+    """Retourne la clé secrète JWT, lue une seule fois au démarrage."""
+    global _JWT_SECRET_CACHE
+    if _JWT_SECRET_CACHE is not None:
+        return _JWT_SECRET_CACHE
+    _JWT_SECRET_CACHE = os.environ.get("JWT_SECRET_KEY",
+                         os.environ.get("SECRET_KEY",
+                         "fallback-insecure-key-change-me"))
+    return _JWT_SECRET_CACHE
+
+
+def _get_jwt_algorithm() -> str:
+    return "HS256"
+
+
+def create_jwt(user_id: str, role: str = "user", extra_claims: dict | None = None) -> str:
+    """
+    Crée un JWT token d'accès.
+    Durée de validité : JWT_ACCESS_EXPIRY (défaut 24h).
+    """
+    expiry = int(os.environ.get("JWT_ACCESS_EXPIRY", "86400"))
+    now = int(time.time())
+    payload = {
+        "sub": user_id,
+        "role": role,
+        "iat": now,
+        "exp": now + expiry,
+        "type": "access",
+    }
+    if extra_claims:
+        payload.update(extra_claims)
+    return pyjwt.encode(payload, _get_jwt_secret(), algorithm=_get_jwt_algorithm())
+
+
+def create_refresh_token(user_id: str) -> str:
+    """
+    Crée un JWT refresh token (longue durée).
+    Durée de validité : JWT_REFRESH_EXPIRY (défaut 30 jours).
+    """
+    expiry = int(os.environ.get("JWT_REFRESH_EXPIRY", "2592000"))
+    now = int(time.time())
+    payload = {
+        "sub": user_id,
+        "iat": now,
+        "exp": now + expiry,
+        "type": "refresh",
+    }
+    return pyjwt.encode(payload, _get_jwt_secret(), algorithm=_get_jwt_algorithm())
+
+
+def verify_jwt(token: str) -> dict | None:
+    """
+    Vérifie et décode un JWT.
+    Retourne le payload (dict) si valide, None sinon.
+    """
+    try:
+        payload = pyjwt.decode(
+            token,
+            _get_jwt_secret(),
+            algorithms=[_get_jwt_algorithm()],
+            options={"require": ["sub", "exp", "iat"]},
+        )
+        return payload
+    except (pyjwt.ExpiredSignatureError, pyjwt.InvalidTokenError):
+        return None
+
+
+def _make_jwt_decorator():
+    """Fabrique le décorateur JWT (logique commune aux deux syntaxes)."""
+    from flask import g, request, jsonify
+
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            auth = request.headers.get("Authorization", "")
+            if not auth.startswith("Bearer "):
+                return jsonify({"error": "Token JWT requis. En-tête Authorization: Bearer <token>"}), 401
+            token = auth[7:]
+            payload = verify_jwt(token)
+            if not payload:
+                return jsonify({"error": "Token JWT invalide ou expiré"}), 401
+            if payload.get("type") != "access":
+                return jsonify({"error": "Le token fourni n'est pas un token d'accès"}), 401
+            g.jwt_user = payload
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def jwt_required(f=None):
+    """
+    Décorateur pour protéger une route avec un JWT Bearer token.
+    Supporte les deux syntaxes : @jwt_required et @jwt_required().
+    Usage :
+        @app.route('/api/protected')
+        @jwt_required
+        def my_route():
+            user_id = g.jwt_user['sub']
+            ...
+    """
+    from flask import g, request, jsonify
+
+    if f is not None:
+        # Utilisé comme @jwt_required (sans parenthèses)
+        decorator = _make_jwt_decorator()
+        return decorator(f)
+    # Utilisé comme @jwt_required() (avec parenthèses)
+    return _make_jwt_decorator()

@@ -13,6 +13,7 @@ from cryptography.fernet import Fernet
 
 from embeddings import generate_embedding
 from extensions import app, oauth, DB_PATH, MD_PATH, BASE_DIR
+from auth import verify_jwt
 
 
 # ── Rate limiter (simple in-memory token bucket) ─────────────────────
@@ -427,6 +428,32 @@ def _init_db():
     conn.execute("CREATE INDEX IF NOT EXISTS idx_blobby_memories_user ON blobby_memories(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_blobby_memories_type ON blobby_memories(type)")
 
+    # ── Table Workflows partagés ──
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS shared_workflows (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            workflow_data BLOB NOT NULL,
+            decompressed_size INTEGER DEFAULT 0,
+            required_nodes TEXT DEFAULT '[]',
+            required_models TEXT DEFAULT '[]',
+            required_loras TEXT DEFAULT '[]',
+            is_public INTEGER DEFAULT 1,
+            version INTEGER DEFAULT 1,
+            downloads INTEGER DEFAULT 0,
+            likes INTEGER DEFAULT 0,
+            tags TEXT DEFAULT '',
+            comfyui_version TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_workflows_user ON shared_workflows(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_workflows_public ON shared_workflows(is_public)")
+
     # Créer les templates par défaut si aucun n'existe
     existing = conn.execute("SELECT COUNT(*) FROM prompt_templates").fetchone()[0]
     if existing == 0:
@@ -723,11 +750,21 @@ def _get_current_user_id() -> str | None:
 
 def _authenticate_via_token() -> str | None:
     """Vérifie si la requête contient un Bearer token valide.
+    Accepte :
+      - JWT token (via verify_jwt)
+      - API token legacy (fr_ia_...)
     Retourne l'user_id ou None."""
     auth = request.headers.get('Authorization', '')
     if not auth.startswith('Bearer '):
         return None
     token = auth[7:]
+
+    # 1) Essayer le JWT
+    payload = verify_jwt(token)
+    if payload and payload.get('type') == 'access':
+        return payload['sub']
+
+    # 2) Fallback : API token legacy (fr_ia_...)
     try:
         conn = get_db()
         row = conn.execute("SELECT id FROM users WHERE api_token = ?", (token,)).fetchone()

@@ -162,6 +162,14 @@ function initMenu(appInstance) {
         const cfg = getConfig();
         window.open(cfg.serverUrl || "https://kw.holaf.fr", "_blank");
     }));
+    dd.appendChild(mkItem("Partager le workflow", "📤", () => {
+        if (window.openWorkflowShare) window.openWorkflowShare();
+        else alert("Workflow Sharing pas encore chargé. Reessaye.");
+    }));
+    dd.appendChild(mkItem("Parcourir les workflows", "🌐", () => {
+        if (window.openWorkflowBrowse) window.openWorkflowBrowse();
+        else alert("Workflow Sharing pas encore chargé. Reessaye.");
+    }));
     dd.appendChild(mkItem("Terminal", "💻", () => {
         if (window.friaTerminal) {
             window.friaTerminal.toggle();
@@ -194,6 +202,9 @@ function initMenu(appInstance) {
         fontWeight: "600",
     });
 
+    // Chat menu item (doit etre declare avant updateBlobbyUI qui l'utilise)
+    var chatDiv = document.createElement("div");
+
     function updateBlobbyUI() {
         const active = window.BlobbyCompanion && window.BlobbyCompanion.isActive();
         blobbyLabel.textContent = active ? "Blobby (test)" : "Activer Blobby";
@@ -221,8 +232,6 @@ function initMenu(appInstance) {
     dd.appendChild(blobbyDiv);
 
     // ── Blobby Chat (visible seulement quand Blobby est actif) ──
-    // Declaree avant updateBlobbyUI pour eviter la temporal dead zone
-    var chatDiv = document.createElement("div");
     chatDiv.textContent = "💬  Chat";
     Object.assign(chatDiv.style, {
         padding: "10px 16px", cursor: "pointer", fontSize: "13px",
