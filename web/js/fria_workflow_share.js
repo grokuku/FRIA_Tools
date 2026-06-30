@@ -87,8 +87,9 @@
   // ── Modale unique ──
 
   window.openWorkflowManager = function () {
-    var modal = friaOpenModal("📤  Workflows", "", "680px");
-    var body = modal.querySelector("div:last-child");
+    var _m = friaOpenModal("📤  Workflows", "", "680px");
+    var modal = _m.modal;
+    var body = _m.body;
 
     var currentTab = "share";
     var browseState = { page: 1, query: "", sort: "downloads" };
@@ -347,8 +348,9 @@
     };
 
     window._wfOpenDetail = function (workflowId) {
-      var detailModal = friaOpenModal("📥 Workflow", "", "580px");
-      var detailBody = detailModal.querySelector("div:last-child");
+      var _dm = friaOpenModal("📥 Workflow", "", "580px");
+      var detailModal = _dm.modal;
+      var detailBody = _dm.body;
       detailBody.innerHTML = '<p style="color:#888;font-size:13px;text-align:center;padding:30px 0;">Chargement...</p>';
 
       fetch(getApiUrl() + "/workflows/" + workflowId, { headers: apiHeaders() })
