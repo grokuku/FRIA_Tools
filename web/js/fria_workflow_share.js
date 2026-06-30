@@ -80,6 +80,126 @@
     return deps;
   }
 
+  // ── Custom nodes : detection des URLs git (via endpoint ComfyUI) ──
+
+  async function getInstalledCustomNodes() {
+    try {
+      var resp = await fetch('/fria/custom-nodes');
+      if (!resp.ok) return [];
+      var data = await resp.json();
+      return data.nodes || [];
+    } catch { return []; }
+  }
+
+  async function enrichDependenciesWithGitUrls(deps) {
+    // Interroger ComfyUI pour les URLs git des custom nodes installes
+    var installed = await getInstalledCustomNodes();
+    // Construire un map nom_dossier → git_url
+    var urlMap = {};
+    for (var i = 0; i < installed.length; i++) {
+      if (installed[i].git_url) {
+        urlMap[installed[i].name.toLowerCase()] = installed[i].git_url;
+        // Aussi mapper par nom de node type (les dossiers contiennent souvent le nom du node)
+      }
+    }
+    // Enrichir deps.nodes avec les URLs
+    for (var i = 0; i < deps.nodes.length; i++) {
+      var nodeName = deps.nodes[i].name;
+      // Chercher par nom de dossier (case insensitive)
+      var key = nodeName.toLowerCase();
+      if (urlMap[key]) {
+        deps.nodes[i].url = urlMap[key];
+      }
+    }
+    return deps;
+  }
+
+  // ── Fingerprint (deduplication upload) ──
+
+  async function computeFileFingerprint(file) {
+    try {
+      var headSize = Math.min(1024 * 1024, file.size);
+      var head = await file.slice(0, headSize).arrayBuffer();
+      var tail = await file.slice(file.size - headSize).arrayBuffer();
+      var headHash = await crypto.subtle.digest('SHA-256', head);
+      var tailHash = await crypto.subtle.digest('SHA-256', tail);
+      function toHex(buf) {
+        return Array.from(new Uint8Array(buf)).map(function(b) {
+          return b.toString(16).padStart(2, '0');
+        }).join('');
+      }
+      return { size: file.size, head: toHex(headHash), tail: toHex(tailHash) };
+    } catch (e) {
+      console.warn('[FR.IA] Fingerprint failed:', e);
+      return null;
+    }
+  }
+
+  // ── Local model detection (avoid unnecessary downloads) ──
+
+  async function getLocalModelFiles() {
+    // Interroge l'endpoint Python /fria/models/list qui retourne les chemins + tailles
+    try {
+      var resp = await fetch('/fria/models/list');
+      if (!resp.ok) return { checkpoints: [], loras: [] };
+      return await resp.json();
+    } catch { return { checkpoints: [], loras: [] }; }
+  }
+
+  async function uploadModelToServer(filepath, fileType) {
+    // Demande au Python d'uploader le fichier directement depuis le filesystem
+    try {
+      var resp = await fetch('/fria/models/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: filepath, type: fileType })
+      });
+      return await resp.json();
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  async function downloadModelFromServer(uploadId, filename, fileType) {
+    // Demande au Python de downloader et sauvegarder dans le bon dossier
+    try {
+      var resp = await fetch('/fria/models/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ upload_id: uploadId, filename: filename, type: fileType })
+      });
+      return await resp.json();
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  async function getLocalModels() {
+    try {
+      var resp = await fetch('/object_info/CheckpointLoaderSimple');
+      if (!resp.ok) return [];
+      var data = await resp.json();
+      var info = data.CheckpointLoaderSimple;
+      if (info && info.inputs && info.inputs.required && info.inputs.required.ckpt_name) {
+        return info.inputs.required.ckpt_name[0] || [];
+      }
+      return [];
+    } catch { return []; }
+  }
+
+  async function getLocalLoras() {
+    try {
+      var resp = await fetch('/object_info/LoraLoader');
+      if (!resp.ok) return [];
+      var data = await resp.json();
+      var info = data.LoraLoader;
+      if (info && info.inputs && info.inputs.required && info.inputs.required.lora_name) {
+        return info.inputs.required.lora_name[0] || [];
+      }
+      return [];
+    } catch { return []; }
+  }
+
   // ── Modale unique ──
 
   window.openWorkflowManager = function () {
@@ -122,7 +242,7 @@
     //  TAB 1 : PARTAGER
     // ═══════════════════════════════════════════════
 
-    function renderShareTab(container) {
+    async function renderShareTab(container) {
       // Lire le workflow actif
       var workflowStr = "";
       var workflowJSON = null;
@@ -140,6 +260,8 @@
       }
 
       var deps = detectDependencies(workflowJSON);
+      // Enrichir avec les URLs git des custom nodes installes
+      deps = await enrichDependenciesWithGitUrls(deps);
       var existingId = null;
 
       container.innerHTML =
@@ -155,27 +277,36 @@
         '<div id="wf-status" style="font-size:11px;color:#888;display:none;"></div>' +
         '</div>';
 
-      // Remplir les dépendances
+      // Remplir les dépendances avec checkboxes d'upload
       var depsHtml = '<p style="font-size:11px;color:#888;margin:0 0 6px 0;">🔍 Dépendances détectées :</p>';
       if (deps.nodes.length === 0 && deps.models.length === 0 && deps.loras.length === 0) {
         depsHtml += '<span style="color:#34d399;">✓ Aucune dépendance externe</span>';
       } else {
+        depsHtml += '<p style="font-size:10px;color:#666;margin:0 0 6px 0;">Cochez les models/loras à uploader vers le serveur :</p>';
         if (deps.nodes.length) {
-          depsHtml += '<div style="margin-bottom:4px;"><span style="color:#f59e0b;">📦 Custom nodes</span>';
+          depsHtml += '<div style="margin-bottom:4px;"><span style="color:#f59e0b;">📦 Custom nodes (URL auto)</span>';
           for (var i = 0; i < deps.nodes.length; i++)
-            depsHtml += '<div style="margin-left:12px;color:#ccc;">· ' + esc(deps.nodes[i].name) + '</div>';
+            depsHtml += '<div style="margin-left:12px;color:#ccc;">· ' + esc(deps.nodes[i].name) + (deps.nodes[i].url ? ' <span style="color:#34d399;">✓ ' + esc(deps.nodes[i].url) + '</span>' : ' <span style="color:#f87171;">URL git non trouvée</span>') + '</div>';
           depsHtml += '</div>';
         }
         if (deps.models.length) {
           depsHtml += '<div style="margin-bottom:4px;"><span style="color:#60a5fa;">🧠 Modèles</span>';
-          for (var i = 0; i < deps.models.length; i++)
-            depsHtml += '<div style="margin-left:12px;color:#ccc;">· ' + esc(deps.models[i].name) + '</div>';
+          for (var i = 0; i < deps.models.length; i++) {
+            var m = deps.models[i];
+            depsHtml += '<label style="display:flex;align-items:center;gap:6px;margin-left:12px;color:#ccc;cursor:pointer;font-size:11px;">' +
+              '<input type="checkbox" class="wf-upload-cb" data-type="model" data-name="' + esc(m.name) + '" style="accent-color:#6366f1;">' +
+              '<span style="flex:1;">' + esc(m.name) + '</span></label>';
+          }
           depsHtml += '</div>';
         }
         if (deps.loras.length) {
           depsHtml += '<div style="margin-bottom:4px;"><span style="color:#a78bfa;">🎨 LoRAs</span>';
-          for (var i = 0; i < deps.loras.length; i++)
-            depsHtml += '<div style="margin-left:12px;color:#ccc;">· ' + esc(deps.loras[i].name) + '</div>';
+          for (var i = 0; i < deps.loras.length; i++) {
+            var l = deps.loras[i];
+            depsHtml += '<label style="display:flex;align-items:center;gap:6px;margin-left:12px;color:#ccc;cursor:pointer;font-size:11px;">' +
+              '<input type="checkbox" class="wf-upload-cb" data-type="lora" data-name="' + esc(l.name) + '" style="accent-color:#6366f1;">' +
+              '<span style="flex:1;">' + esc(l.name) + '</span></label>';
+          }
           depsHtml += '</div>';
         }
       }
@@ -223,14 +354,94 @@
         var statusEl = container.querySelector("#wf-status");
         statusEl.style.display = "block";
         statusEl.style.color = "#fbbf24";
+        statusEl.textContent = "Capture de l'aperçu...";
+
+        // 📸 Capture du canvas ComfyUI
+        var thumbnail = "";
+        try {
+          var currentApp = getApp();
+          var canvas = null;
+          if (currentApp && currentApp.canvas && currentApp.canvas.canvas) {
+            canvas = currentApp.canvas.canvas;
+          } else if (window.canvasEl) {
+            canvas = window.canvasEl;
+          }
+          if (canvas && canvas.toDataURL) {
+            // Redimensionner pour limiter la taille (max 400px de large)
+            var tmpCanvas = document.createElement("canvas");
+            var maxW = 400;
+            var scale = Math.min(1, maxW / canvas.width);
+            tmpCanvas.width = Math.round(canvas.width * scale);
+            tmpCanvas.height = Math.round(canvas.height * scale);
+            var ctx = tmpCanvas.getContext("2d");
+            ctx.fillStyle = "#2a2a2e";
+            ctx.fillRect(0, 0, tmpCanvas.width, tmpCanvas.height);
+            ctx.drawImage(canvas, 0, 0, tmpCanvas.width, tmpCanvas.height);
+            thumbnail = tmpCanvas.toDataURL("image/jpeg", 0.7);
+          }
+        } catch (e) {
+          console.warn("[FR.IA] Screenshot failed:", e);
+        }
+
         statusEl.textContent = "Publication...";
 
+        // Uploader les models/loras cochés vers le serveur FR.IA
+        var uploadCbs = container.querySelectorAll(".wf-upload-cb:checked");
+        if (uploadCbs.length > 0) {
+          statusEl.textContent = "Recherche des fichiers locaux...";
+          // Lister les models locaux pour trouver les chemins
+          var localFiles = await getLocalModelFiles();
+          var checkpointMap = {};
+          for (var ci = 0; ci < localFiles.checkpoints.length; ci++) {
+            checkpointMap[localFiles.checkpoints[ci].name] = localFiles.checkpoints[ci];
+          }
+          var loraMap = {};
+          for (var li = 0; li < localFiles.loras.length; li++) {
+            loraMap[localFiles.loras[li].name] = localFiles.loras[li];
+          }
+
+          for (var ui = 0; ui < uploadCbs.length; ui++) {
+            var cb = uploadCbs[ui];
+            var fileType = cb.dataset.type;
+            var fileName = cb.dataset.name;
+            var fileMap = fileType === 'lora' ? loraMap : checkpointMap;
+            var localFile = fileMap[fileName];
+
+            if (!localFile) {
+              statusEl.style.color = "#fbbf24";
+              statusEl.textContent = "⚠️ " + fileName + " non trouvé localement, skip";
+              continue;
+            }
+
+            statusEl.textContent = "Upload " + fileName + "...";
+            var upResult = await uploadModelToServer(localFile.path, fileType);
+            if (upResult.success) {
+              // Lier l'upload_id au model/lora dans deps
+              var depArray = fileType === 'lora' ? deps.loras : deps.models;
+              for (var di = 0; di < depArray.length; di++) {
+                if (depArray[di].name === fileName) {
+                  depArray[di].upload_id = upResult.upload_id;
+                  depArray[di].file_path = upResult.file_path;
+                  break;
+                }
+              }
+              statusEl.style.color = "#34d399";
+              statusEl.textContent = "✅ " + fileName + " uploadé" + (upResult.deduplicated ? " (déjà présent)" : "");
+            } else {
+              statusEl.style.color = "#f87171";
+              statusEl.textContent = "❌ Upload " + fileName + ": " + (upResult.error || "échec");
+            }
+          }
+        }
+
+        statusEl.textContent = "Publication...";
         var payload = {
           name: name, description: desc, tags: tags,
           workflow_json: workflowStr,
           required_nodes: deps.nodes,
           required_models: deps.models,
           required_loras: deps.loras,
+          thumbnail: thumbnail,
         };
         if (existingId) payload.existing_id = existingId;
 
@@ -311,6 +522,7 @@
             html +=
               '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid #444;border-radius:6px;margin-bottom:4px;cursor:pointer;background:#3a3a3e;"' +
               ' onclick="window._wfOpenDetail(' + w.id + ', this)">' +
+              (w.thumbnail ? '<img src="' + w.thumbnail + '" style="width:48px;height:48px;border-radius:4px;object-fit:cover;flex-shrink:0;">' : '<div style="width:48px;height:48px;border-radius:4px;background:#444;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">📤</div>') +
               '<div style="flex:1;min-width:0;">' +
               '<div style="font-size:13px;font-weight:600;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(w.name) + '</div>' +
               '<div style="font-size:11px;color:#888;">par ' + esc(author) + (depsCount > 0 ? ' · ' + depsCount + ' dép.' : '') + '</div></div>' +
@@ -367,7 +579,7 @@
 
           detailBody.innerHTML = html;
 
-          // Dépendances
+          // Dépendances — vérifier les models/loras locaux en async
           var allDeps = {
             nodes: w.required_nodes || [],
             models: w.required_models || [],
@@ -379,43 +591,126 @@
           if (totalDeps === 0) {
             depsEl.innerHTML = '<p style="font-size:12px;color:#34d399;">✓ Aucune dépendance externe</p>';
           } else {
-            var depHtml = '<p style="font-size:12px;color:#fbbf24;margin:0 0 8px 0;">⚠️ Dépendances requises :</p>';
-            depHtml += '<div style="border:1px solid #444;border-radius:6px;overflow:hidden;">';
+            depsEl.innerHTML = '<p style="font-size:12px;color:#888;">Vérification des dépendances locales...</p>';
+            
+            // Interroger ComfyUI pour les models/loras déjà installés
+            Promise.all([getLocalModels(), getLocalLoras()]).then(async function(results) {
+              var localModels = results[0];
+              var localLoras = results[1];
+              
+              var depHtml = '<p style="font-size:12px;color:#fbbf24;margin:0 0 8px 0;">⚠️ Dépendances requises :</p>';
+              depHtml += '<div style="border:1px solid #444;border-radius:6px;overflow:hidden;">';
 
-            if (allDeps.nodes.length) {
-              depHtml += '<div style="background:#3a3a3e;padding:6px 10px;border-bottom:1px solid #444;"><span style="font-size:11px;color:#f59e0b;font-weight:600;">📦 Custom nodes</span></div>';
-              for (var i = 0; i < allDeps.nodes.length; i++) {
-                var n = allDeps.nodes[i];
-                depHtml += '<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #3a3a3e;cursor:pointer;font-size:12px;color:#ccc;">' +
-                  '<input type="checkbox" class="wf-dep-cb" checked data-type="node" style="accent-color:#6366f1;">' +
-                  '<span style="flex:1;">' + esc(n.name) + '</span>' +
-                  (n.url ? '<a href="' + esc(n.url) + '" target="_blank" style="color:#60a5fa;text-decoration:none;font-size:11px;" onclick="event.stopPropagation();">🔗</a>' : '') +
-                  '</label>';
+              if (allDeps.nodes.length) {
+                // Check which custom nodes are already installed
+                var installedNodes = await getInstalledCustomNodes();
+                var installedNames = {};
+                for (var k = 0; k < installedNodes.length; k++) {
+                  installedNames[installedNodes[k].name.toLowerCase()] = true;
+                }
+                depHtml += '<div style="background:#3a3a3e;padding:6px 10px;border-bottom:1px solid #444;"><span style="font-size:11px;color:#f59e0b;font-weight:600;">📦 Custom nodes</span></div>';
+                for (var i = 0; i < allDeps.nodes.length; i++) {
+                  var n = allDeps.nodes[i];
+                  var installed = installedNames[n.name.toLowerCase()];
+                  depHtml += '<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #3a3a3e;cursor:pointer;font-size:12px;color:' + (installed ? '#34d399' : '#ccc') + ';">' +
+                    '<input type="checkbox" class="wf-dep-cb" ' + (installed ? 'unchecked' : 'checked') + ' data-type="node" data-name="' + esc(n.name) + '" data-url="' + esc(n.url || '') + '" style="accent-color:#6366f1;">' +
+                    '<span style="flex:1;">' + esc(n.name) + (installed ? ' ✅ déjà installé' : '') + '</span>' +
+                    (n.url && !installed ? '<button onclick="window._wfInstallNode(\'' + esc(n.url) + '\', \'' + esc(n.name) + '\', this)" style="padding:2px 8px;border:1px solid #555;border-radius:3px;background:#4a4a4e;color:#ccc;font-size:10px;cursor:pointer;">📥 Installer</button>' : '') +
+                    (n.url ? '<a href="' + esc(n.url) + '" target="_blank" style="color:#60a5fa;text-decoration:none;font-size:11px;" onclick="event.stopPropagation();">🔗</a>' : '') +
+                    '</label>';
+                }
               }
-            }
-            if (allDeps.models.length) {
-              if (allDeps.nodes.length) depHtml += '<div style="border-top:1px solid #444;"></div>';
-              depHtml += '<div style="background:#3a3a3e;padding:6px 10px;border-bottom:1px solid #444;"><span style="font-size:11px;color:#60a5fa;font-weight:600;">🧠 Modèles</span></div>';
-              for (var i = 0; i < allDeps.models.length; i++) {
-                var m = allDeps.models[i];
-                depHtml += '<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #3a3a3e;cursor:pointer;font-size:12px;color:#ccc;">' +
-                  '<input type="checkbox" class="wf-dep-cb" checked data-type="model" style="accent-color:#6366f1;">' +
-                  '<span style="flex:1;">' + esc(m.name) + '</span>' +
-                  '<span style="font-size:10px;color:#666;">' + (m.type || 'modèle') + '</span></label>';
+              if (allDeps.models.length) {
+                if (allDeps.nodes.length) depHtml += '<div style="border-top:1px solid #444;"></div>';
+                depHtml += '<div style="background:#3a3a3e;padding:6px 10px;border-bottom:1px solid #444;"><span style="font-size:11px;color:#60a5fa;font-weight:600;">🧠 Modèles</span></div>';
+                for (var i = 0; i < allDeps.models.length; i++) {
+                  var m = allDeps.models[i];
+                  var installed = localModels.indexOf(m.name) >= 0;
+                  var hasFile = !!m.upload_id;
+                  depHtml += '<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #3a3a3e;cursor:pointer;font-size:12px;color:' + (installed ? '#34d399' : '#ccc') + ';">' +
+                    '<input type="checkbox" class="wf-dep-cb" ' + (installed ? 'unchecked' : 'checked') + ' data-type="model" data-name="' + esc(m.name) + '" ' + (hasFile ? 'data-upload-id="' + esc(m.upload_id) + '"' : '') + ' style="accent-color:#6366f1;">' +
+                    '<span style="flex:1;">' + esc(m.name) + (installed ? ' ✅ déjà installé' : '') + '</span>';
+                  if (!installed && hasFile) {
+                    depHtml += '<button onclick="window._wfDownloadFile(\'' + esc(m.upload_id) + '\', \'' + esc(m.name) + '\', this)" style="padding:2px 8px;border:1px solid #555;border-radius:3px;background:#4a4a4e;color:#ccc;font-size:10px;cursor:pointer;">📥 Télécharger</button>';
+                  } else if (!installed && !hasFile) {
+                    depHtml += '<span style="font-size:10px;color:#666;">non uploadé</span>';
+                  }
+                  depHtml += '<span style="font-size:10px;color:#666;">' + (m.type || 'modèle') + '</span></label>';
+                }
               }
-            }
-            if (allDeps.loras.length) {
-              if (allDeps.nodes.length || allDeps.models.length) depHtml += '<div style="border-top:1px solid #444;"></div>';
-              depHtml += '<div style="background:#3a3a3e;padding:6px 10px;border-bottom:1px solid #444;"><span style="font-size:11px;color:#a78bfa;font-weight:600;">🎨 LoRAs</span></div>';
-              for (var i = 0; i < allDeps.loras.length; i++) {
-                depHtml += '<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #3a3a3e;cursor:pointer;font-size:12px;color:#ccc;">' +
-                  '<input type="checkbox" class="wf-dep-cb" checked data-type="lora" style="accent-color:#6366f1;">' +
-                  '<span style="flex:1;">' + esc(allDeps.loras[i].name) + '</span></label>';
+              if (allDeps.loras.length) {
+                if (allDeps.nodes.length || allDeps.models.length) depHtml += '<div style="border-top:1px solid #444;"></div>';
+                depHtml += '<div style="background:#3a3a3e;padding:6px 10px;border-bottom:1px solid #444;"><span style="font-size:11px;color:#a78bfa;font-weight:600;">🎨 LoRAs</span></div>';
+                for (var i = 0; i < allDeps.loras.length; i++) {
+                  var l = allDeps.loras[i];
+                  var installed = localLoras.indexOf(l.name) >= 0;
+                  var hasFile = !!l.upload_id;
+                  depHtml += '<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #3a3a3e;cursor:pointer;font-size:12px;color:' + (installed ? '#34d399' : '#ccc') + ';">' +
+                    '<input type="checkbox" class="wf-dep-cb" ' + (installed ? 'unchecked' : 'checked') + ' data-type="lora" data-name="' + esc(l.name) + '" ' + (hasFile ? 'data-upload-id="' + esc(l.upload_id) + '"' : '') + ' style="accent-color:#6366f1;">' +
+                    '<span style="flex:1;">' + esc(l.name) + (installed ? ' ✅ déjà installé' : '') + '</span>';
+                  if (!installed && hasFile) {
+                    depHtml += '<button onclick="window._wfDownloadFile(\'' + esc(l.upload_id) + '\', \'' + esc(l.name) + '\', this)" style="padding:2px 8px;border:1px solid #555;border-radius:3px;background:#4a4a4e;color:#ccc;font-size:10px;cursor:pointer;">📥 Télécharger</button>';
+                  } else if (!installed && !hasFile) {
+                    depHtml += '<span style="font-size:10px;color:#666;">non uploadé</span>';
+                  }
+                  depHtml += '</label>';
+                }
               }
-            }
-            depHtml += '</div>';
-            depsEl.innerHTML = depHtml;
+              depHtml += '</div>';
+              depsEl.innerHTML = depHtml;
+            });
           }
+
+          // Download a file from server (global for onclick)
+          window._wfDownloadFile = async function(uploadId, fileName, btn) {
+            var fileType = btn.getAttribute('data-file-type') || 'model';
+            btn.textContent = "⏳ Download...";
+            btn.disabled = true;
+            try {
+              // Le Python download le fichier et le sauvegarde dans le bon dossier
+              var result = await downloadModelFromServer(uploadId, fileName, fileType);
+              if (result.success) {
+                btn.textContent = "✅ Installé";
+                btn.style.color = "#34d399";
+                btn.style.borderColor = "#34d399";
+              } else {
+                btn.textContent = "❌ Échec";
+                btn.style.color = "#f87171";
+                if (result.error) console.error("[FR.IA] Download:", result.error);
+              }
+            } catch (e) {
+              btn.textContent = "❌ Erreur";
+              btn.style.color = "#f87171";
+              console.error("[FR.IA] Download failed:", e);
+            }
+          };
+
+          // Install custom node (global for onclick)
+          window._wfInstallNode = async function(gitUrl, nodeName, btn) {
+            if (!gitUrl) { alert("Pas d\'URL git pour ce node."); return; }
+            btn.textContent = "⏳ Clone...";
+            btn.disabled = true;
+            try {
+              var resp = await fetch("/fria/custom-nodes/install", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({git_url: gitUrl, name: nodeName})
+              });
+              var data = await resp.json();
+              if (data.success) {
+                btn.textContent = "✅ Installé";
+                btn.style.color = "#34d399";
+                btn.style.borderColor = "#34d399";
+              } else {
+                btn.textContent = "❌ Échec";
+                btn.style.color = "#f87171";
+                if (data.message) setTimeout(function() { alert(data.message); }, 100);
+              }
+            } catch (e) {
+              btn.textContent = "❌ Erreur";
+              btn.style.color = "#f87171";
+            }
+          };
 
           // Load button
           detailBody.querySelector("#wf-load-btn").onclick = function () {

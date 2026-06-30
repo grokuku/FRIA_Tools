@@ -41,6 +41,7 @@ def _workflow_to_dict(row) -> dict:
         'required_models': json.loads(row['required_models'] or '[]'),
         'required_loras': json.loads(row['required_loras'] or '[]'),
         'comfyui_version': row['comfyui_version'],
+        'thumbnail': row['thumbnail'] or '',
         'created_at': row['created_at'],
         'updated_at': row['updated_at'],
     }
@@ -78,6 +79,7 @@ def create_or_update_workflow():
     required_models = json.dumps(data.get('required_models', []), ensure_ascii=False)
     required_loras = json.dumps(data.get('required_loras', []), ensure_ascii=False)
     comfyui_version = (data.get('comfyui_version') or '').strip()
+    thumbnail = (data.get('thumbnail') or '').strip()  # base64 JPEG
 
     blob = _compress(workflow_json)
     decompressed_size = len(workflow_json.encode('utf-8'))
@@ -91,13 +93,13 @@ def create_or_update_workflow():
                     name = ?, description = ?, workflow_data = ?,
                     decompressed_size = ?, required_nodes = ?,
                     required_models = ?, required_loras = ?,
-                    tags = ?, comfyui_version = ?,
+                    tags = ?, comfyui_version = ?, thumbnail = ?,
                     version = version + 1,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND (user_id = ? OR ?)
             """, (name, description, blob, decompressed_size,
                   required_nodes, required_models, required_loras,
-                  tags, comfyui_version, existing_id, user_id, 1 if is_admin(user_id) else 0))
+                  tags, comfyui_version, thumbnail, existing_id, user_id, 1 if is_admin(user_id) else 0))
             if cur.rowcount == 0:
                 row = conn.execute(
                     "SELECT id FROM shared_workflows WHERE id = ?",
@@ -114,11 +116,11 @@ def create_or_update_workflow():
                 INSERT INTO shared_workflows
                     (user_id, name, description, workflow_data, decompressed_size,
                      required_nodes, required_models, required_loras,
-                     tags, comfyui_version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     tags, comfyui_version, thumbnail)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (user_id, name, description, blob, decompressed_size,
                   required_nodes, required_models, required_loras,
-                  tags, comfyui_version))
+                  tags, comfyui_version, thumbnail))
             new_id = cur.lastrowid
             conn.commit()
             return jsonify({'id': new_id, 'version': 1, 'updated': False}), 201
@@ -174,7 +176,7 @@ def list_workflows():
         rows = conn.execute(
             f"SELECT id, user_id, name, description, version, downloads, likes, "
             f"tags, required_nodes, required_models, required_loras, "
-            f"comfyui_version, created_at, updated_at "
+            f"comfyui_version, thumbnail, created_at, updated_at "
             f"FROM shared_workflows WHERE {where} "
             f"ORDER BY {sort_col} DESC LIMIT ? OFFSET ?",
             params + [limit, offset]
@@ -199,6 +201,7 @@ def list_workflows():
                 'required_models': json.loads(r['required_models'] or '[]'),
                 'required_loras': json.loads(r['required_loras'] or '[]'),
                 'comfyui_version': r['comfyui_version'],
+                'thumbnail': r['thumbnail'] or '',
                 'created_at': r['created_at'],
                 'updated_at': r['updated_at'],
             }
@@ -226,7 +229,7 @@ def get_workflow(workflow_id):
         row = conn.execute(
             "SELECT id, user_id, name, description, version, downloads, likes, "
             "tags, required_nodes, required_models, required_loras, "
-            "comfyui_version, created_at, updated_at "
+            "comfyui_version, thumbnail, created_at, updated_at "
             "FROM shared_workflows WHERE id = ? AND is_public = 1",
             (workflow_id,)
         ).fetchone()

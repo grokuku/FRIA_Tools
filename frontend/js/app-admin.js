@@ -204,9 +204,31 @@
       var isOpen = !panel.classList.contains('hidden');
       panel.classList.toggle('hidden');
       if (!isOpen) {
-        loadAdminUsers();
-        loadOllamaConfig();
+        switchAdminTab('global');
       }
+    }
+
+    function switchAdminTab(tab) {
+      ['global', 'embedding', 'users', 'backup'].forEach(function(t) {
+        var content = document.getElementById('admin-tab-' + t);
+        var btn = document.getElementById('admin-tab-btn-' + t);
+        if (content) content.classList.add('hidden');
+        if (btn) {
+          btn.classList.remove('border-indigo-500', 'text-indigo-600', 'dark:text-indigo-400');
+          btn.classList.add('border-transparent', 'text-slate-500', 'dark:text-slate-400');
+        }
+      });
+      var content = document.getElementById('admin-tab-' + tab);
+      var btn = document.getElementById('admin-tab-btn-' + tab);
+      if (content) content.classList.remove('hidden');
+      if (btn) {
+        btn.classList.add('border-indigo-500', 'text-indigo-600', 'dark:text-indigo-400');
+        btn.classList.remove('border-transparent', 'text-slate-500', 'dark:text-slate-400');
+      }
+      if (tab === 'users') loadAdminUsers();
+      if (tab === 'embedding') loadOllamaConfig();
+      if (tab === 'global') loadSftpConfig();
+      if (tab === 'backup') loadBackupConfig();
     }
 
     function toggleMembers() {
@@ -499,6 +521,145 @@
           showModal('Erreur', err.message || 'Action impossible', 'error');
         }
       });
+    }
+
+    // === SFTP Config ===
+
+    async function loadSftpConfig() {
+      try {
+        var res = await fetch(API + '/admin/settings/sftp');
+        if (!res.ok) return;
+        var data = await res.json();
+        document.getElementById('admin-sftp-host').value = data.host || '';
+        document.getElementById('admin-sftp-port').value = data.port || 22;
+        document.getElementById('admin-sftp-user').value = data.user || '';
+        document.getElementById('admin-sftp-password').value = '';  // jamais afficher le mot de passe
+        document.getElementById('admin-sftp-basepath').value = data.base_path || '/fria';
+        var st = document.getElementById('admin-sftp-status');
+        if (data.host) {
+          st.textContent = 'Configuré';
+          st.className = 'text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400';
+        } else {
+          st.textContent = 'Non configuré (stockage local)';
+          st.className = 'text-xs px-2 py-1 rounded bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400';
+        }
+      } catch (err) {
+        console.error('loadSftpConfig:', err);
+      }
+    }
+
+    async function saveSftpConfig() {
+      var host = document.getElementById('admin-sftp-host').value.trim();
+      var port = parseInt(document.getElementById('admin-sftp-port').value) || 22;
+      var user = document.getElementById('admin-sftp-user').value.trim();
+      var password = document.getElementById('admin-sftp-password').value;  // pas de trim (peut avoir des espaces)
+      var base_path = document.getElementById('admin-sftp-basepath').value.trim() || '/fria';
+
+      var body = { host: host, port: port, user: user, base_path: base_path };
+      // Ne pas envoyer le mot de passe s'il est vide (garder l'ancien)
+      if (password) body.password = password;
+
+      try {
+        var res = await fetch(API + '/admin/settings/sftp', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body)
+        });
+        if (res.ok) {
+          var st = document.getElementById('admin-sftp-status');
+          st.textContent = 'Sauvegardé !';
+          st.className = 'text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400';
+          document.getElementById('admin-sftp-password').value = '';
+          setTimeout(function() { loadSftpConfig(); }, 1500);
+        } else {
+          var err = await res.json().catch(function(){ return {}; });
+          showModal('Erreur', err.error || 'Sauvegarde impossible', 'error');
+        }
+      } catch (err) {
+        showModal('Erreur', err.message, 'error');
+      }
+    }
+
+    async function testSftpConfig() {
+      var st = document.getElementById('admin-sftp-status');
+      st.textContent = 'Test en cours...';
+      st.className = 'text-xs px-2 py-1 rounded bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400';
+      try {
+        var res = await fetch(API + '/admin/settings/sftp/test', { method: 'POST' });
+        var data = await res.json();
+        if (res.ok && data.ok) {
+          st.textContent = '✅ Connexion réussie (' + data.backend + ')';
+          st.className = 'text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400';
+        } else {
+          st.textContent = '❌ ' + (data.error || 'Échec de connexion');
+          st.className = 'text-xs px-2 py-1 rounded bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400';
+        }
+      } catch (err) {
+        st.textContent = '❌ ' + err.message;
+        st.className = 'text-xs px-2 py-1 rounded bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400';
+      }
+    }
+
+    // === Backup Config ===
+
+    async function loadBackupConfig() {
+      try {
+        var res = await fetch(API + '/admin/settings/backup');
+        if (!res.ok) return;
+        var data = await res.json();
+        document.getElementById('admin-backup-enabled').checked = !!data.enabled;
+        document.getElementById('admin-backup-interval').value = String(data.interval_hours || 24);
+        document.getElementById('admin-backup-retain').value = data.max_backups || 7;
+        if (data.last_backup) {
+          var hist = document.getElementById('admin-backup-history');
+          hist.innerHTML = '<p>Dernier backup : <strong>' + esc(data.last_backup) + '</strong></p>';
+        }
+      } catch (err) {
+        console.error('loadBackupConfig:', err);
+      }
+    }
+
+    async function saveBackupConfig() {
+      var enabled = document.getElementById('admin-backup-enabled').checked;
+      var interval = parseInt(document.getElementById('admin-backup-interval').value) || 24;
+      var retain = parseInt(document.getElementById('admin-backup-retain').value) || 7;
+
+      try {
+        var res = await fetch(API + '/admin/settings/backup', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ enabled: enabled, interval_hours: interval, max_backups: retain })
+        });
+        if (res.ok) {
+          var st = document.getElementById('admin-backup-status');
+          st.textContent = 'Sauvegardé !';
+          st.className = 'text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400';
+          setTimeout(function() { st.textContent = '...'; st.className = 'text-xs px-2 py-1 rounded bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'; }, 2000);
+        }
+      } catch (err) {
+        showModal('Erreur', err.message, 'error');
+      }
+    }
+
+    async function triggerBackupNow() {
+      var st = document.getElementById('admin-backup-status');
+      st.textContent = 'Backup en cours...';
+      st.className = 'text-xs px-2 py-1 rounded bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400';
+      try {
+        var res = await fetch(API + '/admin/settings/backup/now', { method: 'POST' });
+        var data = await res.json();
+        if (res.ok && data.ok) {
+          st.textContent = '✅ Backup terminé';
+          st.className = 'text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400';
+          loadBackupConfig();
+        } else {
+          st.textContent = '❌ ' + (data.error || 'Échec');
+          st.className = 'text-xs px-2 py-1 rounded bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400';
+        }
+      } catch (err) {
+        st.textContent = '❌ ' + err.message;
+        st.className = 'text-xs px-2 py-1 rounded bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400';
+      }
     }
 
     // === Layout panneaux redimensionnables ===

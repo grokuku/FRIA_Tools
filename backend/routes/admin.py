@@ -174,6 +174,122 @@ def admin_ollama_settings():
         return jsonify({'error': f'Erreur serveur: {e}'}), 500
 
 
+# ── SFTP config ───────────────────────────────────────────────────────
+
+@app.route('/api/admin/settings/sftp', methods=['GET', 'POST'])
+def admin_sftp_settings():
+    """Lire / définir la config SFTP (admin seulement)."""
+    guard = _admin_required()
+    if guard:
+        return guard
+
+    conn = get_db()
+    try:
+        if request.method == 'POST':
+            data = request.get_json() or {}
+            for key, default in [('sftp_host', ''), ('sftp_port', '22'), ('sftp_user', ''), ('sftp_password', ''), ('sftp_base_path', '/fria')]:
+                val = data.get(key.replace('sftp_', ''), default)
+                if val == '' and key == 'sftp_password':
+                    continue  # ne pas écraser le mot de passe si vide
+                if val != '':
+                    conn.execute("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, str(val)))
+            conn.commit()
+            # Recharger le storage
+            from storage import reload_storage
+            reload_storage()
+            return jsonify({'status': 'ok'})
+
+        # GET
+        result = {}
+        for key in ('sftp_host', 'sftp_port', 'sftp_user', 'sftp_base_path'):
+            row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+            result[key.replace('sftp_', '')] = row[0] if row else ''
+        # Ne pas retourner le mot de passe
+        return jsonify(result)
+    finally:
+        conn.close()
+
+
+@app.route('/api/admin/settings/sftp/test', methods=['POST'])
+def admin_sftp_test():
+    """Teste la connexion SFTP avec la config actuelle."""
+    guard = _admin_required()
+    if guard:
+        return guard
+    try:
+        from storage import get_storage
+        storage = get_storage()
+        backend = storage.get_backend_name()
+        # Test simple : lister le dossier racine
+        files = storage.list_dir('')
+        return jsonify({'ok': True, 'backend': backend, 'files_count': len(files)})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+# ── Backup config ─────────────────────────────────────────────────────
+
+@app.route('/api/admin/settings/backup', methods=['GET', 'POST'])
+def admin_backup_settings():
+    """Lire / définir la config backup (admin seulement)."""
+    guard = _admin_required()
+    if guard:
+        return guard
+
+    conn = get_db()
+    try:
+        if request.method == 'POST':
+            data = request.get_json() or {}
+            enabled = 1 if data.get('enabled') else 0
+            interval = int(data.get('interval_hours', 24))
+            max_backups = int(data.get('max_backups', 7))
+            for key, val in [('backup_enabled', str(enabled)), ('backup_interval', str(interval)), ('backup_max_backups', str(max_backups))]:
+                conn.execute("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, val))
+            conn.commit()
+            return jsonify({'status': 'ok'})
+
+        # GET
+        result = {}
+        for key, default in [('backup_enabled', '0'), ('backup_interval', '24'), ('backup_max_backups', '7')]:
+            row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+            result[key.replace('backup_', '')] = row[0] if row else default
+        result['enabled'] = result.pop('enabled') == '1'
+        result['interval_hours'] = int(result.pop('interval'))
+        result['max_backups'] = int(result.pop('max_backups'))
+        # Dernier backup
+        from storage import get_storage
+        try:
+            files = get_storage().list_dir('backups')
+            backups = sorted([f for f in files if f.startswith('keywords_') and f.endswith('.db')])
+            result['last_backup'] = backups[-1] if backups else None
+        except Exception:
+            result['last_backup'] = None
+        return jsonify(result)
+    finally:
+        conn.close()
+
+
+@app.route('/api/admin/settings/backup/now', methods=['POST'])
+def admin_backup_now():
+    """Déclenche un backup immédiat."""
+    guard = _admin_required()
+    if guard:
+        return guard
+    try:
+        from storage import backup_database, get_storage
+        # Lire max_backups depuis la config
+        conn = get_db()
+        row = conn.execute("SELECT value FROM app_settings WHERE key = 'backup_max_backups'").fetchone()
+        conn.close()
+        max_b = int(row[0]) if row else 7
+        success = backup_database(str(DB_PATH), max_backups=max_b)
+        if success:
+            return jsonify({'ok': True})
+        return jsonify({'ok': False, 'error': 'Échec du backup'}), 500
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
 @app.route('/api/admin/db/clear', methods=['POST'])
 def admin_db_clear():
     guard = _admin_required()

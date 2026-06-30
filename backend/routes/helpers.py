@@ -454,6 +454,42 @@ def _init_db():
     conn.execute("CREATE INDEX IF NOT EXISTS idx_workflows_user ON shared_workflows(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_workflows_public ON shared_workflows(is_public)")
 
+    # Migration : colonne thumbnail pour shared_workflows
+    cols_wf = [r[1] for r in conn.execute("PRAGMA table_info(shared_workflows)").fetchall()]
+    if "thumbnail" not in cols_wf:
+        conn.execute("ALTER TABLE shared_workflows ADD COLUMN thumbnail TEXT DEFAULT ''")
+
+    # ── Table File uploads (chunked upload pour gros fichiers) ──
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS file_uploads (
+            upload_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            size INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            workflow_id INTEGER,
+            chunk_size INTEGER NOT NULL,
+            total_chunks INTEGER NOT NULL,
+            received_chunks INTEGER DEFAULT 0,
+            temp_path TEXT NOT NULL,
+            final_path TEXT DEFAULT '',
+            status TEXT DEFAULT 'uploading',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (workflow_id) REFERENCES shared_workflows(id) ON DELETE SET NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_file_uploads_user ON file_uploads(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_file_uploads_status ON file_uploads(status)")
+
+    # Migration : colonnes fingerprint pour déduplication
+    cols_fu = [r[1] for r in conn.execute("PRAGMA table_info(file_uploads)").fetchall()]
+    if "fingerprint_head" not in cols_fu:
+        conn.execute("ALTER TABLE file_uploads ADD COLUMN fingerprint_head TEXT DEFAULT ''")
+    if "fingerprint_tail" not in cols_fu:
+        conn.execute("ALTER TABLE file_uploads ADD COLUMN fingerprint_tail TEXT DEFAULT ''")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_file_uploads_fp ON file_uploads(size, fingerprint_head, fingerprint_tail)")
+
     # Créer les templates par défaut si aucun n'existe
     existing = conn.execute("SELECT COUNT(*) FROM prompt_templates").fetchone()[0]
     if existing == 0:

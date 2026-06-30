@@ -7,6 +7,17 @@ from .nodes.prep_node import FRIAPromptPrepNode
 
 from .nodes.diagnostic_node import FRIADiagnosticNode
 
+# Custom nodes manager — enregistre les routes aiohttp sur le serveur ComfyUI
+try:
+    from .nodes import custom_nodes_manager
+except Exception:
+    pass
+
+try:
+    from .nodes import model_manager
+except Exception:
+    pass
+
 NODE_CLASS_MAPPINGS = {
     "FRIAElementsNode": FRIAElementsNode,
     "FRIAEnhanceNode": FRIAEnhanceNode,

@@ -44,6 +44,7 @@ from routes.export import *
 from routes.ideogram import *
 from routes.blobby import *
 from routes.workflows import *
+from routes.files import *
 
 # Initialisation unique de la BDD (schemas + migrations) au demarrage
 from routes.helpers import _init_db
@@ -51,6 +52,24 @@ _init_db()
 
 # Chargement de la config Ollama stockée en BDD (doit arriver APRES _init_db)
 _load_ollama_config_at_startup()
+
+# Démarrer le backup scheduler (lit la config BDD : enabled + interval)
+try:
+    import sqlite3 as _sqlite3
+    _conn = _sqlite3.connect(str(DB_PATH))
+    _enabled = _conn.execute("SELECT value FROM app_settings WHERE key = 'backup_enabled'").fetchone()
+    _interval = _conn.execute("SELECT value FROM app_settings WHERE key = 'backup_interval'").fetchone()
+    _conn.close()
+    _backup_on = _enabled and _enabled[0] == '1'
+    _backup_interval = int(_interval[0]) if _interval else 24
+    if _backup_on:
+        from storage import start_backup_scheduler
+        start_backup_scheduler(str(DB_PATH), interval_hours=_backup_interval)
+        logging.info(f"[backup] Scheduler started (every {_backup_interval}h)")
+    else:
+        logging.info("[backup] Scheduler disabled (backup_enabled=0)")
+except Exception as e:
+    logging.warning(f"Failed to start backup scheduler: {e}")
 
 # ── Fichiers statiques ────────────────────────────────────────────────
 
