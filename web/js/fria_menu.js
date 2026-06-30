@@ -162,12 +162,8 @@ function initMenu(appInstance) {
         const cfg = getConfig();
         window.open(cfg.serverUrl || "https://kw.holaf.fr", "_blank");
     }));
-    dd.appendChild(mkItem("Partager le workflow", "📤", () => {
-        if (window.openWorkflowShare) window.openWorkflowShare();
-        else alert("Workflow Sharing pas encore chargé. Reessaye.");
-    }));
-    dd.appendChild(mkItem("Parcourir les workflows", "🌐", () => {
-        if (window.openWorkflowBrowse) window.openWorkflowBrowse();
+    dd.appendChild(mkItem("Workflows", "📤", () => {
+        if (window.openWorkflowManager) window.openWorkflowManager();
         else alert("Workflow Sharing pas encore chargé. Reessaye.");
     }));
     dd.appendChild(mkItem("Terminal", "💻", () => {
