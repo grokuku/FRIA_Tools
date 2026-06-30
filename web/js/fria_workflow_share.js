@@ -347,7 +347,7 @@
       if (initialName) checkExisting(initialName);
 
       // Publish
-      container.querySelector("#wf-publish-btn").onclick = function () {
+      container.querySelector("#wf-publish-btn").onclick = async function () {
         var name = container.querySelector("#wf-name").value.trim();
         var desc = container.querySelector("#wf-desc").value.trim();
         var tags = container.querySelector("#wf-tags").value.trim();
