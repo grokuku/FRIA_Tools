@@ -353,6 +353,21 @@
     var currentTab = "share";
     var browseState = { page: 1, query: "", sort: "downloads" };
 
+    function updateTabStyles() {
+      var shareBtn = body.querySelector("#wf-tab-share");
+      var browseBtn = body.querySelector("#wf-tab-browse");
+      if (shareBtn) {
+        shareBtn.style.borderBottomColor = currentTab === "share" ? "#6366f1" : "transparent";
+        shareBtn.style.color = currentTab === "share" ? "#e2e8f0" : "#888";
+        shareBtn.style.fontWeight = currentTab === "share" ? "600" : "400";
+      }
+      if (browseBtn) {
+        browseBtn.style.borderBottomColor = currentTab === "browse" ? "#6366f1" : "transparent";
+        browseBtn.style.color = currentTab === "browse" ? "#e2e8f0" : "#888";
+        browseBtn.style.fontWeight = currentTab === "browse" ? "600" : "400";
+      }
+    }
+
     function render() {
       body.innerHTML =
         '<div style="display:flex;flex-direction:column;gap:10px;min-height:350px;">' +
@@ -370,8 +385,8 @@
         '<div id="wf-tab-content" style="flex:1;"></div>' +
         '</div>';
 
-      body.querySelector("#wf-tab-share").onclick = function () { currentTab = "share"; renderTab(); };
-      body.querySelector("#wf-tab-browse").onclick = function () { currentTab = "browse"; renderTab(); };
+      body.querySelector("#wf-tab-share").onclick = function () { currentTab = "share"; renderTab(); updateTabStyles(); };
+      body.querySelector("#wf-tab-browse").onclick = function () { currentTab = "browse"; renderTab(); updateTabStyles(); };
       renderTab();
     }
 
@@ -625,11 +640,19 @@
     //  TAB 2 : PARCOURIR
     // ═══════════════════════════════════════════════
 
-    function renderBrowseTab(container, ctx) {
+    async function renderBrowseTab(container, ctx) {
       ctx = ctx || browseState;
       var q = encodeURIComponent(ctx.query);
       var s = encodeURIComponent(ctx.sort);
       var url = getApiUrl() + "/workflows?q=" + q + "&sort=" + s + "&page=" + ctx.page + "&limit=20";
+
+      // Injecter les styles CSS pour le hover des cards
+      if (!document.getElementById("wf-browse-styles")) {
+        var s = document.createElement("style");
+        s.id = "wf-browse-styles";
+        s.textContent = '.wf-card:hover .wf-del-btn { display: block !important; }';
+        document.head.appendChild(s);
+      }
 
       container.innerHTML =
         '<div style="display:flex;flex-direction:column;gap:8px;min-height:300px;">' +
@@ -661,7 +684,7 @@
 
       fetch(url, { headers: apiHeaders() })
         .then(function (r) { return r.json(); })
-        .then(function (data) {
+        .then(async function (data) {
           var items = data?.items || [];
           var total = data?.total || 0;
           var pages = Math.ceil(total / 20);
@@ -673,13 +696,25 @@
           }
 
           var html = "";
+          // Recuperer l'utilisateur courant pour autoriser la suppression
+          var _currentUser = null;
+          try {
+            var _meResp = await fetch(getApiUrl() + "/auth/me", { headers: apiHeaders() });
+            if (_meResp.ok) _currentUser = await _meResp.json();
+          } catch {}
+
           for (var i = 0; i < items.length; i++) {
             var w = items[i];
             var author = w.author || w.user_id || "?";
             var depsCount = (w.required_nodes?.length || 0) + (w.required_models?.length || 0) + (w.required_loras?.length || 0);
+            var canDelete = _currentUser && (_currentUser.id === w.user_id || _currentUser.role === 'admin');
+            var delHtml = canDelete ?
+              '<button class="wf-del-btn" onclick="event.stopPropagation();window._wfDeleteWorkflow(' + w.id + ', ' + "'" + esc(w.name) + "'" + ', this)" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border:1px solid #555;border-radius:4px;background:rgba(60,60,64,0.9);color:#f87171;font-size:11px;cursor:pointer;padding:0;line-height:20px;text-align:center;z-index:2;display:none;">🗑</button>' : '';
             html +=
-              '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid #444;border-radius:6px;margin-bottom:4px;cursor:pointer;background:#3a3a3e;"' +
+              '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid #444;border-radius:6px;margin-bottom:4px;cursor:pointer;background:#3a3a3e;position:relative;"' +
+
               ' onclick="window._wfOpenDetail(' + w.id + ', this)">' +
+              delHtml +
               (w.thumbnail ? '<img src="' + w.thumbnail + '" style="width:48px;height:48px;border-radius:4px;object-fit:cover;flex-shrink:0;">' : '<div style="width:48px;height:48px;border-radius:4px;background:#444;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">📤</div>') +
               '<div style="flex:1;min-width:0;">' +
               '<div style="font-size:13px;font-weight:600;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(w.name) + '</div>' +
@@ -713,6 +748,26 @@
       render();
     };
 
+    window._wfDeleteWorkflow = async function(id, name, btn) {
+      if (!confirm("Supprimer le workflow \x22" + name + "\x22 ?\n\nLes models associés non utilisés par d\'autres workflows seront aussi supprimés.")) return;
+      btn.textContent = "⏳";
+      try {
+        var resp = await fetch(getApiUrl() + "/workflows/" + id, { method: "DELETE", headers: apiHeaders() });
+        var data = await resp.json();
+        if (data.error) throw new Error(data.error);
+        var card = btn.closest('[style*="display:flex"]');
+        if (card) { card.style.transition = "opacity 0.3s, transform 0.3s"; card.style.opacity = "0"; card.style.transform = "scale(0.9)"; setTimeout(function() { if (card) card.remove(); }, 300); }
+        friaToast('Workflow "' + name + '" supprimé' + (data.deleted_files && data.deleted_files.length ? ' (' + data.deleted_files.length + ' fichiers orphelins supprimés)' : ''), "success");
+      } catch (e) {
+        friaToast("Erreur: " + e.message, "error");
+      }
+    };
+
+    window.friaOpenModalClose = function(btn) {
+      var modal = btn.closest('[style*="position: fixed"]');
+      if (modal) modal.remove();
+    };
+
     window._wfOpenDetail = function (workflowId) {
       var _dm = friaOpenModal("📥 Workflow", "", "580px");
       var detailModal = _dm.modal;
@@ -732,7 +787,7 @@
             '<div id="wf-install-deps" style="margin-bottom:12px;"></div>' +
             '<div style="display:flex;gap:8px;">' +
             '<button id="wf-load-btn" style="flex:1;padding:10px;border:none;border-radius:6px;background:#6366f1;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">📥 Charger le workflow</button>' +
-            '<button onclick="this.closest(\'[id^=fria-modal]\').remove()" style="padding:10px 16px;border:1px solid #555;border-radius:6px;background:transparent;color:#999;font-size:13px;cursor:pointer;">Fermer</button></div>' +
+            '<button onclick="friaOpenModalClose(this)" style="padding:10px 16px;border:1px solid #555;border-radius:6px;background:transparent;color:#999;font-size:13px;cursor:pointer;">Fermer</button></div>' +
             '<div id="wf-load-status" style="font-size:11px;color:#888;display:none;margin-top:8px;"></div>';
 
           detailBody.innerHTML = html;

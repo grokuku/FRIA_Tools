@@ -40,49 +40,66 @@ def _read_git_url(node_dir):
     return ""
 
 
-def _get_global_node_type_mapping():
+def _get_node_types_from_sys_modules():
     """
-    Utilise le NODE_CLASS_MAPPINGS global de ComfyUI pour tracer quel
-    custom_nodes folder fournit quel node type.
-    Retourne {folder_name: [node_type1, node_type2, ...]}
+    Parcourt sys.modules pour trouver les modules charges dans
+    custom_nodes/ qui ont un attribut NODE_CLASS_MAPPINGS.
+    Retourne {folder_name: [node_type1, ...]}.
+    Cette approche ne depend pas de inspect.getmodule() qui echoue
+    sur certaines classes ComfyUI (built-in, wrappers, etc.).
     """
     result = {}
     try:
-        import inspect
-        from nodes import NODE_CLASS_MAPPINGS
+        import sys as _sys
 
-        for node_type, node_class in NODE_CLASS_MAPPINGS.items():
+        for mod_name, mod in _sys.modules.items():
             try:
-                module = inspect.getmodule(node_class)
-                if not module or not getattr(module, '__file__', None):
+                if not hasattr(mod, 'NODE_CLASS_MAPPINGS'):
                     continue
-                filepath = module.__file__
-                # Normaliser le chemin
+                filepath = getattr(mod, '__file__', None)
+                if not filepath:
+                    continue
+                # Normaliser
                 filepath = os.path.normpath(filepath)
-
-                # Chercher "custom_nodes" dans le chemin
+                # Chercher custom_nodes dans le chemin
                 parts = filepath.split('custom_nodes')
                 if len(parts) < 2:
                     continue
-
-                # Le nom du dossier est la premiere composante apres custom_nodes
+                # Le nom du dossier
                 sub = parts[1].lstrip(os.sep).split(os.sep)[0]
                 if not sub or sub.startswith('.'):
                     continue
-
+                # Extraire les types
+                mapping = mod.NODE_CLASS_MAPPINGS
+                if not isinstance(mapping, dict):
+                    continue
                 if sub not in result:
                     result[sub] = []
-                if node_type not in result[sub]:
-                    result[sub].append(node_type)
+                for node_type in mapping.keys():
+                    if isinstance(node_type, str) and node_type not in result[sub]:
+                        result[sub].append(node_type)
             except Exception:
                 continue
-    except ImportError:
-        # ComfyUI non disponible, fallback sur parsing __init__.py
-        pass
     except Exception as e:
-        logging.warning(f"[FR.IA] _get_global_node_type_mapping error: {e}")
+        logging.warning(f"[FR.IA] _get_node_types_from_sys_modules error: {e}")
 
     return result
+
+
+def _get_global_node_type_mapping():
+    """
+    Utilise sys.modules pour trouver les node types de chaque pack
+    custom_nodes. Si ComfyUI n'est pas disponible, retourne {}.
+    Le fallback parsing __init__.py est utilise si sys.modules ne contient pas
+    le pack recherche.
+    """
+    import sys as _sys2
+    # Verifier si ComfyUI est charge (presence de key modules)
+    is_comfy = any(m.startswith('ComfyUI') or 'nodes' in m or 'custom_nodes' in m
+                   for m in _sys2.modules)
+    if not is_comfy:
+        return {}
+    return _get_node_types_from_sys_modules()
 
 
 # Cache pour le mapping
