@@ -39,17 +39,33 @@ _ALL_MODEL_CATEGORIES = [
 ]
 
 def _get_model_dirs():
-    """Retourne {type: [paths]} pour toutes les categories de models ComfyUI."""
-    if not _HAS_FOLDER_PATHS:
-        return {}
+    """Retourne {type: [paths]} pour toutes les categories de models ComfyUI.
+    Fallback : scanne les dossiers courants si folder_paths est vide ou indisponible."""
     result = {}
-    for cat in _ALL_MODEL_CATEGORIES:
-        try:
-            paths = folder_paths.get_folder_paths(cat)
-            if paths:
-                result[cat] = paths
-        except Exception:
-            pass
+    if _HAS_FOLDER_PATHS:
+        for cat in _ALL_MODEL_CATEGORIES:
+            try:
+                paths = folder_paths.get_folder_paths(cat)
+                if paths:
+                    result[cat] = paths
+            except Exception:
+                pass
+
+    # Fallback : si rien trouve via folder_paths, on scanne les dossiers courants
+    if not result:
+        # Chercher ComfyUI/models/ et ses sous-dossiers
+        for base_dir in [
+            "ComfyUI/models",
+            os.path.expanduser("~/ComfyUI/models"),
+            "../ComfyUI/models",
+            os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "models"),
+        ]:
+            if os.path.isdir(base_dir):
+                for name in os.listdir(base_dir):
+                    sub = os.path.join(base_dir, name)
+                    if os.path.isdir(sub):
+                        result[name] = [sub]
+                break
     return result
 
 
@@ -273,10 +289,21 @@ def download_model_from_server(upload_id, filename, file_type="model"):
 
 try:
     from aiohttp import web
+    import threading
 
-    def register_routes():
-        import server
-        srv = server.PromptServer.instance
+    def _register_model_routes():
+        """Enregistre les routes sur le serveur ComfyUI.
+        Utilise un timer pour attendre que PromptServer.instance soit disponible."""
+        try:
+            import server
+            srv = server.PromptServer.instance
+            if srv is None:
+                # Serveur pas encore pret → reessayer dans 1 seconde
+                threading.Timer(1.0, _register_model_routes).start()
+                return
+        except Exception:
+            threading.Timer(1.0, _register_model_routes).start()
+            return
 
         @srv.routes.get("/fria/models/list")
         async def list_models(request):
@@ -320,10 +347,12 @@ try:
             except Exception as e:
                 return web.json_response({"error": str(e)}, status=500)
 
-    register_routes()
-    logging.info("[FR.IA] Model manager routes registered")
+        logging.info("[FR.IA] Model manager routes registered")
+
+    # Demarrer l'enregistrement (lazy : reessaye si instance pas dispo)
+    threading.Timer(0.1, _register_model_routes).start()
 
 except ImportError:
     logging.warning("[FR.IA] aiohttp not available, model manager routes not registered")
 except Exception as e:
-    logging.warning(f"[FR.IA] Failed to register model manager routes: {e}")
+    logging.warning(f"[FR.IA] Failed to init model manager routes: {e}")
