@@ -161,10 +161,18 @@
   async function getInstalledCustomNodes() {
     try {
       var resp = await fetch('/fria/custom-nodes');
-      if (!resp.ok) return [];
+      if (!resp.ok) {
+        console.warn('[FR.IA] /fria/custom-nodes HTTP ' + resp.status + ' ' + resp.statusText + ' — route non enregistree ou erreur serveur');
+        return [];
+      }
       var data = await resp.json();
+      if (!data.nodes || data.nodes.length === 0) {
+        console.warn('[FR.IA] /fria/custom-nodes OK mais 0 packs trouves — verifier _CUSTOM_NODES_DIR et _extract_node_types');
+      } else {
+        console.log('[FR.IA] /fria/custom-nodes: ' + data.nodes.length + ' packs, ' + data.nodes.map(function(n){return n.name + "("+(n.node_types||[]).length+")";}).join(', '));
+      }
       return data.nodes || [];
-    } catch { return []; }
+    } catch(e) { console.error('[FR.IA] getInstalledCustomNodes error:', e); return []; }
   }
 
   async function detectDependencies(workflowJSON) {
@@ -284,9 +292,20 @@
     // Interroge l'endpoint Python /fria/models/list qui retourne les chemins + tailles
     try {
       var resp = await fetch('/fria/models/list');
-      if (!resp.ok) return { checkpoints: [], loras: [] };
-      return await resp.json();
-    } catch { return { checkpoints: [], loras: [] }; }
+      if (!resp.ok) {
+        console.warn('[FR.IA] /fria/models/list HTTP ' + resp.status + ' ' + resp.statusText + ' — route non enregistree ou erreur serveur');
+        return {};
+      }
+      var data = await resp.json();
+      var total = 0;
+      for (var cat in data) { total += data[cat].length; }
+      if (total === 0) {
+        console.warn('[FR.IA] /fria/models/list OK mais 0 fichiers trouves — verifier folder_paths et MODEL_EXTENSIONS');
+      } else {
+        console.log('[FR.IA] /fria/models/list: ' + total + ' fichiers dans ' + Object.keys(data).length + ' categories');
+      }
+      return data;
+    } catch(e) { console.error('[FR.IA] getLocalModelFiles error:', e); return {}; }
   }
 
   async function uploadModelToServer(filepath, fileType) {
