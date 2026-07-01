@@ -696,20 +696,12 @@
           }
 
           var html = "";
-          // Recuperer l'utilisateur courant pour autoriser la suppression
-          var _currentUser = null;
-          try {
-            var _meResp = await fetch(getApiUrl() + "/auth/me", { headers: apiHeaders() });
-            if (_meResp.ok) _currentUser = await _meResp.json();
-          } catch {}
-
           for (var i = 0; i < items.length; i++) {
             var w = items[i];
             var author = w.author || w.user_id || "?";
             var depsCount = (w.required_nodes?.length || 0) + (w.required_models?.length || 0) + (w.required_loras?.length || 0);
-            var canDelete = _currentUser && (_currentUser.id === w.user_id || _currentUser.role === 'admin');
-            var delHtml = canDelete ?
-              '<button class="wf-del-btn" onclick="event.stopPropagation();window._wfDeleteWorkflow(' + w.id + ', ' + "'" + esc(w.name) + "'" + ', this)" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border:1px solid #555;border-radius:4px;background:rgba(60,60,64,0.9);color:#f87171;font-size:11px;cursor:pointer;padding:0;line-height:20px;text-align:center;z-index:2;display:none;">🗑</button>' : '';
+            var delHtml =
+              '<button class="wf-del-btn" data-wf-id="' + w.id + '" data-wf-name="' + esc(w.name) + '" onclick="event.stopPropagation();window._wfDeleteWorkflow(this)" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border:1px solid #555;border-radius:4px;background:rgba(60,60,64,0.9);color:#f87171;font-size:11px;cursor:pointer;padding:0;line-height:20px;text-align:center;z-index:2;display:none;">🗑</button>';
             html +=
               '<div class="wf-card" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid #444;border-radius:6px;margin-bottom:4px;cursor:pointer;background:#3a3a3e;position:relative;"' +
 
@@ -748,14 +740,16 @@
       render();
     };
 
-    window._wfDeleteWorkflow = async function(id, name, btn) {
+    window._wfDeleteWorkflow = async function(btn) {
+      var id = parseInt(btn.getAttribute("data-wf-id"));
+      var name = btn.getAttribute("data-wf-name") || "?";
       if (!confirm("Supprimer le workflow \x22" + name + "\x22 ?\n\nLes models associés non utilisés par d\'autres workflows seront aussi supprimés.")) return;
       btn.textContent = "⏳";
       try {
         var resp = await fetch(getApiUrl() + "/workflows/" + id, { method: "DELETE", headers: apiHeaders() });
         var data = await resp.json();
         if (data.error) throw new Error(data.error);
-        var card = btn.closest('[style*="display:flex"]');
+        var card = btn.closest('[class*="wf-card"]');
         if (card) { card.style.transition = "opacity 0.3s, transform 0.3s"; card.style.opacity = "0"; card.style.transform = "scale(0.9)"; setTimeout(function() { if (card) card.remove(); }, 300); }
         friaToast('Workflow "' + name + '" supprimé' + (data.deleted_files && data.deleted_files.length ? ' (' + data.deleted_files.length + ' fichiers orphelins supprimés)' : ''), "success");
       } catch (e) {
