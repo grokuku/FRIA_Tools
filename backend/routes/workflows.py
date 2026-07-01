@@ -353,8 +353,60 @@ def delete_workflow(workflow_id):
         if row['user_id'] != user_id and not is_admin(user_id):
             return jsonify({'error': 'Accès refusé'}), 403
 
+        # Recuperer les models/loras du workflow avant suppression
+        wf = conn.execute(
+            "SELECT required_models, required_loras FROM shared_workflows WHERE id = ?",
+            (workflow_id,)
+        ).fetchone()
+        uploaded_ids = []
+        if wf:
+            import json as _json
+            for field in ['required_models', 'required_loras']:
+                try:
+                    items = _json.loads(wf[field] or '[]')
+                    for item in items:
+                        if isinstance(item, dict) and item.get('upload_id'):
+                            uploaded_ids.append(item['upload_id'])
+                except Exception:
+                    pass
+
         conn.execute("DELETE FROM shared_workflows WHERE id = ?", (workflow_id,))
+
+        # Supprimer les fichiers uploades orphelins (non utilises par d'autres workflows)
+        deleted_files = []
+        for uid in uploaded_ids:
+            still_used = False
+            all_wfs = conn.execute("SELECT required_models, required_loras FROM shared_workflows").fetchall()
+            for other_wf in all_wfs:
+                for field in ['required_models', 'required_loras']:
+                    try:
+                        other_items = _json.loads(other_wf[field] or '[]')
+                        for item in other_items:
+                            if isinstance(item, dict) and item.get('upload_id') == uid:
+                                still_used = True
+                                break
+                    except Exception:
+                        pass
+                    if still_used:
+                        break
+                if still_used:
+                    break
+            if not still_used:
+                try:
+                    from storage import get_storage
+                    storage = get_storage()
+                    file_row = conn.execute(
+                        "SELECT file_path FROM file_uploads WHERE id = ?",
+                        (uid,)
+                    ).fetchone()
+                    if file_row:
+                        storage.delete(file_row["file_path"])
+                        deleted_files.append(file_row['file_path'])
+                    conn.execute("DELETE FROM file_uploads WHERE id = ?", (uid,))
+                except Exception:
+                    pass
+
         conn.commit()
-        return jsonify({'status': 'ok'})
+        return jsonify({'status': 'ok', 'deleted_files': deleted_files})
     finally:
         conn.close()

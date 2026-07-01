@@ -42,68 +42,64 @@
     return d.innerHTML;
   }
 
-  // ── Types ComfyUI natifs ──
-  // Liste statique de base + enrichie dynamiquement via /object_info
-  var STANDARD_TYPES = new Set([
-    "CheckpointLoaderSimple", "CheckpointLoader", "CLIPTextEncode", "CLIPTextEncodeSDXL",
-    "CLIPSetLastLayer", "KSampler", "KSamplerAdvanced", "KSamplerSelect",
-    "SamplerCustom", "SamplerCustomAdvanced",
-    "VAELoader", "VAEDecode", "VAEEncode", "VAEDecodeTiled", "VAEEncodeTiled",
-    "LoraLoader", "LoraLoaderModelOnly",
-    "EmptyLatentImage", "EmptySD3LatentImage", "EmptyLatentImageCustom",
-    "SaveImage", "SaveImageWebsocket", "PreviewImage", "LoadImage",
-    "LoadImageBase64", "SaveImageWebsocket",
-    "CLIPVisionEncode", "CLIPVisionOutput",
-    "ControlNetLoader", "ControlNetLoaderAdvanced", "ControlNetApply",
-    "ControlNetApplyAdvanced", "SetUnionControlNetType",
-    "GLIGENLoader", "GLIGENTextBoxApply",
-    "UpscaleModelLoader", "ImageUpscaleWithModel",
-    "ImageScale", "ImageScaleToTotalPixels", "ImageScaleBy",
-    "LatentUpscale", "LatentUpscaleBy", "LatentDecode", "LatentFromBatch",
-    "LatentBlend", "LatentAdd", "LatentSubtract", "LatentMultiply",
-    "LatentInterpolate", "LatentBatchSeedChange", "LatentBatch",
-    "unCLIPCheckpointLoader", "unCLIPConditioning",
-    "CLIPLoader", "DualCLIPLoader", "CLIPLoaderModelOnly",
-    "UNETLoader", "UNETLoaderGGUF", "UnetLoaderGGUF", "DiffModelLoader",
-    "ConditioningZeroOut", "ConditioningCombine", "ConditioningConcat",
-    "ConditioningAverage", "ConditioningCombine_",
-    "PromptBlob", "Reroute", "Note", "PrimitiveNode", "WorkflowRestorer",
-    "CheckpointSave", "VAESave",
-    "InpaintModelConditioning", "InstructPixToPixConditioning",
-    "FluxGuidance", "TimestepEmbedding",
-    "ModelSamplingSD3", "ModelSamplingFlux", "ModelSamplingAuraFlow",
-    "ModelSamplingDiscrete", "ModelSamplingContinuousEDM", "ModelSamplingContinuousV",
-    "RescaleCFG", "KSamplerSelect", "CFGNoise",
-    "ImageCompositeMasked", "ImageComposite",
-    "ImageColorToMask", "ImageChannelSplit", "ImageChannelMerge",
-    "ImageBlur", "ImageSharpen", "ImageInvert", "ImageAdjust",
-    "EmptyImage", "ImageBatch", "ImagePadForOutpaint",
-    "LoadImageMask", "MaskToImage", "ImageToMask",
-    "CropMask", "ImageCrop", "ImageFlip", "ImageTransparency",
-    "SelfSegmentationGuide",
-  ]);
+  // ── Toast / progress ──
 
-  // Enrichir dynamiquement avec /object_info (tous les nodes natifs ComfyUI)
-  var _standardTypesLoaded = false;
-  async function ensureStandardTypesLoaded() {
-    if (_standardTypesLoaded) return;
-    try {
-      var resp = await fetch("/object_info");
-      if (resp.ok) {
-        var data = await resp.json();
-        var allTypes = Object.keys(data);
-        // Tous les types retournees par /object_info sont des nodes enregistres
-        // On les ajoute tous a STANDARD_TYPES — la distinction custom/natif
-        // se fera via /fria/custom-nodes (qui ne liste que custom_nodes/)
-        for (var i = 0; i < allTypes.length; i++) {
-          STANDARD_TYPES.add(allTypes[i]);
-        }
-      }
-    } catch (e) {
-      console.warn("[FR.IA] Could not load /object_info:", e);
+  var _toastContainer = null;
+
+  function _getToastContainer() {
+    if (!_toastContainer || !document.body.contains(_toastContainer)) {
+      _toastContainer = document.createElement("div");
+      _toastContainer.style.cssText = "position:fixed;bottom:16px;right:16px;z-index:99999;display:flex;flex-direction:column;gap:8px;pointer-events:none;";
+      document.body.appendChild(_toastContainer);
     }
-    _standardTypesLoaded = true;
+    return _toastContainer;
   }
+
+  function friaToast(message, type) {
+    // type: "info" | "success" | "error" | "progress"
+    var el = document.createElement("div");
+    var bg = type === "success" ? "#16a34a" : type === "error" ? "#dc2626" : type === "progress" ? "#1e293b" : "#334155";
+    el.style.cssText = "pointer-events:auto;padding:10px 16px;border-radius:8px;color:#fff;font-size:13px;max-width:380px;box-shadow:0 4px 12px rgba(0,0,0,0.4);display:flex;align-items:center;gap:10px;border:1px solid rgba(255,255,255,0.15);";
+    el.style.background = bg;
+    el.innerHTML = '<span>' + esc(message) + '</span>' + (type === "progress" ? '<div style="flex:1;height:4px;background:rgba(255,255,255,0.2);border-radius:2px;overflow:hidden;"><div style="width:0%;height:100%;background:#6366f1;transition:width 0.3s;"></div></div>' : '');
+    _getToastContainer().appendChild(el);
+    if (type !== "progress") {
+      setTimeout(function() {
+        el.style.transition = "opacity 0.5s";
+        el.style.opacity = "0";
+        setTimeout(function() { el.remove(); }, 500);
+      }, 4000);
+    }
+    return el;
+  }
+
+  function friaToastProgress(el, percent, message) {
+    if (message) {
+      var span = el.querySelector("span");
+      if (span) span.textContent = message;
+    }
+    var bar = el.querySelector("div > div");
+    if (bar) bar.style.width = Math.round(percent) + "%";
+  }
+
+  function friaToastDone(el, type, message) {
+    var bg = type === "success" ? "#16a34a" : "#dc2626";
+    el.style.background = bg;
+    var span = el.querySelector("span");
+    if (span) span.textContent = message;
+    var bar = el.querySelector("div > div");
+    if (bar) bar.parentElement.remove();
+    setTimeout(function() {
+      el.style.transition = "opacity 0.5s";
+      el.style.opacity = "0";
+      setTimeout(function() { el.remove(); }, 500);
+    }, 3000);
+  }
+
+  // ── Types ComfyUI natifs ──
+  // La distinction custom/natif se fait via /fria/custom-nodes :
+  // on recupere les types declares par chaque pack custom_nodes, et
+  // seuls les nodes du workflow qui matchent ces types sont des dependances.
 
   // Map complet des loaders -> {widgetIndex, category}
   // Couvre tous les loaders ComfyUI natifs + communautaires
@@ -160,20 +156,43 @@
   // Extensions de fichiers models connus
   var MODEL_EXTENSIONS = [".safetensors", ".ckpt", ".pt", ".pth", ".gguf", ".bin", ".t5", ".fp16", ".fp8", ".bf16"];
 
+  // ── Custom nodes : detection des URLs git (via endpoint ComfyUI) ──
+
+  async function getInstalledCustomNodes() {
+    try {
+      var resp = await fetch('/fria/custom-nodes');
+      if (!resp.ok) return [];
+      var data = await resp.json();
+      return data.nodes || [];
+    } catch { return []; }
+  }
+
   async function detectDependencies(workflowJSON) {
-    await ensureStandardTypesLoaded();
     var nodes = workflowJSON?.nodes || [];
     var deps = { nodes: [], models: [], loras: [] };
     var seen = { nodes: {}, models: {}, loras: {} };
+
+    // Recuperer les types de custom nodes installes depuis ComfyUI
+    var installedPacks = await getInstalledCustomNodes();
+    var customTypeToUrl = {};
+    var customTypeToPack = {};
+    for (var pi = 0; pi < installedPacks.length; pi++) {
+      var pack = installedPacks[pi];
+      var types = pack.node_types || [];
+      for (var t = 0; t < types.length; t++) {
+        if (pack.git_url) customTypeToUrl[types[t]] = pack.git_url;
+        customTypeToPack[types[t]] = pack.name;
+      }
+    }
 
     for (var i = 0; i < nodes.length; i++) {
       var type = nodes[i].type || "";
       var widgets = nodes[i].widgets_values || [];
 
-      // Custom nodes (non standard)
-      if (!STANDARD_TYPES.has(type) && !type.startsWith("_") && !seen.nodes[type]) {
+      // Custom nodes : seulement si le type est declare par un pack custom_nodes
+      if (customTypeToPack[type] && !seen.nodes[type]) {
         seen.nodes[type] = true;
-        deps.nodes.push({ name: type, url: "" });
+        // Pas besoin de l'ajouter individuellement, on groupe par pack apres
       }
 
       // Models / LoRAs via le map des loaders connus
@@ -181,7 +200,6 @@
       if (loader) {
         var filename = widgets[loader.idx];
         if (filename && typeof filename === "string" && filename !== "None" && filename !== "none") {
-          // Si c'est un lora, on le met dans deps.loras
           if (loader.cat === "lora") {
             if (!seen.loras[filename]) {
               seen.loras[filename] = true;
@@ -196,8 +214,7 @@
         }
       }
 
-      // Detection dynamique : si le type n'est pas dans MODEL_LOADERS mais qu'un
-      // widget value ressemble a un fichier model, on le detecte aussi
+      // Detection dynamique : widget value qui ressemble a un fichier model
       if (!loader) {
         for (var wi = 0; wi < widgets.length; wi++) {
           var wv = widgets[wi];
@@ -205,7 +222,6 @@
             var lower = wv.toLowerCase();
             for (var ei = 0; ei < MODEL_EXTENSIONS.length; ei++) {
               if (lower.endsWith(MODEL_EXTENSIONS[ei]) && !seen.models[wv] && !seen.loras[wv]) {
-                // Heuristique : si le type contient "Lora", c'est un lora
                 if (type.toLowerCase().indexOf("lora") >= 0) {
                   seen.loras[wv] = true;
                   deps.loras.push({ name: wv, type: "lora" });
@@ -220,51 +236,24 @@
         }
       }
     }
-    return deps;
-  }
 
-  // ── Custom nodes : detection des URLs git (via endpoint ComfyUI) ──
-
-  async function getInstalledCustomNodes() {
-    try {
-      var resp = await fetch('/fria/custom-nodes');
-      if (!resp.ok) return [];
-      var data = await resp.json();
-      return data.nodes || [];
-    } catch { return []; }
-  }
-
-  async function enrichDependenciesWithGitUrls(deps) {
-    // Interroger ComfyUI pour les custom nodes installes + leurs types
-    var installed = await getInstalledCustomNodes();
-
-    // Construire 2 maps: node_type → git_url  ET  node_type → pack_name
-    var typeToUrl = {};
-    var typeToPack = {};
-    for (var i = 0; i < installed.length; i++) {
-      var pack = installed[i];
-      var types = pack.node_types || [];
-      for (var t = 0; t < types.length; t++) {
-        if (pack.git_url) typeToUrl[types[t]] = pack.git_url;
-        typeToPack[types[t]] = pack.name;
-      }
-    }
-
-    // Grouper les nodes par pack (url) au lieu d'avoir des entrees individuelles
-    var packMap = {};   // key: url ou "__unknown__" → {name, url, node_types: []}
-    for (var i = 0; i < deps.nodes.length; i++) {
-      var nodeName = deps.nodes[i].name;
-      var url = typeToUrl[nodeName] || "";
-      var packName = typeToPack[nodeName] || nodeName;
-      var key = url || "__unknown_" + nodeName;
+    // Grouper les custom nodes par pack (git_url)
+    var packMap = {};
+    for (var i = 0; i < nodes.length; i++) {
+      var type = nodes[i].type || "";
+      if (!customTypeToPack[type]) continue;
+      var url = customTypeToUrl[type] || "";
+      var packName = customTypeToPack[type];
+      var key = url || "__unknown_" + packName;
       if (!packMap[key]) {
         packMap[key] = { name: packName, url: url, node_types: [] };
       }
-      packMap[key].node_types.push(nodeName);
+      if (packMap[key].node_types.indexOf(type) < 0) {
+        packMap[key].node_types.push(type);
+      }
     }
-
-    // Convertir en tableau
     deps.nodes = Object.keys(packMap).map(function(k) { return packMap[k]; });
+
     return deps;
   }
 
@@ -414,8 +403,6 @@
       }
 
       var deps = await detectDependencies(workflowJSON);
-      // Enrichir avec les URLs git des custom nodes installes
-      deps = await enrichDependenciesWithGitUrls(deps);
       var existingId = null;
 
       container.innerHTML =
@@ -482,6 +469,7 @@
               .then(function (r) { return r.json(); })
               .then(function (me) {
                 if (!me || typeof me.id !== 'string') return;
+                var otherAuthor = null;
                 for (var i = 0; i < items.length; i++) {
                   if (items[i].name.toLowerCase() === name.toLowerCase() && items[i].user_id === me.id) {
                     existingId = items[i].id;
@@ -490,11 +478,25 @@
                     btn.style.background = "#f59e0b";
                     return;
                   }
+                  // Un autre utilisateur a un workflow du meme nom
+                  if (items[i].name.toLowerCase() === name.toLowerCase() && items[i].user_id !== me.id) {
+                    otherAuthor = items[i];
+                  }
                 }
                 existingId = null;
                 var btn = container.querySelector("#wf-publish-btn");
-                btn.textContent = "📤 Publier";
-                btn.style.background = "#6366f1";
+                if (otherAuthor) {
+                  // Un autre utilisateur a ce nom → ajouter un suffixe
+                  var suffix = " (" + (me.username || me.id.substring(0, 6)) + ")";
+                  if (!name.endsWith(suffix)) {
+                    container.querySelector("#wf-name").value = name + suffix;
+                  }
+                  btn.textContent = "📤 Publier (nom ajusté)";
+                  btn.style.background = "#6366f1";
+                } else {
+                  btn.textContent = "📤 Publier";
+                  btn.style.background = "#6366f1";
+                }
               });
           });
       }
@@ -548,10 +550,8 @@
         // Uploader les models/loras cochés vers le serveur FR.IA
         var uploadCbs = container.querySelectorAll(".wf-upload-cb:checked");
         if (uploadCbs.length > 0) {
-          statusEl.textContent = "Recherche des fichiers locaux...";
-          // Lister les models locaux pour trouver les chemins
           var localFiles = await getLocalModelFiles();
-          // Construire un map global: filename → {name, path, size} pour toutes les categories
+          // Construire un map global: filename → {name, path, size}
           var allFilesMap = {};
           for (var cat in localFiles) {
             var catFiles = localFiles[cat];
@@ -567,12 +567,13 @@
             var localFile = allFilesMap[fileName];
 
             if (!localFile) {
-              statusEl.style.color = "#fbbf24";
-              statusEl.textContent = "⚠️ " + fileName + " non trouvé localement, skip";
+              friaToast("⚠️ " + fileName + " non trouvé localement, skip", "info");
               continue;
             }
 
-            statusEl.textContent = "Upload " + fileName + "...";
+            var sizeMB = (localFile.size / 1048576).toFixed(1);
+            var toast = friaToast("Upload " + fileName + " (" + sizeMB + " MB)...", "progress");
+
             var upResult = await uploadModelToServer(localFile.path, fileType);
             if (upResult.success) {
               // Lier l'upload_id au model/lora dans deps
@@ -584,11 +585,9 @@
                   break;
                 }
               }
-              statusEl.style.color = "#34d399";
-              statusEl.textContent = "✅ " + fileName + " uploadé" + (upResult.deduplicated ? " (déjà présent)" : "");
+              friaToastDone(toast, "success", "✅ " + fileName + " uploadé" + (upResult.deduplicated ? " (déjà présent)" : ""));
             } else {
-              statusEl.style.color = "#f87171";
-              statusEl.textContent = "❌ Upload " + fileName + ": " + (upResult.error || "échec");
+              friaToastDone(toast, "error", "❌ " + fileName + ": " + (upResult.error || "échec"));
             }
           }
         }
@@ -828,32 +827,34 @@
           // Download a file from server (global for onclick)
           window._wfDownloadFile = async function(uploadId, fileName, btn) {
             var fileType = btn.getAttribute('data-file-type') || 'model';
-            btn.textContent = "⏳ Download...";
+            btn.textContent = "⏳...";
             btn.disabled = true;
+            var toast = friaToast("Download " + fileName + "...", "progress");
             try {
-              // Le Python download le fichier et le sauvegarde dans le bon dossier
               var result = await downloadModelFromServer(uploadId, fileName, fileType);
               if (result.success) {
                 btn.textContent = "✅ Installé";
                 btn.style.color = "#34d399";
                 btn.style.borderColor = "#34d399";
+                friaToastDone(toast, "success", "✅ " + fileName + " installé");
               } else {
-                btn.textContent = "❌ Échec";
+                btn.textContent = "❌";
                 btn.style.color = "#f87171";
-                if (result.error) console.error("[FR.IA] Download:", result.error);
+                friaToastDone(toast, "error", "❌ " + fileName + ": " + (result.error || "échec"));
               }
             } catch (e) {
-              btn.textContent = "❌ Erreur";
+              btn.textContent = "❌";
               btn.style.color = "#f87171";
-              console.error("[FR.IA] Download failed:", e);
+              friaToastDone(toast, "error", "❌ " + fileName + ": " + e.message);
             }
           };
 
           // Install custom node (global for onclick)
           window._wfInstallNode = async function(gitUrl, nodeName, btn) {
-            if (!gitUrl) { alert("Pas d\'URL git pour ce node."); return; }
+            if (!gitUrl) { friaToast("Pas d URL git pour ce node.", "error"); return; }
             btn.textContent = "⏳ Clone...";
             btn.disabled = true;
+            var toast = friaToast("Installation " + nodeName + "...", "progress");
             try {
               var resp = await fetch("/fria/custom-nodes/install", {
                 method: "POST",
@@ -865,14 +866,16 @@
                 btn.textContent = "✅ Installé";
                 btn.style.color = "#34d399";
                 btn.style.borderColor = "#34d399";
+                friaToastDone(toast, "success", "✅ " + nodeName + " installé");
               } else {
-                btn.textContent = "❌ Échec";
+                btn.textContent = "❌";
                 btn.style.color = "#f87171";
-                if (data.message) setTimeout(function() { alert(data.message); }, 100);
+                friaToastDone(toast, "error", "❌ " + (data.message || "échec"));
               }
             } catch (e) {
-              btn.textContent = "❌ Erreur";
+              btn.textContent = "❌";
               btn.style.color = "#f87171";
+              friaToastDone(toast, "error", "❌ " + e.message);
             }
           };
 
