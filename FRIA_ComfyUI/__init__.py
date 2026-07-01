@@ -53,30 +53,30 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
 
-# ── Routes aiohttp (pattern standard ComfyUI) ──
-# Enregistrées directement ici avec le décorateur @server.PromptServer.instance.routes
-# C'est le pattern utilisé par toutes les extensions ComfyUI — fiable.
-
+# ── Routes aiohttp ──
+# Reupere le PromptServer depuis sys.modules (evite toute ambiguite d'import)
 import os
 import logging
+import sys as _sys
 
-try:
-    import server
+_server_mod = _sys.modules.get('server')
+_srv_class = getattr(_server_mod, 'PromptServer', None)
+_srv = getattr(_srv_class, 'instance', None) if _srv_class else None
+
+if _srv is not None:
     from aiohttp import web
 
-    @server.PromptServer.instance.routes.get("/fria/custom-nodes")
+    @_srv.routes.get("/fria/custom-nodes")
     async def _fria_list_custom_nodes(request):
-        """Liste des custom nodes installés + URLs git."""
         try:
             nodes = _get_installed_custom_nodes()
             return web.json_response({"nodes": nodes})
         except Exception as e:
-            logging.exception(f"[FR.IA] list_custom_nodes error: {e}")
+            logging.exception(f"[FR.IA] custom-nodes error: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
-    @server.PromptServer.instance.routes.post("/fria/custom-nodes/install")
+    @_srv.routes.post("/fria/custom-nodes/install")
     async def _fria_install_node(request):
-        """Clone un custom node via git."""
         try:
             body = await request.json()
             git_url = body.get("git_url", "").strip()
@@ -87,22 +87,20 @@ try:
             status = 200 if result["success"] else 400
             return web.json_response(result, status=status)
         except Exception as e:
-            logging.exception(f"[FR.IA] install_node error: {e}")
+            logging.exception(f"[FR.IA] install-node error: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
-    @server.PromptServer.instance.routes.get("/fria/models/list")
+    @_srv.routes.get("/fria/models/list")
     async def _fria_list_models(request):
-        """Liste les models locaux (toutes catégories)."""
         try:
             models = list_local_models()
             return web.json_response(models)
         except Exception as e:
-            logging.exception(f"[FR.IA] list_models error: {e}")
+            logging.exception(f"[FR.IA] models-list error: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
-    @server.PromptServer.instance.routes.post("/fria/models/upload")
+    @_srv.routes.post("/fria/models/upload")
     async def _fria_upload_model(request):
-        """Upload un model local vers le serveur FR.IA."""
         try:
             body = await request.json()
             filepath = body.get("path", "")
@@ -113,12 +111,11 @@ try:
             status = 200 if result["success"] else 400
             return web.json_response(result, status=status)
         except Exception as e:
-            logging.exception(f"[FR.IA] upload_model error: {e}")
+            logging.exception(f"[FR.IA] upload-model error: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
-    @server.PromptServer.instance.routes.post("/fria/models/download")
+    @_srv.routes.post("/fria/models/download")
     async def _fria_download_model(request):
-        """Download un model depuis FR.IA → sauvegarde locale."""
         try:
             body = await request.json()
             upload_id = body.get("upload_id", "")
@@ -130,10 +127,12 @@ try:
             status = 200 if result["success"] else 400
             return web.json_response(result, status=status)
         except Exception as e:
-            logging.exception(f"[FR.IA] download_model error: {e}")
+            logging.exception(f"[FR.IA] download-model error: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
     logging.info("[FR.IA] All routes registered (custom-nodes, models)")
-
-except Exception as e:
-    logging.error(f"[FR.IA] Failed to register routes: {e}", exc_info=True)
+else:
+    logging.warning(
+        "[FR.IA] Routes not registered: PromptServer.instance not available "
+        f"(server in sys.modules: {_server_mod is not None})"
+    )

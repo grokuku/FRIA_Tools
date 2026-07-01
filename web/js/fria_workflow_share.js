@@ -484,7 +484,6 @@
               .then(function (r) { return r.json(); })
               .then(function (me) {
                 if (!me || typeof me.id !== 'string') return;
-                var otherAuthor = null;
                 for (var i = 0; i < items.length; i++) {
                   if (items[i].name.toLowerCase() === name.toLowerCase() && items[i].user_id === me.id) {
                     existingId = items[i].id;
@@ -493,25 +492,11 @@
                     btn.style.background = "#f59e0b";
                     return;
                   }
-                  // Un autre utilisateur a un workflow du meme nom
-                  if (items[i].name.toLowerCase() === name.toLowerCase() && items[i].user_id !== me.id) {
-                    otherAuthor = items[i];
-                  }
                 }
                 existingId = null;
                 var btn = container.querySelector("#wf-publish-btn");
-                if (otherAuthor) {
-                  // Un autre utilisateur a ce nom → ajouter un suffixe
-                  var suffix = " (" + (me.username || me.id.substring(0, 6)) + ")";
-                  if (!name.endsWith(suffix)) {
-                    container.querySelector("#wf-name").value = name + suffix;
-                  }
-                  btn.textContent = "📤 Publier (nom ajusté)";
-                  btn.style.background = "#6366f1";
-                } else {
-                  btn.textContent = "📤 Publier";
-                  btn.style.background = "#6366f1";
-                }
+                btn.textContent = "📤 Publier";
+                btn.style.background = "#6366f1";
               });
           });
       }
