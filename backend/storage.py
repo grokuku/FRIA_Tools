@@ -41,6 +41,16 @@ class StorageBackend:
         """Supprime un fichier du stockage."""
         raise NotImplementedError
 
+    def append_chunk(self, remote_path: str, data: bytes) -> bool:
+        """Append un chunk de donnees a un fichier existant sur le stockage.
+        Utile pour les uploads chunkees sans fichier temporaire local.
+        Par defaut non implemente (utilise un fichier temporaire local)."""
+        raise NotImplementedError
+
+    def create_empty(self, remote_path: str) -> bool:
+        """Cree un fichier vide sur le stockage (pour init d'upload direct)."""
+        raise NotImplementedError
+
     def exists(self, remote_path: str) -> bool:
         """Vérifie si un fichier existe."""
         raise NotImplementedError
@@ -65,6 +75,29 @@ class LocalStorage(StorageBackend):
 
     def _full_path(self, remote_path: str) -> Path:
         return self.base_dir / remote_path
+
+    def create_empty(self, remote_path: str) -> bool:
+        """Cree un fichier vide en local."""
+        try:
+            dest = self._full_path(remote_path)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.touch()
+            return True
+        except Exception as e:
+            logging.warning(f"[LocalStorage] create_empty failed: {e}")
+            return False
+
+    def append_chunk(self, remote_path: str, data: bytes) -> bool:
+        """Append un chunk directement au fichier final (pas de temp file)."""
+        try:
+            dest = self._full_path(remote_path)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with open(str(dest), 'ab') as f:
+                f.write(data)
+            return True
+        except Exception as e:
+            logging.warning(f"[LocalStorage] append_chunk failed: {e}")
+            return False
 
     def upload(self, local_path: str, remote_path: str) -> bool:
         import shutil
@@ -181,6 +214,31 @@ class SFTPStorage(StorageBackend):
                 sftp.mkdir(d)
             except Exception:
                 pass  # race condition possible, on ignore
+
+    def create_empty(self, remote_path: str) -> bool:
+        """Cree un fichier vide sur le SFTP."""
+        try:
+            sftp = self._connect()
+            full = self._full_path(remote_path)
+            self._mkdir_p(sftp, "/".join(full.split("/")[:-1]))
+            with sftp.open(full, 'wb') as f:
+                pass  # fichier vide
+            return True
+        except Exception as e:
+            logging.exception(f"[SFTP] create_empty failed: {e}")
+            return False
+
+    def append_chunk(self, remote_path: str, data: bytes) -> bool:
+        """Append un chunk directement sur le fichier SFTP (pas de temp local)."""
+        try:
+            sftp = self._connect()
+            full = self._full_path(remote_path)
+            with sftp.open(full, 'ab') as f:
+                f.write(data)
+            return True
+        except Exception as e:
+            logging.exception(f"[SFTP] append_chunk failed: {e}")
+            return False
 
     def upload(self, local_path: str, remote_path: str) -> bool:
         try:

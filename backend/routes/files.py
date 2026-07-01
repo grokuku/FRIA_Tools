@@ -19,7 +19,7 @@ import logging
 import tempfile
 import secrets
 from context import *
-from storage import get_storage
+from storage import get_storage, StorageBackend
 
 CHUNK_SIZE = 5 * 1024 * 1024  # 5 MB par chunk
 MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024  # 10 GB max
@@ -86,25 +86,44 @@ def init_upload():
 
     upload_id = secrets.token_urlsafe(16)
     total_chunks = (size + CHUNK_SIZE - 1) // CHUNK_SIZE
+
+    # Verifier si le storage backend supporte l'ecriture directe (pas de temp local)
+    storage = get_storage()
+    supports_direct = type(storage).__name__ == 'SFTPStorage'
+    remote_path = ""
     temp_path = os.path.join(TEMP_DIR, f"{upload_id}.tmp")
 
-    # Créer le fichier temp vide
-    with open(temp_path, 'wb') as f:
-        pass
+    if supports_direct:
+        # Streaming direct vers le storage (ex: SFTP) — pas de fichier local
+        remote_path = f"workflows/{file_type}s/{upload_id}/{filename}"
+        storage.create_empty(remote_path)
+        temp_path = ""  # pas de fichier local
+    else:
+        # Fallback: fichier temporaire local
+        with open(temp_path, 'wb') as f:
+            pass
 
     conn = get_db()
     try:
-        conn.execute("""
-            INSERT INTO file_uploads (upload_id, user_id, filename, size, type,
-                                       chunk_size, total_chunks, temp_path)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (upload_id, user_id, filename, size, file_type,
-              CHUNK_SIZE, total_chunks, temp_path))
+        if supports_direct:
+            conn.execute("""
+                INSERT INTO file_uploads (upload_id, user_id, filename, size, type,
+                                           chunk_size, total_chunks, temp_path, final_path)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (upload_id, user_id, filename, size, file_type,
+                  CHUNK_SIZE, total_chunks, temp_path, remote_path))
+        else:
+            conn.execute("""
+                INSERT INTO file_uploads (upload_id, user_id, filename, size, type,
+                                           chunk_size, total_chunks, temp_path)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (upload_id, user_id, filename, size, file_type,
+                  CHUNK_SIZE, total_chunks, temp_path))
         conn.commit()
     finally:
         conn.close()
 
-    logging.info(f"[files] Init upload {upload_id}: {filename} ({size} bytes, {total_chunks} chunks)")
+    logging.info(f"[files] Init upload {upload_id}: {filename} ({size} bytes, {total_chunks} chunks, direct={supports_direct})")
 
     return jsonify({
         'upload_id': upload_id,
@@ -133,7 +152,7 @@ def upload_chunk():
     conn = get_db()
     try:
         row = conn.execute(
-            "SELECT temp_path, received_chunks, total_chunks, status, user_id FROM file_uploads WHERE upload_id = ?",
+            "SELECT temp_path, received_chunks, total_chunks, status, user_id, final_path, filename, type FROM file_uploads WHERE upload_id = ?",
             (upload_id,)
         ).fetchone()
         if not row:
@@ -146,9 +165,21 @@ def upload_chunk():
         temp_path = row['temp_path']
         chunk_data = request.files['data'].read()
 
-        # Append au temp file
-        with open(temp_path, 'ab') as f:
-            f.write(chunk_data)
+        if temp_path:
+            # Ecriture locale (fallback)
+            with open(temp_path, 'ab') as f:
+                f.write(chunk_data)
+        else:
+            # Streaming direct vers le storage (SFTP)
+            # Recuperer le remote_path — soit du champ final_path, soit on le construit
+            if row['final_path']:
+                remote = row['final_path']
+            else:
+                remote = f"workflows/{row['type']}s/{upload_id}/{row['filename']}"
+            storage = get_storage()
+            success = storage.append_chunk(remote, chunk_data)
+            if not success:
+                return jsonify({'error': 'Échec du chunk sur le stockage distant'}), 500
 
         new_received = row['received_chunks'] + 1
         conn.execute(
