@@ -30,26 +30,33 @@ except Exception:
 CHUNK_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
+# Toutes les categories de models connues par ComfyUI
+_ALL_MODEL_CATEGORIES = [
+    'checkpoints', 'loras', 'vae', 'clip', 'clip_vision', 'controlnet',
+    'unet', 'unet_gguf', 'upscale_models', 'gligen', 'hypernetworks',
+    'text_encoders', 'style_models', 'diffusion_models', 'configs',
+    'embeddings', 'bbxe/models',
+]
+
 def _get_model_dirs():
-    """Retourne {type: [paths]} pour les checkpoints et loras."""
+    """Retourne {type: [paths]} pour toutes les categories de models ComfyUI."""
     if not _HAS_FOLDER_PATHS:
         return {}
     result = {}
-    try:
-        result['checkpoints'] = folder_paths.get_folder_paths('checkpoints')
-    except Exception:
-        result['checkpoints'] = []
-    try:
-        result['loras'] = folder_paths.get_folder_paths('loras')
-    except Exception:
-        result['loras'] = []
+    for cat in _ALL_MODEL_CATEGORIES:
+        try:
+            paths = folder_paths.get_folder_paths(cat)
+            if paths:
+                result[cat] = paths
+        except Exception:
+            pass
     return result
 
 
 def _list_models_in_dirs(dirs, extensions=None):
-    """Liste les fichiers dans une liste de dossiers."""
+    """Liste les fichiers dans une liste de dossiers (scan recursif 1 niveau)."""
     if extensions is None:
-        extensions = ['.safetensors', '.ckpt', '.pt', '.pth', '.gguf', '.bin']
+        extensions = ['.safetensors', '.ckpt', '.pt', '.pth', '.gguf', '.bin', '.t5', '.fp16', '.fp8', '.bf16']
     results = []
     for d in dirs:
         if not os.path.isdir(d):
@@ -64,15 +71,27 @@ def _list_models_in_dirs(dirs, extensions=None):
                         'path': full,
                         'size': os.path.getsize(full),
                     })
+            elif os.path.isdir(full):
+                # Scan 1 niveau de sous-dossier (ex: gguf/, lora/, etc.)
+                for sub_name in os.listdir(full):
+                    sub_full = os.path.join(full, sub_name)
+                    if os.path.isfile(sub_full):
+                        ext = os.path.splitext(sub_name)[1].lower()
+                        if ext in extensions:
+                            results.append({
+                                'name': sub_name,
+                                'path': sub_full,
+                                'size': os.path.getsize(sub_full),
+                            })
     return results
 
 
 def list_local_models():
-    """Liste tous les models et loras locaux."""
+    """Liste tous les models locaux dans toutes les categories ComfyUI."""
     dirs = _get_model_dirs()
-    result = {'checkpoints': [], 'loras': []}
-    result['checkpoints'] = _list_models_in_dirs(dirs.get('checkpoints', []))
-    result['loras'] = _list_models_in_dirs(dirs.get('loras', []))
+    result = {}
+    for cat, cat_dirs in dirs.items():
+        result[cat] = _list_models_in_dirs(cat_dirs)
     return result
 
 
@@ -204,15 +223,32 @@ def download_model_from_server(upload_id, filename, file_type="model"):
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    # Déterminer le dossier de destination
+    # Déterminer le dossier de destination selon le type
     dirs = _get_model_dirs()
-    if file_type == "lora":
-        dest_dirs = dirs.get('loras', [])
-    else:
-        dest_dirs = dirs.get('checkpoints', [])
+
+    # Mapper les categories de detection vers les dossiers ComfyUI
+    type_to_cat = {
+        'checkpoint': 'checkpoints',
+        'lora': 'loras',
+        'vae': 'vae',
+        'clip': 'clip',
+        'clip_vision': 'clip_vision',
+        'controlnet': 'controlnet',
+        'unet': 'unet',
+        'unet_gguf': 'unet_gguf',
+        'upscale': 'upscale_models',
+        'gligen': 'gligen',
+        'hypernetwork': 'hypernetworks',
+        'text_encoder': 'text_encoders',
+        'style_model': 'style_models',
+        'model': 'checkpoints',  # fallback
+    }
+
+    cat = type_to_cat.get(file_type, 'checkpoints')
+    dest_dirs = dirs.get(cat, dirs.get('checkpoints', []))
 
     if not dest_dirs:
-        return {'success': False, 'error': 'No model directory found'}
+        return {'success': False, 'error': f'No model directory for type {file_type}'}
 
     dest_dir = dest_dirs[0]
     dest_path = os.path.join(dest_dir, filename)

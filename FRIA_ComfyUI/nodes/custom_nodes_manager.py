@@ -40,33 +40,91 @@ def _read_git_url(node_dir):
     return ""
 
 
+def _get_global_node_type_mapping():
+    """
+    Utilise le NODE_CLASS_MAPPINGS global de ComfyUI pour tracer quel
+    custom_nodes folder fournit quel node type.
+    Retourne {folder_name: [node_type1, node_type2, ...]}
+    """
+    result = {}
+    try:
+        import inspect
+        from nodes import NODE_CLASS_MAPPINGS
+
+        for node_type, node_class in NODE_CLASS_MAPPINGS.items():
+            try:
+                module = inspect.getmodule(node_class)
+                if not module or not getattr(module, '__file__', None):
+                    continue
+                filepath = module.__file__
+                # Normaliser le chemin
+                filepath = os.path.normpath(filepath)
+
+                # Chercher "custom_nodes" dans le chemin
+                parts = filepath.split('custom_nodes')
+                if len(parts) < 2:
+                    continue
+
+                # Le nom du dossier est la premiere composante apres custom_nodes
+                sub = parts[1].lstrip(os.sep).split(os.sep)[0]
+                if not sub or sub.startswith('.'):
+                    continue
+
+                if sub not in result:
+                    result[sub] = []
+                if node_type not in result[sub]:
+                    result[sub].append(node_type)
+            except Exception:
+                continue
+    except ImportError:
+        # ComfyUI non disponible, fallback sur parsing __init__.py
+        pass
+    except Exception as e:
+        logging.warning(f"[FR.IA] _get_global_node_type_mapping error: {e}")
+
+    return result
+
+
+# Cache pour le mapping
+_NODE_TYPE_MAP_CACHE = None
+
+def _get_node_type_map():
+    global _NODE_TYPE_MAP_CACHE
+    if _NODE_TYPE_MAP_CACHE is None:
+        _NODE_TYPE_MAP_CACHE = _get_global_node_type_mapping()
+    return _NODE_TYPE_MAP_CACHE
+
+
 def _extract_node_types(node_dir):
-    """Lit __init__.py d'un custom node et extrait les types de nodes qu'il enregistre."""
+    """Retourne les node types fournis par ce dossier custom_nodes.
+    Utilise le NODE_CLASS_MAPPINGS global de ComfyUI (fiable), avec fallback parsing."""
+    folder_name = os.path.basename(node_dir)
+    type_map = _get_node_type_map()
+
+    if folder_name in type_map:
+        return type_map[folder_name]
+
+    # Fallback: parsing __init__.py si le mapping global n'a pas trouve ce dossier
     init_file = os.path.join(node_dir, "__init__.py")
     if not os.path.isfile(init_file):
         return []
     try:
         with open(init_file, "r", encoding="utf-8", errors="ignore") as f:
             source = f.read()
-        # Chercher NODE_CLASS_MAPPINGS = { "TypeName": ClassName, ... }
-        # Pattern 1: NODE_CLASS_MAPPINGS = { "Type": Class, ... }
-        matches = re.findall(r'["\']([A-Za-z0-9_]+)["\']\s*:', source)
-        # Filtrer les faux positifs (clefs python communes)
-        blacklist = {'input_name', 'input_type', 'return_type', 'return_name',
-                     'category', 'output_node', 'description', 'name', 'type',
-                     'class_type', 'data', 'kwargs', 'args', 'mode', 'model',
-                     'clip', 'vae', 'positive', 'negative', 'latent', 'image',
-                     'seed', 'steps', 'cfg', 'sampler_name', 'scheduler',
-                     'denoise', 'filename_prefix', 'images', 'text', 'prompt'}
-        types = [m for m in matches if m not in blacklist and len(m) > 2]
-        # Dedup en preservant l'ordre
-        seen = set()
-        result = []
-        for t in types:
-            if t not in seen:
-                seen.add(t)
-                result.append(t)
-        return result
+        # Chercher specifiquement le bloc NODE_CLASS_MAPPINGS
+        match = re.search(r'NODE_CLASS_MAPPINGS\s*=\s*\{([^}]+)\}', source, re.DOTALL)
+        if match:
+            block = match.group(1)
+            types = re.findall(r'["\']([A-Za-z0-9_]+)["\']', block)
+            # Dedup
+            seen = set()
+            result = []
+            for t in types:
+                if t not in seen and len(t) > 2:
+                    seen.add(t)
+                    result.append(t)
+            return result
+        return []
     except Exception:
         return []
 

@@ -43,19 +43,67 @@
   }
 
   // ── Types ComfyUI natifs ──
-
+  // Liste statique de base + enrichie dynamiquement via /object_info
   var STANDARD_TYPES = new Set([
-    "CheckpointLoaderSimple", "CLIPTextEncode", "CLIPSetLastLayer",
-    "KSampler", "KSamplerAdvanced", "VAELoader", "VAEDecode", "VAEEncode",
-    "LoraLoader", "EmptyLatentImage", "SaveImage", "PreviewImage",
-    "LoadImage", "CLIPVisionEncode", "ControlNetLoader",
-    "GLIGENLoader", "UpscaleModelLoader", "unCLIPCheckpointLoader",
-    "CLIPLoader", "DualCLIPLoader", "UNETLoader",
-    "ImageUpscaleWithModel", "ImageScale", "ImageScaleToTotalPixels",
-    "LatentUpscale", "LatentDecode", "LatentFromBatch",
-    "CheckpointSave", "PromptBlob", "Reroute", "Note",
-    "PrimitiveNode", "WorkflowRestorer",
+    "CheckpointLoaderSimple", "CheckpointLoader", "CLIPTextEncode", "CLIPTextEncodeSDXL",
+    "CLIPSetLastLayer", "KSampler", "KSamplerAdvanced", "KSamplerSelect",
+    "SamplerCustom", "SamplerCustomAdvanced",
+    "VAELoader", "VAEDecode", "VAEEncode", "VAEDecodeTiled", "VAEEncodeTiled",
+    "LoraLoader", "LoraLoaderModelOnly",
+    "EmptyLatentImage", "EmptySD3LatentImage", "EmptyLatentImageCustom",
+    "SaveImage", "SaveImageWebsocket", "PreviewImage", "LoadImage",
+    "LoadImageBase64", "SaveImageWebsocket",
+    "CLIPVisionEncode", "CLIPVisionOutput",
+    "ControlNetLoader", "ControlNetLoaderAdvanced", "ControlNetApply",
+    "ControlNetApplyAdvanced", "SetUnionControlNetType",
+    "GLIGENLoader", "GLIGENTextBoxApply",
+    "UpscaleModelLoader", "ImageUpscaleWithModel",
+    "ImageScale", "ImageScaleToTotalPixels", "ImageScaleBy",
+    "LatentUpscale", "LatentUpscaleBy", "LatentDecode", "LatentFromBatch",
+    "LatentBlend", "LatentAdd", "LatentSubtract", "LatentMultiply",
+    "LatentInterpolate", "LatentBatchSeedChange", "LatentBatch",
+    "unCLIPCheckpointLoader", "unCLIPConditioning",
+    "CLIPLoader", "DualCLIPLoader", "CLIPLoaderModelOnly",
+    "UNETLoader", "UNETLoaderGGUF", "UnetLoaderGGUF", "DiffModelLoader",
+    "ConditioningZeroOut", "ConditioningCombine", "ConditioningConcat",
+    "ConditioningAverage", "ConditioningCombine_",
+    "PromptBlob", "Reroute", "Note", "PrimitiveNode", "WorkflowRestorer",
+    "CheckpointSave", "VAESave",
+    "InpaintModelConditioning", "InstructPixToPixConditioning",
+    "FluxGuidance", "TimestepEmbedding",
+    "ModelSamplingSD3", "ModelSamplingFlux", "ModelSamplingAuraFlow",
+    "ModelSamplingDiscrete", "ModelSamplingContinuousEDM", "ModelSamplingContinuousV",
+    "RescaleCFG", "KSamplerSelect", "CFGNoise",
+    "ImageCompositeMasked", "ImageComposite",
+    "ImageColorToMask", "ImageChannelSplit", "ImageChannelMerge",
+    "ImageBlur", "ImageSharpen", "ImageInvert", "ImageAdjust",
+    "EmptyImage", "ImageBatch", "ImagePadForOutpaint",
+    "LoadImageMask", "MaskToImage", "ImageToMask",
+    "CropMask", "ImageCrop", "ImageFlip", "ImageTransparency",
+    "SelfSegmentationGuide",
   ]);
+
+  // Enrichir dynamiquement avec /object_info (tous les nodes natifs ComfyUI)
+  var _standardTypesLoaded = false;
+  async function ensureStandardTypesLoaded() {
+    if (_standardTypesLoaded) return;
+    try {
+      var resp = await fetch("/object_info");
+      if (resp.ok) {
+        var data = await resp.json();
+        var allTypes = Object.keys(data);
+        // Tous les types retournees par /object_info sont des nodes enregistres
+        // On les ajoute tous a STANDARD_TYPES — la distinction custom/natif
+        // se fera via /fria/custom-nodes (qui ne liste que custom_nodes/)
+        for (var i = 0; i < allTypes.length; i++) {
+          STANDARD_TYPES.add(allTypes[i]);
+        }
+      }
+    } catch (e) {
+      console.warn("[FR.IA] Could not load /object_info:", e);
+    }
+    _standardTypesLoaded = true;
+  }
 
   // Map complet des loaders -> {widgetIndex, category}
   // Couvre tous les loaders ComfyUI natifs + communautaires
@@ -112,7 +160,8 @@
   // Extensions de fichiers models connus
   var MODEL_EXTENSIONS = [".safetensors", ".ckpt", ".pt", ".pth", ".gguf", ".bin", ".t5", ".fp16", ".fp8", ".bf16"];
 
-  function detectDependencies(workflowJSON) {
+  async function detectDependencies(workflowJSON) {
+    await ensureStandardTypesLoaded();
     var nodes = workflowJSON?.nodes || [];
     var deps = { nodes: [], models: [], loras: [] };
     var seen = { nodes: {}, models: {}, loras: {} };
@@ -364,7 +413,7 @@
         return;
       }
 
-      var deps = detectDependencies(workflowJSON);
+      var deps = await detectDependencies(workflowJSON);
       // Enrichir avec les URLs git des custom nodes installes
       deps = await enrichDependenciesWithGitUrls(deps);
       var existingId = null;
@@ -502,21 +551,20 @@
           statusEl.textContent = "Recherche des fichiers locaux...";
           // Lister les models locaux pour trouver les chemins
           var localFiles = await getLocalModelFiles();
-          var checkpointMap = {};
-          for (var ci = 0; ci < localFiles.checkpoints.length; ci++) {
-            checkpointMap[localFiles.checkpoints[ci].name] = localFiles.checkpoints[ci];
-          }
-          var loraMap = {};
-          for (var li = 0; li < localFiles.loras.length; li++) {
-            loraMap[localFiles.loras[li].name] = localFiles.loras[li];
+          // Construire un map global: filename → {name, path, size} pour toutes les categories
+          var allFilesMap = {};
+          for (var cat in localFiles) {
+            var catFiles = localFiles[cat];
+            for (var fi = 0; fi < catFiles.length; fi++) {
+              allFilesMap[catFiles[fi].name] = catFiles[fi];
+            }
           }
 
           for (var ui = 0; ui < uploadCbs.length; ui++) {
             var cb = uploadCbs[ui];
             var fileType = cb.dataset.type;
             var fileName = cb.dataset.name;
-            var fileMap = fileType === 'lora' ? loraMap : checkpointMap;
-            var localFile = fileMap[fileName];
+            var localFile = allFilesMap[fileName];
 
             if (!localFile) {
               statusEl.style.color = "#fbbf24";
