@@ -711,7 +711,7 @@
             var delHtml = canDelete ?
               '<button class="wf-del-btn" onclick="event.stopPropagation();window._wfDeleteWorkflow(' + w.id + ', ' + "'" + esc(w.name) + "'" + ', this)" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border:1px solid #555;border-radius:4px;background:rgba(60,60,64,0.9);color:#f87171;font-size:11px;cursor:pointer;padding:0;line-height:20px;text-align:center;z-index:2;display:none;">🗑</button>' : '';
             html +=
-              '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid #444;border-radius:6px;margin-bottom:4px;cursor:pointer;background:#3a3a3e;position:relative;"' +
+              '<div class="wf-card" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid #444;border-radius:6px;margin-bottom:4px;cursor:pointer;background:#3a3a3e;position:relative;"' +
 
               ' onclick="window._wfOpenDetail(' + w.id + ', this)">' +
               delHtml +
