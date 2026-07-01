@@ -57,24 +57,118 @@
     "PrimitiveNode", "WorkflowRestorer",
   ]);
 
+  // Map complet des loaders -> {widgetIndex, category}
+  // Couvre tous les loaders ComfyUI natifs + communautaires
+  var MODEL_LOADERS = {
+    // Checkpoints
+    "CheckpointLoaderSimple":  { idx: 0, cat: "checkpoint" },
+    "CheckpointLoader":        { idx: 0, cat: "checkpoint" },
+    "unCLIPCheckpointLoader":  { idx: 0, cat: "checkpoint" },
+    "CannyCheckpointLoader":   { idx: 0, cat: "checkpoint" },
+    "CheckpointLoader|pysssss":{ idx: 0, cat: "checkpoint" },
+    "EasyLoadCheckpoint":      { idx: 0, cat: "checkpoint" },
+    "CheckpointLoaderSimple|bg2": { idx: 0, cat: "checkpoint" },
+    // LoRAs
+    "LoraLoader":              { idx: 0, cat: "lora" },
+    "LoraLoaderModelOnly":     { idx: 0, cat: "lora" },
+    "EasyLoraLoader":          { idx: 0, cat: "lora" },
+    "LoraLoader|pysssss":      { idx: 0, cat: "lora" },
+    // VAE
+    "VAELoader":               { idx: 0, cat: "vae" },
+    "VAELoaderFile":           { idx: 0, cat: "vae" },
+    "EasyVAELoader":           { idx: 0, cat: "vae" },
+    // CLIP
+    "CLIPLoader":              { idx: 0, cat: "clip" },
+    "DualCLIPLoader":          { idx: 0, cat: "clip" },
+    "CLIPVisionLoader":        { idx: 0, cat: "clip_vision" },
+    "CLIPLoaderGGUF":          { idx: 0, cat: "clip" },
+    // UNET / Diffusion models
+    "UNETLoader":              { idx: 0, cat: "unet" },
+    "UnetLoaderGGUF":          { idx: 0, cat: "unet_gguf" },
+    "DiffModelLoader":         { idx: 0, cat: "unet" },
+    "EasyFullyLoader":         { idx: 0, cat: "unet" },
+    // ControlNet
+    "ControlNetLoader":        { idx: 0, cat: "controlnet" },
+    "ControlNetLoaderAdvanced":{ idx: 0, cat: "controlnet" },
+    "EasyControlnetLoader":    { idx: 0, cat: "controlnet" },
+    // Upscale
+    "UpscaleModelLoader":      { idx: 0, cat: "upscale" },
+    "ImageUpscaleWithModel":   { idx: 0, cat: "upscale" },
+    // GLIGEN
+    "GLIGENLoader":            { idx: 0, cat: "gligen" },
+    // Hypernetwork
+    "HypernetworkLoader":      { idx: 0, cat: "hypernetwork" },
+    // Text encoders (SD3, Flux, etc.)
+    "TextEncoderLoader":       { idx: 0, cat: "text_encoder" },
+    "BERTLoader":              { idx: 0, cat: "text_encoder" },
+    "T5Loader":                { idx: 0, cat: "text_encoder" },
+    "CLIPLoaderModelOnly":     { idx: 0, cat: "text_encoder" },
+    // Style models
+    "StyleModelLoader":        { idx: 0, cat: "style_model" },
+    // Embeddings
+    "PromptStyleLoader":       { idx: 0, cat: "embedding" },
+  };
+
+  // Extensions de fichiers models connus
+  var MODEL_EXTENSIONS = [".safetensors", ".ckpt", ".pt", ".pth", ".gguf", ".bin", ".t5", ".fp16", ".fp8", ".bf16"];
+
   function detectDependencies(workflowJSON) {
     var nodes = workflowJSON?.nodes || [];
     var deps = { nodes: [], models: [], loras: [] };
     var seen = { nodes: {}, models: {}, loras: {} };
+
     for (var i = 0; i < nodes.length; i++) {
       var type = nodes[i].type || "";
       var widgets = nodes[i].widgets_values || [];
+
+      // Custom nodes (non standard)
       if (!STANDARD_TYPES.has(type) && !type.startsWith("_") && !seen.nodes[type]) {
         seen.nodes[type] = true;
         deps.nodes.push({ name: type, url: "" });
       }
-      if (type === "CheckpointLoaderSimple" && widgets[0] && !seen.models[widgets[0]]) {
-        seen.models[widgets[0]] = true;
-        deps.models.push({ name: widgets[0], type: "checkpoint" });
+
+      // Models / LoRAs via le map des loaders connus
+      var loader = MODEL_LOADERS[type];
+      if (loader) {
+        var filename = widgets[loader.idx];
+        if (filename && typeof filename === "string" && filename !== "None" && filename !== "none") {
+          // Si c'est un lora, on le met dans deps.loras
+          if (loader.cat === "lora") {
+            if (!seen.loras[filename]) {
+              seen.loras[filename] = true;
+              deps.loras.push({ name: filename, type: "lora" });
+            }
+          } else {
+            if (!seen.models[filename]) {
+              seen.models[filename] = true;
+              deps.models.push({ name: filename, type: loader.cat });
+            }
+          }
+        }
       }
-      if (type === "LoraLoader" && widgets[0] && !seen.loras[widgets[0]]) {
-        seen.loras[widgets[0]] = true;
-        deps.loras.push({ name: widgets[0] });
+
+      // Detection dynamique : si le type n'est pas dans MODEL_LOADERS mais qu'un
+      // widget value ressemble a un fichier model, on le detecte aussi
+      if (!loader) {
+        for (var wi = 0; wi < widgets.length; wi++) {
+          var wv = widgets[wi];
+          if (typeof wv === "string" && wv.length > 3) {
+            var lower = wv.toLowerCase();
+            for (var ei = 0; ei < MODEL_EXTENSIONS.length; ei++) {
+              if (lower.endsWith(MODEL_EXTENSIONS[ei]) && !seen.models[wv] && !seen.loras[wv]) {
+                // Heuristique : si le type contient "Lora", c'est un lora
+                if (type.toLowerCase().indexOf("lora") >= 0) {
+                  seen.loras[wv] = true;
+                  deps.loras.push({ name: wv, type: "lora" });
+                } else {
+                  seen.models[wv] = true;
+                  deps.models.push({ name: wv, type: "model" });
+                }
+                break;
+              }
+            }
+          }
+        }
       }
     }
     return deps;
@@ -92,25 +186,36 @@
   }
 
   async function enrichDependenciesWithGitUrls(deps) {
-    // Interroger ComfyUI pour les URLs git des custom nodes installes
+    // Interroger ComfyUI pour les custom nodes installes + leurs types
     var installed = await getInstalledCustomNodes();
-    // Construire un map nom_dossier → git_url
-    var urlMap = {};
+
+    // Construire 2 maps: node_type → git_url  ET  node_type → pack_name
+    var typeToUrl = {};
+    var typeToPack = {};
     for (var i = 0; i < installed.length; i++) {
-      if (installed[i].git_url) {
-        urlMap[installed[i].name.toLowerCase()] = installed[i].git_url;
-        // Aussi mapper par nom de node type (les dossiers contiennent souvent le nom du node)
+      var pack = installed[i];
+      var types = pack.node_types || [];
+      for (var t = 0; t < types.length; t++) {
+        if (pack.git_url) typeToUrl[types[t]] = pack.git_url;
+        typeToPack[types[t]] = pack.name;
       }
     }
-    // Enrichir deps.nodes avec les URLs
+
+    // Grouper les nodes par pack (url) au lieu d'avoir des entrees individuelles
+    var packMap = {};   // key: url ou "__unknown__" → {name, url, node_types: []}
     for (var i = 0; i < deps.nodes.length; i++) {
       var nodeName = deps.nodes[i].name;
-      // Chercher par nom de dossier (case insensitive)
-      var key = nodeName.toLowerCase();
-      if (urlMap[key]) {
-        deps.nodes[i].url = urlMap[key];
+      var url = typeToUrl[nodeName] || "";
+      var packName = typeToPack[nodeName] || nodeName;
+      var key = url || "__unknown_" + nodeName;
+      if (!packMap[key]) {
+        packMap[key] = { name: packName, url: url, node_types: [] };
       }
+      packMap[key].node_types.push(nodeName);
     }
+
+    // Convertir en tableau
+    deps.nodes = Object.keys(packMap).map(function(k) { return packMap[k]; });
     return deps;
   }
 
@@ -284,9 +389,15 @@
       } else {
         depsHtml += '<p style="font-size:10px;color:#666;margin:0 0 6px 0;">Cochez les models/loras à uploader vers le serveur :</p>';
         if (deps.nodes.length) {
-          depsHtml += '<div style="margin-bottom:4px;"><span style="color:#f59e0b;">📦 Custom nodes (URL auto)</span>';
-          for (var i = 0; i < deps.nodes.length; i++)
-            depsHtml += '<div style="margin-left:12px;color:#ccc;">· ' + esc(deps.nodes[i].name) + (deps.nodes[i].url ? ' <span style="color:#34d399;">✓ ' + esc(deps.nodes[i].url) + '</span>' : ' <span style="color:#f87171;">URL git non trouvée</span>') + '</div>';
+          depsHtml += '<div style="margin-bottom:4px;"><span style="color:#f59e0b;">📦 Custom nodes (' + deps.nodes.length + (deps.nodes.length > 1 ? ' packs' : ' pack') + ')</span>';
+          for (var i = 0; i < deps.nodes.length; i++) {
+            var pk = deps.nodes[i];
+            var nodeCount = pk.node_types ? pk.node_types.length : 1;
+            depsHtml += '<div style="margin-left:12px;color:#ccc;">· ' + esc(pk.name) +
+              (nodeCount > 1 ? ' <span style="color:#888;font-size:10px;">(' + nodeCount + ' nodes)</span>' : '') +
+              (pk.url ? ' <span style="color:#34d399;font-size:10px;">✓ ' + esc(pk.url) + '</span>' : ' <span style="color:#f87171;font-size:10px;">URL git non trouvée</span>') +
+              '</div>';
+          }
           depsHtml += '</div>';
         }
         if (deps.models.length) {
@@ -602,19 +713,24 @@
               depHtml += '<div style="border:1px solid #444;border-radius:6px;overflow:hidden;">';
 
               if (allDeps.nodes.length) {
-                // Check which custom nodes are already installed
+                // Check which custom node packs are already installed (by git_url)
                 var installedNodes = await getInstalledCustomNodes();
-                var installedNames = {};
+                var installedUrls = {};
                 for (var k = 0; k < installedNodes.length; k++) {
-                  installedNames[installedNodes[k].name.toLowerCase()] = true;
+                  if (installedNodes[k].git_url) {
+                    installedUrls[installedNodes[k].git_url] = true;
+                  }
                 }
                 depHtml += '<div style="background:#3a3a3e;padding:6px 10px;border-bottom:1px solid #444;"><span style="font-size:11px;color:#f59e0b;font-weight:600;">📦 Custom nodes</span></div>';
                 for (var i = 0; i < allDeps.nodes.length; i++) {
                   var n = allDeps.nodes[i];
-                  var installed = installedNames[n.name.toLowerCase()];
+                  var nodeCount = n.node_types ? n.node_types.length : 1;
+                  var installed = n.url && installedUrls[n.url];
                   depHtml += '<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #3a3a3e;cursor:pointer;font-size:12px;color:' + (installed ? '#34d399' : '#ccc') + ';">' +
                     '<input type="checkbox" class="wf-dep-cb" ' + (installed ? 'unchecked' : 'checked') + ' data-type="node" data-name="' + esc(n.name) + '" data-url="' + esc(n.url || '') + '" style="accent-color:#6366f1;">' +
-                    '<span style="flex:1;">' + esc(n.name) + (installed ? ' ✅ déjà installé' : '') + '</span>' +
+                    '<span style="flex:1;">' + esc(n.name) +
+                    (nodeCount > 1 ? ' <span style="color:#888;font-size:10px;">(' + nodeCount + ' nodes)</span>' : '') +
+                    (installed ? ' ✅ déjà installé' : '') + '</span>' +
                     (n.url && !installed ? '<button onclick="window._wfInstallNode(\'' + esc(n.url) + '\', \'' + esc(n.name) + '\', this)" style="padding:2px 8px;border:1px solid #555;border-radius:3px;background:#4a4a4e;color:#ccc;font-size:10px;cursor:pointer;">📥 Installer</button>' : '') +
                     (n.url ? '<a href="' + esc(n.url) + '" target="_blank" style="color:#60a5fa;text-decoration:none;font-size:11px;" onclick="event.stopPropagation();">🔗</a>' : '') +
                     '</label>';
@@ -728,6 +844,11 @@
 
                 try {
                   var parsed = JSON.parse(wfJson);
+                  // Renommer le workflow avec le nom qu'il a sur FR.IA
+                  if (data.name) {
+                    if (!parsed.extra) parsed.extra = {};
+                    parsed.extra.title = data.name;
+                  }
                   var currentApp = getApp();
                   if (currentApp && currentApp.loadGraphData) {
                     currentApp.loadGraphData(parsed).then(function () {

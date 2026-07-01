@@ -15,6 +15,7 @@ import json
 import logging
 import subprocess
 import configparser
+import re
 
 try:
     import folder_paths
@@ -39,6 +40,37 @@ def _read_git_url(node_dir):
     return ""
 
 
+def _extract_node_types(node_dir):
+    """Lit __init__.py d'un custom node et extrait les types de nodes qu'il enregistre."""
+    init_file = os.path.join(node_dir, "__init__.py")
+    if not os.path.isfile(init_file):
+        return []
+    try:
+        with open(init_file, "r", encoding="utf-8", errors="ignore") as f:
+            source = f.read()
+        # Chercher NODE_CLASS_MAPPINGS = { "TypeName": ClassName, ... }
+        # Pattern 1: NODE_CLASS_MAPPINGS = { "Type": Class, ... }
+        matches = re.findall(r'["\']([A-Za-z0-9_]+)["\']\s*:', source)
+        # Filtrer les faux positifs (clefs python communes)
+        blacklist = {'input_name', 'input_type', 'return_type', 'return_name',
+                     'category', 'output_node', 'description', 'name', 'type',
+                     'class_type', 'data', 'kwargs', 'args', 'mode', 'model',
+                     'clip', 'vae', 'positive', 'negative', 'latent', 'image',
+                     'seed', 'steps', 'cfg', 'sampler_name', 'scheduler',
+                     'denoise', 'filename_prefix', 'images', 'text', 'prompt'}
+        types = [m for m in matches if m not in blacklist and len(m) > 2]
+        # Dedup en preservant l'ordre
+        seen = set()
+        result = []
+        for t in types:
+            if t not in seen:
+                seen.add(t)
+                result.append(t)
+        return result
+    except Exception:
+        return []
+
+
 def _get_installed_custom_nodes():
     """Scanne custom_nodes/ et retourne [{name, git_url, has_git}]."""
     if not _CUSTOM_NODES_DIR or not os.path.isdir(_CUSTOM_NODES_DIR):
@@ -52,10 +84,12 @@ def _get_installed_custom_nodes():
         git_url = _read_git_url(node_dir)
         has_git = os.path.isdir(os.path.join(node_dir, ".git"))
         if has_git or git_url:
+            node_types = _extract_node_types(node_dir)
             results.append({
                 "name": name,
                 "git_url": git_url,
                 "has_git": has_git,
+                "node_types": node_types,
             })
     return results
 
